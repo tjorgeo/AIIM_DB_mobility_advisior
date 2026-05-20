@@ -10,21 +10,8 @@
 
 ## EXECUTIVE SUMMARY
 
-### Strategic Opportunity
-Deutsche Bahn can capture significant value by proactively optimizing each customer's mobility portfolio across DB and partner services. The **Mobility Portfolio Management Agent** (codename: *DB MoveOptimizer*) will:
-
-- **For DB:** Reduce churn (projected -0.5-1% YoY), increase ARPU (+2-3%), strengthen ecosystem defensibility
-- **For Customers:** Save €50-80/year, measurable CO₂ reduction, time reclaimed
-- **For Sustainability:** Track and reduce customer-driven emissions at scale (100K+ tons CO₂ potential)
-
-### Why Now?
-1. **Technology maturity:** Multi-agent LLM systems proven in production; tool use frameworks stable
-2. **Data readiness:** DB has consolidated travel history + subscription data; partner APIs increasingly available
-3. **Market momentum:** Rising customer appetite for personalized recommendations + sustainability tracking
-4. **Competitive urgency:** Standalone comparison apps lack DB ecosystem depth; defensible moat available
-
-### Proposed Solution
-An **advanced multi-agent system** (Analyst → Forecaster → Optimizer → Communicator) that:
+### Project Overview
+The **Mobility Portfolio Management Agent** (codename: *DB MoveOptimizer*) is an **advanced multi-agent system** (Analyst → Forecaster → Optimizer → Communicator) that:
 - Analyzes 12 months of real mobility behavior across modes
 - Predicts 6-month forward demand from calendar + life events
 - Generates 2-3 portfolio scenarios with cost/CO₂ trade-offs
@@ -32,19 +19,9 @@ An **advanced multi-agent system** (Analyst → Forecaster → Optimizer → Com
 - Executes approved changes via DB + partner APIs
 - Delivers annual "DB Wrapped" review with results
 
-### Expected Business Impact (Pilot: 1,000 customers)
-| Metric | Target | Confidence |
-|--------|--------|-----------|
-| Recommendation acceptance rate | 20% (+5% vs. baseline) | High |
-| Average savings per accepting customer | €60-80 | Medium |
-| Portfolio revenue impact | +€30-40K pilot → €3-5M scaled | Medium |
-| CO₂ reduction tracked | 500-1000 tons/year pilot | High |
-| Customer satisfaction (NPS) | +15-20 points | Medium |
-
-### Budget & Resource Estimate (16 weeks)
-- **Team:** 8 FTE (2 architects, 3 engineers, 1 data scientist, 1 ops/infra, 1 PM)
-- **External:** LLM API costs (~€15-25K for pilot), partner API integrations
-- **Total:** ~€480-600K (consulting + implementation + testing)
+### Project Structure (16 weeks)
+- **Team:** 8.5 FTE (2 architects, 3 ML engineers, 1 data scientist, 1 backend/infra engineer, 0.5 frontend engineer, 0.5 UX designer, 0.5 QA engineer)
+- **Duration:** May 20 - August 31, 2026
 
 ---
 
