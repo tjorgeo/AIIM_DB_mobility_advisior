@@ -1,179 +1,139 @@
-# DB MoveOptimizer - Prototype Project Plan
-## 5-Person Data Science Team | 16 Weeks
+# DB MoveOptimizer - Pilot Project Plan (BCG Platinion Edition)
+## 5-Person Strategy IT Consulting Pilot Team | 16 Weeks
 
-**Duration:** May 20 - Aug 31, 2026  
-**Team:** 5 Data Scientists + Support  
-**Goal:** Deliver working prototype (all 4 agents end-to-end with real APIs)
-
----
-
-## TIMELINE: 4 Phases, 4 Weeks Each
-
-### Phase 1: Foundation & APIs (Weeks 1-4 | May 20 - June 15)
-
-**Goal:** Lock architecture, integrate critical APIs, validate feasibility
-
-**Key Deliverables:**
-- ✅ Condensed Architecture doc (4 pages)
-- ✅ Tech stack decisions locked (LangChain, Claude, PostgreSQL)
-- ✅ DB Navigator API client working (can fetch 12-month data)
-- ✅ Google Maps API integrated
-- ✅ Pricing catalog loaded
-- ✅ Sprint 1 complete (Week 4 gate)
-
-**Gate Review (June 15):** Can we fetch and analyze real data? → YES = Proceed
+**Project Scope:** Phase 1 high-fidelity functional prototype, de-risking the €1.1M full-scale commercial proposal (Phase 2).  
+**Partnership:** University AIIM & **BCG Platinion** (Strategy IT Data Consulting Review)  
+**Duration:** May 20 - Aug 31, 2026 (15 Weeks Remaining)  
+**Team:** 5 Consultant Data Scientists  
+**Goal:** Deliver a working 4-Agent prototype, a 10-page management report, and a 3-minute professional demo video.
 
 ---
 
-### Phase 2: Agent Development (Weeks 5-8 | June 16 - July 13)
+## 📅 TIMELINE: 4 Phases, 4 Weeks Each (Phase 1 Pilot)
 
-**Goal:** All 4 agents callable and working together
+### Phase 1: Architecture, Sandbox & Schemas (Weeks 1-4 | May 20 - June 15)
+*   **Goal:** Establish technical blueprints, design mock API schemas, and compile pricing catalogs.
+*   **Deliverables:**
+    *   ✅ Technical Architecture Blueprint with complete ADRs (Architecture Decision Records)
+    *   ✅ Mock API Gateway endpoints (FastAPI) and target JSON schemas defined
+    *   ✅ Synthetic Profile Generator loaded with 5 core traveler personas
+    *   ✅ Pricing catalog loaded (Deutschlandticket, Bahncard tiers, regional rates)
+*   **Steering Gate (June 16 BCG Progress Meeting):** Formal phase gate review with BCG Platinion. Obtain sign-off on the **Phase 1 Decision Package** to authorize the kickoff of Phase 2 core agent development.
 
-**Deliverables by Week:**
-- **Week 5:** Analyst agent (travel analysis) working
-- **Week 6:** Forecaster agent (demand prediction) callable
-- **Week 7:** Optimizer agent (scenario generation) + Communicator (chat) basic
-- **Week 8:** All 4 agents orchestrated end-to-end
+#### 📦 Phase 1 Decision Package (Prepared in Week 4)
+To ensure maximum decision-making velocity during the June 16 progress meeting, the consulting team will compile and distribute a 3-page "Steering Memo" covering:
+1.  **Mock Schema Specifications:** Target JSON contracts for DB Navigator and partner APIs.
+2.  **Persona Catalog:** 5 synthetic user profiles representing DB's customer demographics.
+3.  **Solver Rule Engine Specs:** Mathematical formulation of the greedy optimization heuristic.
+4.  **Resilience & Failure Matrix:** Detailed mapping of agent fallbacks and timeout thresholds.
 
-**Gate Review (July 13):** Demo: agents working on 10 sample customers → YES = Continue
+#### 🗳️ Key Decisions to be Resolved on June 16
+The progress meeting will be structured around a formal voting board to lock the following decisions before entering code production:
+1.  **Decision 1.1: Sandbox API Schema Approval** — Lock the data contracts (JSON payloads) for travel history, ensuring they are identical to future production payloads.
+2.  **Decision 1.2: Scenario Weighted Rubric** — Formally approve the exact weights for scenario ranking:
+    *   *Cost Focus:* 100% Cost optimization.
+    *   *Balanced Focus:* 60% Cost / 40% Flexibility & Convenience.
+    *   *Sustainability Focus:* 50% Cost / 50% CO₂ reduction.
+3.  **Decision 1.3: Demand Forecasting Model Baseline** — Confirm choice of statistical Prophet moving averages for baseline demand, with LLM overrides triggered only by specific catalog constraints.
+4.  **Decision 1.4: Resilience Thresholds & Timeouts** — Formally approve the maximum SLA timeouts:
+    *   Max E2E user latency: 30s.
+    *   Max agent execution timeout: Analyst (8s), Forecaster (8s), Optimizer (5s), Communicator (5s).
+    *   Fallback mechanism: Naive historical replication if Forecaster fails.
+5.  **Decision 1.5: Phase 2 Kickoff Approval** — Formal "Go/No-Go" decision based on Phase 1 gate completions to release development sprint resources.
 
----
-
-### Phase 3: Pilot & Validation (Weeks 9-12 | July 14 - Aug 10)
-
-**Goal:** 100-customer pilot with real APIs; validate accuracy & performance
-
-**Deliverables:**
-- ✅ 100-customer pilot running
-- ✅ Real DB Navigator + pricing data flowing
-- ✅ Monitoring dashboard (latency, accuracy, errors)
-- ✅ Bug fix & optimization cycle
-- ✅ Document learnings
-
-**Gate Review (Aug 10):** Prototype stable? Accuracy ≥90%? → YES = Polish
-
----
-
-### Phase 4: Polish & Delivery (Weeks 13-16 | Aug 11 - Aug 31)
-
-**Goal:** Demo-ready, fully documented
-
-**Deliverables:**
-- ✅ Final bugs fixed
-- ✅ Performance tuned (<30s per recommendation)
-- ✅ Complete documentation
-- ✅ Demo + presentation
-- ✅ Knowledge handoff
-
-**Gate Review (Aug 31):** Ready for Phase 2? → YES = Complete
 
 ---
 
-## TEAM STRUCTURE & OWNERSHIP
-
-| Role | Person | Responsibilities | Hours/Week |
-|------|--------|------------------|-----------|
-| **Lead (Architect)** | Data Scientist 1 | System design, API integration, orchestration | 40h |
-| **Analyst Agent Owner** | Data Scientist 2 | Pattern detection, cost analysis | 40h |
-| **Forecaster Agent Owner** | Data Scientist 3 | Demand prediction, feature engineering | 40h |
-| **Optimizer Agent Owner** | Data Scientist 4 | Scenario generation, ranking logic | 40h |
-| **Quality & Validation** | Data Scientist 5 | Testing, monitoring, documentation | 40h |
-
-**Total:** 5 × 40h = 200h/week active development
-
-### Weekly Cadence
-- **Monday 9am:** Sprint planning (1h) — goals for the week
-- **Wed 2pm:** Mid-sprint sync (30m) — blockers, quick decisions
-- **Friday 4pm:** Sprint review + retrospective (1h) — demo, learnings, next steps
-- **Async:** Slack updates daily; GitHub PRs reviewed same-day
+### Phase 2: Core 4-Agent Development (Weeks 5-8 | June 16 - July 13)
+*   **Goal:** Implement the non-negotiable 4-agent systems and orchestrator state machine.
+*   **Deliverables:**
+    *   **Week 5:** Analyst Agent (travel logs parsing and efficiency heuristic clustering) operational
+    *   **Week 6:** Forecaster Agent (time-series seasonality prediction using Prophet/pandas) callable
+    *   **Week 7:** Optimizer Agent (greedy multi-scenario solver) and basic Communicator (Claude 3.5 prompt) integrated
+    *   **Week 8:** End-to-end multi-agent orchestration running under the FastAPI state machine
+*   **Phase Gate (July 13):** Working CLI / API flow showing all 4 agents executing on mock profile data.
 
 ---
 
-## TOP 5 RISKS & MITIGATION
-
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|-----------|
-| **API Unavailability** | Medium | High | Early POC (Week 1); fallback caching; graceful degradation |
-| **Tight 16-week timeline** | High | High | Aggressive MVP scope; parallel sprints; no scope creep |
-| **Poor recommendation accuracy** | Medium | High | Validate Analyst logic Week 2; gather manual feedback Loop; iterate |
-| **Pilot scaling issues** | Medium | Medium | Start with 10 customers Week 9; scale to 100 gradually |
-| **Data quality problems** | Low | High | Validate API data format Week 1; build data checks into pipeline |
-
-**Risk Review:** Weekly in Friday retro; escalate if probability/impact increases
+### Phase 3: Pilot Run & Interface Hardening (Weeks 9-12 | July 14 - Aug 10)
+*   **Goal:** Run the prototype against 100 synthetic customer travel profiles; validate accuracy and launch the Streamlit frontend.
+*   **Deliverables:**
+    *   ✅ 100-Profile Pilot simulation successfully executed
+    *   ✅ Streamlit-based Premium Chat Widget deployed (local / web-accessible)
+    *   ✅ Automated test runner proving optimizer calculations are accurate to within ±5%
+    *   ✅ Caching layers (Redis) and state store (Postgres/SQLite) fully verified
+*   **Phase Gate (Aug 10):** Prototype functional, stable, and user-testable.
 
 ---
 
-## DEFINITION OF DONE: Prototype Phase
-
-### At End of Week 4 (Phase 1)
-- [ ] Architecture document complete (reviewed by team)
-- [ ] All critical APIs integrated + tested
-- [ ] Can ingest 12-month travel history for sample customer
-- [ ] Tech stack locked; local dev environment working
-
-### At End of Week 8 (Phase 2)
-- [ ] All 4 agents callable (each returns expected output)
-- [ ] End-to-end flow: customer data → recommendations (works on 10 samples)
-- [ ] No critical bugs (P0/P1 issues resolved)
-- [ ] >80% test coverage on agent logic
-- [ ] Basic documentation (arch, API contracts)
-
-### At End of Week 12 (Phase 3)
-- [ ] 100-customer pilot running with production APIs
-- [ ] Recommendation accuracy ≥90% (manual validation sample)
-- [ ] Response time <30s per recommendation (p95)
-- [ ] System stable (no crashes/restarts for 1 week)
-- [ ] Monitoring dashboard live + alerting configured
-
-### At End of Week 16 (Phase 4 - Delivery)
-- [ ] Polish: all UX issues fixed, performance tuned
-- [ ] Complete documentation (architecture, ops guide, troubleshooting)
-- [ ] Demo video + presentation ready
-- [ ] Code clean + well-commented
-- [ ] Ready for Phase 2 planning or full rollout decision
+### Phase 4: Business Delivery & Academic Handoff (Weeks 13-16 | Aug 11 - Aug 31)
+*   **Goal:** Complete technical hardening and produce the final consulting deliverables.
+*   **Deliverables:**
+    *   **Week 13:** Bug fixes and performance tuning (<30s end-to-end response time). Begin writing the **10-Page Management & IT Strategy Report**.
+    *   **Week 14:** Hardening state persistence. Draft the executive summary and architectural justifications of the **10-Page Report**.
+    *   **Week 15:** Script, shoot, and edit the **3-Minute Demo Video** highlighting system intelligence and value. Finalize the 10-page report.
+    *   **Week 16:** Compile the **BCG Platinion Final Pitch Presentation** slides. Code cleanup and GitHub repository handoff.
+*   **Phase Gate (Aug 31):** Hand off working prototype, video, report, and slide deck.
 
 ---
 
-## SUCCESS METRICS (Prototype)
+## 👥 TEAM STRUCTURE & OWNERSHIP
+In alignment with BCG Platinion strategy IT consulting methodologies, the team is structured to ensure direct ownership of complex modules while maintaining strict quality gates.
 
-| Metric | Target | Validation |
-|--------|--------|-----------|
-| **Completeness** | All 4 agents working | Manual test on 10 customers |
-| **Accuracy** | Cost ±5%, patterns correct | Manual review by data scientist |
-| **Performance** | <30s per recommendation | Response time monitoring |
-| **Stability** | 99%+ API success rate | Error logs + monitoring dashboard |
-| **Coverage** | >95% of pilot customers analyzed | Data ingestion logs |
-
----
-
-## APPROVAL & ESCALATION
-
-- **Daily Blockers:** Slack #db-mobility-dev
-- **Weekly Issues:** Friday retro (resolve in next sprint)
-- **Scope Creep:** Lead makes call; escalate to stakeholders if needed
-- **Budget:** Not tracked sprint-by-sprint (but flag overruns early)
+| Role | Responsibility | Simulated Hours / Week |
+| :--- | :--- | :--- |
+| **Lead Architect & Orchestrator** | Orchestration State Machine, FastAPI setup, Redis/DB layers, BCG Presentation Lead | 40h |
+| **Analyst Agent Lead** | Travel history clustering, pattern detection, Sandbox API schema matching | 40h |
+| **Forecaster Agent Lead** | Seasonality modeling, demand forecasting, calendar feature expansion | 40h |
+| **Optimizer Agent Lead** | Heuristic solver, pricing databases, scenario comparison logic | 40h |
+| **QA & Management Lead** | Test automation, 10-Page Report compilation, Video scripting/production | 40h |
 
 ---
 
-## WHAT'S NOT IN THIS PLAN
+## ⚠️ RISK REGISTER (BCG Platinion Pilot Focus)
 
-❌ **Phase 2 activities** (CO₂, calendar, partner APIs, full rollout)  
-❌ **Detailed budget tracking** (assumes €100K engagement available)  
-❌ **Production deployment** (that's Phase 2)  
-❌ **Long-term monitoring & ops** (handoff in Week 16)  
-❌ **Formal governance gates** (this is a prototype team, not enterprise)
+| Risk Event | Likelihood | Impact | Proactive Mitigation Strategy |
+| :--- | :---: | :---: | :--- |
+| **API Contract Delays** | High | High | **Mitigated:** Use simulated sandbox endpoints and high-fidelity mock datasets. |
+| **Orchestrator Latency** | Medium | Medium | Implement parallel agent executions; cache pricing databases in Redis. |
+| **Scope Creep** | Medium | High | Rely on the strict Phase 1 vs. Phase 2 boundaries; push advanced APIs to Phase 2. |
+| **Academic Delays** | Low | High | Dedicated "QA & Management Lead" role starting early drafts of the report in Week 13. |
 
 ---
 
-## NEXT STEPS
+## 📝 DEFINITION OF DONE (Phase 1 Gates)
 
-**Week 1 (May 20-24):**
-- [ ] Kick off with full team
-- [ ] Set up dev environment + repos
-- [ ] Begin API integration (Navigator, Google Maps)
-- [ ] Schedule mid-sprint check-in
+### Gate 1 (Week 4 - Foundation & Sandbox)
+- [ ] Technical Architecture document complete and approved.
+- [ ] Sandbox API Gateway operational with JSON schemas matching DB specifications.
+- [ ] Synthetic customer profile generator working with 5 traveler personas.
+- [ ] Local environment operational (Python FastAPI + Streamlit base).
 
-**Weeks 2-4:**
-- [ ] Validate all APIs working
-- [ ] Lock architecture + tech stack
-- [ ] Begin agent skeleton code
+### Gate 2 (Week 8 - Agent Integration)
+- [ ] Analyst, Forecaster, Optimizer, and Communicator agents callable.
+- [ ] End-to-end flow operational (raw JSON input $\rightarrow$ natural language recommendation).
+- [ ] Core agent reasoning logic covered by >80% automated unit tests.
+- [ ] Interim architectural reviews completed.
+
+### Gate 3 (Week 12 - Prototype Hardening)
+- [ ] Streamlit interface fully integrated with the 4-agent backend.
+- [ ] 100-profile automated test run successful with zero engine crashes.
+- [ ] Caching (Redis) working to speed up subsequent queries.
+- [ ] Recommendations validated for mathematical accuracy.
+
+### Gate 4 (Week 16 - Consulting Delivery)
+- [ ] Working prototype deployed and available for BCG Platinion review.
+- [ ] **10-Page Management & IT Strategy Report** completed and formatted professionally.
+- [ ] **3-Minute Demo Video** completed, showing full end-to-end user flows.
+- [ ] **BCG Platinion Final Pitch Presentation** slides ready for delivery.
+- [ ] GitHub repository clean, documented, and ready for grading.
+
+---
+
+## 🎯 KEY STRATEGIC PILOT KPIS
+
+*   **Completion Rate:** 100% of the 4 agents working in a cohesive state machine.
+*   **Analytical Precision:** Solver cost calculations within ±5% of real-world optimal values.
+*   **Orchestration Latency:** P95 response time <30 seconds for complete agent runs.
+*   **Presentation Excellence:** Clear, professional documentation ready for C-level BCG Platinion review.
+

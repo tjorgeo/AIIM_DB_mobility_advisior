@@ -43,7 +43,7 @@ User Request
 **Purpose:** Analyze 12-month travel history; identify patterns & inefficiencies
 
 **Input:**
-- Travel history (date, origin, destination, cost, mode) from DB Navigator API
+- Travel history (date, origin, destination, cost, mode) from simulated DB Navigator API sandbox
 - Current subscriptions (Bahncard tier, memberships, costs)
 
 **Process:**
@@ -184,7 +184,7 @@ User Decision: [Approve] [More Info] [Decline]
 
 3. Orchestrator routes to ANALYST (parallel with FORECASTER):
    ANALYST:
-   ├─ Query DB Navigator API (travel history, 12 months)
+   ├─ Query Simulated API Gateway (synthetic travel history, 12 months)
    ├─ Parse into DataFrame
    ├─ Store in PostgreSQL
    ├─ Calculate patterns + efficiency
@@ -291,8 +291,8 @@ CREATE TABLE audit_log (
 
 ## API INTEGRATIONS
 
-### DB Navigator API
-**Endpoint:** `GET /v1/user/travel-history?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD`
+### Simulated DB Navigator API (Sandbox Gateway)
+**Endpoint:** `GET /v1/sandbox/travel-history?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD`
 
 **Response:**
 ```json
@@ -364,9 +364,9 @@ CREATE TABLE audit_log (
 ## ERROR HANDLING & RESILIENCE
 
 ### API Failures
-- **DB Navigator API down:** Use cached travel history (log warning)
-- **Partner API down:** Use last known subscription state
-- **Google Maps down:** Skip routing optimization (MVP doesn't need it anyway)
+- **Simulated Sandbox Gateway down:** Use cached synthetic travel history (log warning)
+- **Partner API Sandbox down:** Use last known subscription state
+- **Google Maps mock down:** Skip routing optimization (MVP doesn't need it anyway)
 
 ### Agent Failures
 - **Analyst timeout:** Return partial efficiency report with low confidence
@@ -444,8 +444,8 @@ CREATE TABLE audit_log (
 
 **Week 1:** 
 - [ ] Set up local dev environment (PostgreSQL, Redis)
-- [ ] Implement DB Navigator API client
-- [ ] Define data schemas
+- [ ] Implement Simulated Sandbox API client
+- [ ] Define data schemas (synthetic JSON payloads)
 
 **Weeks 2-4:**
 - [ ] Implement Analyst agent (pattern detection)
@@ -459,6 +459,6 @@ CREATE TABLE audit_log (
 - [ ] Error handling & edge cases
 
 **Weeks 9-16:**
-- [ ] Pilot with real data + APIs
+- [ ] Run 100-profile simulation pilot with synthetic logs
 - [ ] Monitoring dashboard
 - [ ] Polish & documentation

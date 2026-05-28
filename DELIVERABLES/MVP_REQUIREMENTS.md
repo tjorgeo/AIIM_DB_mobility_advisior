@@ -10,21 +10,22 @@
 
 ### Story 1: Ingest Travel History (Analyst Agent)
 **As a** data scientist building the Analyst agent  
-**I need** to fetch 12 months of DB travel history from the API  
+**I need** to load 12 months of synthetic travel history from the simulated API sandbox gateway  
 **So that** I can analyze patterns and identify inefficiencies
 
 **Acceptance Criteria:**
-- ✅ Can connect to DB Navigator API (authenticate, handle rate limits)
-- ✅ Fetch 12-month history for sample customer (<5 seconds)
-- ✅ Parse response: date, origin, destination, cost, mode, duration
-- ✅ Handle missing data gracefully (fill with zeros, log gaps)
-- ✅ 95%+ data completeness (match against manual spot-check)
-- ✅ Store in PostgreSQL for analysis
+- ✅ Can query simulated sandbox API endpoints representing the DB Navigator JSON schema
+- ✅ Load 12-month synthetic travel logs for 5 core traveler personas (<1 second)
+- ✅ Parse JSON response: date, origin, destination, cost, mode, duration
+- ✅ Handle malformed or missing synthetic data fields gracefully (fill with zeros, log errors)
+- ✅ 100% database parity between sandbox output and relational structure
+- ✅ Store in PostgreSQL/SQLite for downstream analysis
 
 **Definition of Done:**
-- API client function returns clean DataFrame
-- No failed API calls for >100 test customers
-- Unit tests pass
+- Sandbox client function successfully returns a clean pandas DataFrame
+- Tested against 100 generated synthetic customer profiles without failure
+- Unit tests pass with >80% coverage
+
 
 ---
 
@@ -233,7 +234,7 @@
 
 | Story | Must-Have | Definition of Done | Estimated Effort |
 |-------|-----------|------------------|------------------|
-| 1. Ingest History | API client working | 100 customers, 95% completeness | 2 days |
+| 1. Ingest History | Sandbox client working | 100 profiles, 100% completeness | 2 days |
 | 2. Detect Patterns | Pattern detection logic | 90%+ accuracy on 10 samples | 3 days |
 | 3. Calculate Cost | Cost calculation | ±5% accuracy on 10 customers | 2 days |
 | 4. Forecast Demand | Demand model | ±20% accuracy on holdout test | 3 days |
@@ -255,8 +256,8 @@ These are NOT in MVP; keep for future phases:
 - ❌ CO₂ footprint (Story 6 only calculates; no full analysis)
 - ❌ Calendar integration (Story 4 uses history only; no calendar)
 - ❌ Life event detection (Story 4 uses history only; no email signals)
-- ❌ Partner API integration (Miles, Lime, Stadtrad)
-- ❌ Contract execution (no actual DB/partner API changes)
+- ❌ Production Partner API integration (Miles, Lime, Stadtrad)
+- ❌ Live contract execution (no actual DB/partner API changes)
 - ❌ "DB Wrapped" annual review dashboard
 - ❌ Autonomous decisions (all changes require user approval)
 - ❌ Multi-scenario approval (only top 1-2 scenarios)
@@ -271,7 +272,7 @@ These are NOT in MVP; keep for future phases:
 
 ### Integration Tests
 - Test end-to-end flow on 10 synthetic customers
-- Test API error handling (mock failures)
+- Test Sandbox API error handling (simulated failures)
 
 ### Validation Tests
 - Manual review: 10 customers
@@ -300,4 +301,4 @@ This is your working backlog. As you build:
 - Move stories from "MVP" → "In Progress" → "Done"
 - Refine acceptance criteria as you learn (no big surprises expected)
 - Adjust effort estimates after Sprint 1
-- Surface blocking issues early (API problems, data quality)
+- Surface blocking issues early (sandbox schema mismatches, data quality)
