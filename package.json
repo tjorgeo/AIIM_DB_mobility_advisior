@@ -1,0 +1,10 @@
+{
+  "name": "db-mobility-advisor-root",
+  "version": "1.0.0",
+  "description": "Root package runner for DB MoveOptimizer Mobility Advisor E2E Pilot Sandbox.",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python3 main.py",
+    "install:all": "npm install --prefix frontend && pip3 install -r backend/requirements.txt"
+  }
+}
