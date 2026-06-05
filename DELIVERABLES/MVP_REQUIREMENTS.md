@@ -1,7 +1,7 @@
 # MVP Requirements & Backlog
 ## DB MoveOptimizer - Prototype Phase (Weeks 1-16)
 
-**Focus:** 12 core user stories + acceptance criteria for data scientists to build and test.  
+**Focus:** 14 core user stories + acceptance criteria for data scientists to build and test.  
 **Approach:** Backlog-first; refine acceptance criteria during sprint planning.
 
 ---
@@ -9,224 +9,287 @@
 ## CORE USER STORIES
 
 ### Story 1: Ingest Travel History (Analyst Agent)
-**As a** data scientist building the Analyst agent  
-**I need** to load 12 months of synthetic travel history from the simulated API sandbox gateway  
-**So that** I can analyze patterns and identify inefficiencies
 
-**Acceptance Criteria:**
-- ✅ Can query simulated sandbox API endpoints representing the DB Navigator JSON schema
-- ✅ Load 12-month synthetic travel logs for 5 core traveler personas (<1 second)
-- ✅ Parse JSON response: date, origin, destination, cost, mode, duration
-- ✅ Handle malformed or missing synthetic data fields gracefully (fill with zeros, log errors)
-- ✅ 100% database parity between sandbox output and relational structure
-- ✅ Store in PostgreSQL/SQLite for downstream analysis
+As a data scientist building the Analyst agent I need to **load 12 months of synthetic travel history from the simulated API sandbox gateway**, so that I can analyze patterns and identify inefficiencies
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Can query simulated sandbox API endpoints representing the DB Navigator and external partner JSON schema
+- [ ] Load 12-month synthetic travel logs for 5 core traveler personas (<1 second)
+- [ ] Parse JSON response: date, origin, destination, cost, mode, duration
+- [ ] Handle malformed or missing synthetic data fields gracefully (fill with zeros, log errors)
+- [ ] 100% database parity between sandbox output and relational structure
+- [ ] Store in PostgreSQL/SQLite for downstream analysis
+
+**Definition of Done**
+
 - Sandbox client function successfully returns a clean pandas DataFrame
 - Tested against 100 generated synthetic customer profiles without failure
 - Unit tests pass with >80% coverage
 
+**Estimated Effort**
+
+- Estimated Days: 2 days
 
 ---
 
 ### Story 2: Detect Travel Patterns & Inefficiencies (Analyst Agent)
-**As a** data scientist  
-**I need** to analyze travel history and flag inefficiencies (wasted subscriptions, wrong Bahncard tier)  
-**So that** the system can recommend better portfolios
 
-**Acceptance Criteria:**
-- ✅ Calculate: trip frequency by mode (train, scooter, etc.)
-- ✅ Identify: unused subscriptions (<5% usage vs. cost)
-- ✅ Identify: Bahncard tier mismatch (overpaying or underpaying)
-- ✅ Flag patterns: >20% efficiency gain possible
-- ✅ Output: Structured list of inefficiencies + savings potential
+As a data scientist I need to **analyze travel history and flag inefficiencies** (wasted subscriptions, wrong Bahncard tier), so that the system can recommend better portfolios
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Calculate trip frequency by mode (train, scooter, etc.)
+- [ ] Identify unused subscriptions (<5% usage vs. cost)
+- [ ] Identify Bahncard tier mismatch (overpaying or underpaying)
+- [ ] Flag patterns: >20% efficiency gain possible
+- [ ] Output: Structured list of inefficiencies + savings potential
+**Definition of Done**
+
 - Manual validation on 10 customers: 90%+ pattern detection accuracy
 - Code tested; 80%+ coverage
+**Estimated Effort**
+
+- Estimated Days: 3 days
 
 ---
 
 ### Story 3: Calculate Cost for Current Portfolio (Analyst Agent)
-**As a** data scientist  
-**I need** to accurately calculate customer's annual mobility cost  
-**So that** I can compare scenarios against baseline
 
-**Acceptance Criteria:**
-- ✅ Ingest: current subscriptions (Bahncard tier, memberships, pay-as-you-go)
-- ✅ Calculate: annual cost from 12-month history
-- ✅ Account for: subscription fees, per-trip charges, bundling
-- ✅ Accuracy: ±5% vs. customer's actual spend (validated on sample)
-- ✅ Output: Cost breakdown by service + total
+As a data scientist I need to **accurately calculate customer's annual mobility cost**, so that I can compare scenarios against baseline
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Ingest current subscriptions (Bahncard tier, memberships, pay-as-you-go)
+- [ ] Calculate annual cost from 12-month history
+- [ ] Account for subscription fees, per-trip charges, bundling
+- [ ] Accuracy: ±5% vs. customer's actual spend (validated on sample)
+- [ ] Output Cost breakdown by service + total
+**Definition of Done**
+
 - Validated against 10 real customers' billing statements
 - Unit tests pass
+**Estimated Effort**
+
+- Estimated Days: 2 days
 
 ---
 
 ### Story 4: Forecast Demand (Forecaster Agent)
-**As a** data scientist  
-**I need** to predict customer's trip count for the next 6 months  
-**So that** I can generate appropriate portfolio scenarios
 
-**Acceptance Criteria:**
-- ✅ Use 12-month history to detect seasonal patterns
-- ✅ Forecast trip count by mode/month for +6 months ahead
-- ✅ Incorporate confidence intervals (70-90% typical)
-- ✅ Accuracy: ±20% on holdout 3-month test set
-- ✅ Output: JSON with forecast + confidence
+As a data scientist I need to **predict customer's trip count for the next 6 months**, so that I can generate appropriate portfolio scenarios
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Use 12-month history to detect (seasonal) patterns
+- [ ] Forecast trip count by mode/distance for +6 months ahead
+- [ ] Incorporate confidence intervals (70-90% typical)
+- [ ] Accuracy: ±20% on holdout 3-month test set
+- [ ] Output: JSON with forecast + confidence
+**Definition of Done**
+
 - Backtested on 20 historical customers (holdout validation)
 - Forecast reasonably aligns with seasonal patterns
 - Code tested
+**Estimated Effort**
+
+- Estimated Days: 3 days
 
 ---
 
 ### Story 5: Generate Portfolio Scenarios (Optimizer Agent)
-**As a** data scientist  
-**I need** to generate 1-2 optimized portfolio scenarios based on forecasted demand  
-**So that** I can show customers better options
 
-**Acceptance Criteria:**
-- ✅ Generate "Cost-Optimized" scenario (minimize annual spend)
-- ✅ Optional "Balanced" scenario (weighted cost + coverage)
-- ✅ Each scenario covers 95%+ predicted demand
-- ✅ Use pricing catalog: Bahncard tiers, Deutschlandticket, pay-as-you-go
-- ✅ Generation time: <30 seconds per customer
-- ✅ Output: JSON with contract mix + annual cost
+As a data scientist, I need to generate 1-2 optimized portfolio scenarios based on forecasted demand, so that I can show customers better options
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Generate "Cost-Optimized" scenario (minimize annual spend)
+- [ ] Optional "Balanced" scenario (weighted cost, coverage, CO2)
+- [ ] Generate “Green” scenario (Minimize CO2)
+- [ ] Each scenario covers 95%+ predicted demand
+- [ ] Use pricing catalog: Bahncard tiers, Deutschlandticket, pay-as-you-go
+- [ ] Generation time: <30 seconds per customer
+- [ ] Output: JSON with contract mix + annual cost
+**Definition of Done**
+
 - Manual review: recommended contracts are sensible
 - Tested on 20 customers; no errors
 - Code tested
+**Estimated Effort**
+
+- Estimated Days: 3 day
 
 ---
 
 ### Story 6: Calculate Cost/CO₂ for Scenarios (Optimizer Agent)
-**As a** data scientist  
-**I need** to calculate estimated cost and CO₂ for each scenario  
-**So that** I can rank them by user priorities
 
-**Acceptance Criteria:**
-- ✅ Cost: Subscription + per-trip charges (accuracy ±5%)
-- ✅ CO₂: Use emission factors (train 8g/km, car 250g/km, e-scooter 5g/km)
-- ✅ Output: Annual cost, annual CO₂ (tons), % savings vs. current
-- ✅ Include confidence/assumptions
+As a data scientist I need to **calculate estimated cost and CO₂ for each scenario**, so that I can rank them by user priorities
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Cost: Subscription + per-trip charges (accuracy ±5%)
+- [ ] CO₂: Use emission factors (train 8g/km, car 250g/km, e-scooter 5g/km)
+- [ ] Output: Annual cost, annual CO₂ (tons), % savings vs. current
+- [ ] Include confidence/assumptions
+**Definition of Done**
+
 - CO₂ calculations match reference data
 - Manual review: costs are reasonable
 - Unit tests pass
+**Estimated Effort**
+
+- Estimated Days: 1 day
 
 ---
 
 ### Story 7: Rank Scenarios (Communicator Agent)
-**As a** data scientist  
-**I need** to rank scenarios based on user preferences  
-**So that** I can highlight the best recommendation
 
-**Acceptance Criteria:**
-- ✅ Ingest: user priorities (cost weight, CO₂ weight)
-- ✅ Calculate: weighted score for each scenario
-- ✅ Rank: top scenario marked "Recommended"
-- ✅ Output: Ranked list with scores
+As a data scientist I need to **rank scenarios based on user preferences**, so that I can highlight the best recommendation
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Ingest user priorities (cost weight, CO₂ weight)
+- [ ] Calculate weighted score for each scenario
+- [ ] Rank top scenario marked "Recommended"
+- [ ] Output: Ranked list with scores
+**Definition of Done**
+
 - Ranking logic is simple & explainable
 - Manual tests pass (reasonable rankings)
+**Estimated Effort**
+
+- Estimated Days: 1 day
 
 ---
 
 ### Story 8: Generate Recommendation Text (Communicator Agent)
-**As a** data scientist  
-**I need** to generate conversational recommendation text using an LLM  
-**So that** customers understand why we recommend a specific portfolio
 
-**Acceptance Criteria:**
-- ✅ Input: Customer profile, recommended scenario, trade-offs
-- ✅ Output: Natural language explanation (2-3 sentences)
-- ✅ Tone: Helpful, non-technical, transparent
-- ✅ Include: Savings potential, key changes
+As a data scientist I need to **generate conversational recommendation text using an LLM**, so that customers understand why we recommend a specific portfolio
+**Acceptance Criteria**
 
-**Definition of Done:**
-- LLM integration working (Claude API callable)
+- [ ] Input Customer profile, recommended scenario, trade-offs, user query
+- [ ] Output: Natural language explanation (2-3 sentences) + Portfolio Savings Visualization
+- [ ] Tone: Helpful, non-technical, transparent
+- [ ] Include: Savings potential, key changes
+**Definition of Done**
+
+- LLM integration working (OpenSource API callable)
 - Manual QA: 5 sample recommendations sound good
+- Fallback if LLM not available
 - Response time: <5 seconds per customer
+**Estimated Effort**
+
+- Estimated Days: 2 days
 
 ---
 
 ### Story 9: Capture User Approval (Communicator Agent)
-**As a** data scientist  
-**I need** to implement a state machine for user approvals  
-**So that** I can track whether users accept or reject recommendations
 
-**Acceptance Criteria:**
-- ✅ States: pending → approved / rejected
-- ✅ Store: user decision, timestamp, recommendation ID
-- ✅ Optional: allow user to provide feedback ("Why did you reject?")
-- ✅ Persist: in PostgreSQL for audit trail
+As a data scientist I need to **implement a state machine for user approvals**, so that I can track whether users accept or reject recommendations
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] States: pending → approved / rejected
+- [ ] Store: user decision, timestamp, recommendation ID
+- [ ] Optional: allow user to provide feedback ("Why did you reject?")
+- [ ] Persist: in PostgreSQL for audit trail
+**Definition of Done**
+
 - State machine logic is correct (no invalid transitions)
 - Database schema designed & tested
 - Unit tests pass
+**Estimated Effort**
+
+- Estimated Days: 1 day
 
 ---
 
 ### Story 10: Orchestrate All Agents (Core System)
-**As a** data scientist  
-**I need** to wire all 4 agents together in a coordinated flow  
-**So that** the system works end-to-end: data → analysis → recommendation
 
-**Acceptance Criteria:**
-- ✅ Flow: Customer ID → fetch history → analyze → forecast → optimize → rank → present
-- ✅ Handle errors: API failures, timeouts, edge cases (graceful degradation)
-- ✅ Logging: full audit trail (what was analyzed, what was recommended)
-- ✅ End-to-end latency: <60 seconds for all agents
+As a data scientist I need to wire all 4 agents together in a coordinated flow, so that the system works end-to-end: data → analysis → recommendation
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Registration Flow: Customer ID → fetch history and partner data → analyze → forecast → optimize → rank → store
+- [ ] Interaction Flow: User Query → Data Retrieval → Answer Generation
+- [ ] Update Flow (every 3 months): Customer ID → new History and partner fetch → update analysis → forecast → optimize → rank → store
+- [ ] Handle errors: API failures, timeouts, edge cases (graceful degradation)
+- [ ] Logging: full audit trail (what was analyzed, what was recommended)
+- [ ] Interaction Tracing, Agentic Workflow
+- [ ] End-to-end latency: <60 seconds for all agents
+**Definition of Done**
+
 - E2E flow tested on 10 customers
 - Can handle API failures (fallback to cached data)
 - Logging captures all major steps
 - No crashes on edge cases
+**Estimated Effort**
+
+- Estimated Days: 5 days
 
 ---
 
 ### Story 11: Build Monitoring Dashboard (Validation)
-**As a** data scientist  
-**I need** to track system performance (latency, accuracy, API success rates)  
-**So that** I can identify issues during the pilot
 
-**Acceptance Criteria:**
-- ✅ Dashboard shows: Response time, recommendation accuracy, API errors
-- ✅ Alerts: If latency >40s or API success <99%
-- ✅ Logs: All recommendations + user decisions for analysis
-- ✅ Accessible: Simple web dashboard or logs you can query
+As a data scientist I need to **track system performance (latency, accuracy, API success rates),** so that I can identify issues during the pilot
+**Acceptance Criteria**
 
-**Definition of Done:**
-- Dashboard working & queryable
+- [ ] Dashboard shows: Response time, recommendation accuracy, API errors, Agentic Workflow errors
+- [ ] Alerts: If latency >40s or API success <99%
+- [ ] Logs: All recommendations + user decisions for analysis
+- [ ] Accessible: Simple web dashboard or logs you can query
+**Definition of Done**
+
+- Dashboard working & Filterable
 - Can see recommendation accuracy metrics
 - Alerts firing correctly
+**Estimated Effort**
+
+- Estimated Days: 2 days
 
 ---
 
 ### Story 12: Document System (Knowledge Transfer)
-**As a** data scientist  
-**I need** to document the architecture, API contracts, and troubleshooting  
-**So that** the team can maintain and extend the system
 
-**Acceptance Criteria:**
-- ✅ Architecture overview (4-page doc with diagrams)
-- ✅ API contracts (each agent's input/output spec)
-- ✅ Troubleshooting guide (common errors + fixes)
-- ✅ Code comments (all major functions documented)
+As a data scientist, I need to **document the architecture, API contracts, and troubleshooting, **so that the team can maintain and extend the system
+**Acceptance Criteria**
 
-**Definition of Done:**
+- [ ] Architecture overview (4-page doc with diagrams)
+- [ ] API contracts (each agent's input/output spec)
+- [ ] Troubleshooting guide (common errors + fixes)
+- [ ] Code comments (all major functions documented)
+**Definition of Done**
+
 - All docs written & reviewed
 - Team can understand system from docs
 - New team member could onboard using these docs
+**Estimated Effort**
+
+- Estimated Days: 2 days
+
+---
+
+### Story 13: Frontend User Interface
+
+As a data scientist, I need to **present the findings to the user through a chatbot and optional dashboard, **so that the user can query for questions and look at their usage data 
+**Acceptance Criteria**
+
+- [ ] Chatbot interface in DB branding for simple Agent interaction
+- [ ] Dashboard to have a visual overview on analyzed personal travel data
+**Definition of Done**
+
+- Chatbot reacts to user query, with very narrow guidelines on what to answer
+- RealTime Dashboard showing travel history
+**Estimated Effort**
+
+- Estimated Days: 2 days
+
+---
+
+### Story 14: Create Traveller Personas
+
+As a data scientist, I need to **design 5 travel personas that represent common travel patterns and have different needs regarding the agent system, **so that we can synthesize realistic travel history data and can emulate real usage
+**Acceptance Criteria**
+
+- [ ] Five personas created using the persona canvas and derived DB usage behavior
+**Definition of Done**
+
+- personas can be used to create 100 user profiles
+**Estimated Effort**
+
+- Estimated Days: 1 days
+
 
 ---
 
@@ -243,9 +306,12 @@
 | 7. Rank Scenarios | Ranking logic | Correct ordering | 1 day |
 | 8. Generate Text | LLM integration | Natural language output | 2 days |
 | 9. Capture Approvals | State machine | Correct state transitions | 1 day |
-| 10. Orchestrate Flow | End-to-end system | <60s latency, error handling | 4 days |
+| 10. Orchestrate Flow | End-to-end system | <60s latency, error handling | 5 days |
 | 11. Monitoring | Dashboard | Performance metrics visible | 2 days |
 | 12. Documentation | Docs complete | Team can understand system | 2 days |
+| 13. Frontend UI | Streamlit chatbot working | Conversational UX validated | 2 days |
+| 14. Traveller Personas | 5 traveler personas designed | Realistic synthetic data generated | 1 day |
+
 
 ---
 
@@ -287,11 +353,11 @@ These are NOT in MVP; keep for future phases:
 
 | Criterion | Target | Validation |
 |-----------|--------|-----------|
-| **All stories complete** | 12/12 | Code passing acceptance criteria |
+| **All stories complete** | 14/14 | Code passing acceptance criteria |
 | **Accuracy** | Pattern 90%, Cost ±5%, Forecast ±20% | Manual validation on 10 customers |
 | **Performance** | <60s E2E, <30s per scenario | Latency monitoring |
 | **Stability** | No crashes on 100 customers | Error logs clean |
-| **Documentation** | All 12 stories documented | Team can understand |
+| **Documentation** | All 14 stories documented | Team can understand |
 
 ---
 
