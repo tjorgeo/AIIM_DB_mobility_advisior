@@ -4,3 +4,8 @@
 
 # LangGraph
 .langgraph_api/
+.gemini/
+.env
+
+/node_modules/
+/venv/
