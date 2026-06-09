@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres_sandbox:
+    image: postgres:15-alpine
+    container_name: mobility_postgres_sandbox
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: your_secure_password
+      POSTGRES_DB: mobility_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./output/seed_maja_persona.sql:/docker-entrypoint-initdb.d/seed_maja_persona.sql
+      - postgres_sandbox_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_sandbox_data:
