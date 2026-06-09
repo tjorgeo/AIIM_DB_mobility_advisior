@@ -1,0 +1,8 @@
+product_id,product_name,type,monthly_cost_eur,annual_cost_eur,discount_pct,travel_class,coverage_scope,min_commitment_months,notes
+DT-49,Deutschlandticket,subscription,49.00,588.00,0,2,regional_only,1,Unlimited regional/local transport nationwide; no IC/ICE/long-distance
+BC25-2,BahnCard 25 (2nd class),card,4.83,57.90,25,2,IC_ICE_RE_national,12,25% discount on all DB long-distance and regional tickets; 2nd class
+BC25-1,BahnCard 25 (1st class),card,9.66,115.90,25,1,IC_ICE_RE_national,12,25% discount on all DB long-distance and regional tickets; 1st class
+BC50-2,BahnCard 50 (2nd class),card,19.50,234.00,50,2,IC_ICE_RE_national,12,50% discount on all DB long-distance and regional tickets; 2nd class
+BC50-1,BahnCard 50 (1st class),card,39.08,469.00,50,1,IC_ICE_RE_national,12,50% discount on all DB long-distance and regional tickets; 1st class
+BC100-2,BahnCard 100 (2nd class),card,366.25,4395.00,100,2,IC_ICE_RE_SBahn_national,12,Unlimited travel on entire DB network; 2nd class
+BC100-1,BahnCard 100 (1st class),card,618.83,7426.00,100,1,IC_ICE_RE_SBahn_national,12,Unlimited travel on entire DB network; 1st class
