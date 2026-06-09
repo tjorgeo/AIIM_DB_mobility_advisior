@@ -1,0 +1,20 @@
+# gitignore template for LangChain products, e.g., LangGraph, LangSmith
+# website: https://www.langchain.com/
+# website: https://www.langchain.com/langgraph
+
+# LangGraph
+.langgraph_api/
+.gemini/
+.env
+
+/node_modules/
+/venv/
+
+
+# macOS Systemdateien
+.DS_Store
+
+# Python Cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
