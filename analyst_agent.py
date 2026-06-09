@@ -4,14 +4,14 @@ from sqlalchemy import create_engine
 
 class AnalystAgent:
     def __init__(self, database_url: str):
-        # Verbindung zur PostgreSQL-Datenbank im Docker-Container herstellen
+        # Establish connection to the PostgreSQL database running inside the Docker container
         self.engine = create_engine(database_url)
 
     def analyze_user_mobility(self, user_id: str) -> str:
         """
-        Zieht Live-Daten aus der PostgreSQL Docker-Sandbox und berechnet Ineffizienzen.
+        Fetches live data from the PostgreSQL Docker sandbox and evaluates inefficiencies.
         """
-        # Daten über SQL-Queries aus dem laufenden Container abfragen
+        # Query data using SQL statements from the active container
         query_trips = f"SELECT * FROM travel_history WHERE user_id = '{user_id}';"
         query_subs = f"SELECT * FROM subscriptions WHERE user_id = '{user_id}';"
         
@@ -19,35 +19,35 @@ class AnalystAgent:
         df_user_subs = pd.read_sql_query(query_subs, con=self.engine)
 
         if df_user_trips.empty:
-            return json.dumps({"error": "Keine Daten für diese User-ID in der SQL-Sandbox gefunden."})
+            return json.dumps({"error": "No data found for this user_id in the SQL sandbox."})
 
-        # Metriken aggregieren
+        # Aggregate core metrics
         total_trips = len(df_user_trips)
         total_subscription_fixed_costs = float((df_user_subs['monthly_cost_eur'] * 12).sum())
         mode_counts = df_user_trips['mode'].value_counts().to_dict()
 
-        # Ineffizienz-Auditing (Der eigentliche Consulting-Value für den BCG-Case)
+        # Inefficiency auditing (The core consulting value for the BCG case)
         car_sharing_trips = mode_counts.get('car_sharing', 0)
         miles_fixed_cost_annual = float(df_user_subs[df_user_subs['service'] == 'miles_carsharing']['monthly_cost_eur'].sum() * 12)
         
         efficiency_scores = {}
         savings_potential = 0.0
 
-        # Heuristik: Wann lohnt sich die Miles-Grundgebühr für Maja?
+        # Heuristic: Evaluating the business case for Maja's Miles base fee
         if car_sharing_trips < 12:
-            efficiency_scores["miles_carsharing"] = f"Ineffizient (Nur {car_sharing_trips}x genutzt. Jährliche Fixkosten von €{miles_fixed_cost_annual:.2f} sind ungenutzter 'Wasted Spend')."
+            efficiency_scores["miles_carsharing"] = f"Inefficient (Used only {car_sharing_trips}x. Annual fixed costs of €{miles_fixed_cost_annual:.2f} represent unutilized 'Wasted Spend')."
             savings_potential += miles_fixed_cost_annual
         else:
-            efficiency_scores["miles_carsharing"] = "Gute Auslastung"
+            efficiency_scores["miles_carsharing"] = "Optimal utilization"
 
-        # Auslastung Deutschlandticket validieren
+        # Validating Deutschlandticket subscription value
         regional_train_trips = mode_counts.get('train_regional', 0)
         if regional_train_trips > 24:
-            efficiency_scores["deutschlandticket"] = f"Hervorragende Auslastung ({regional_train_trips} Regionalfahrten über das Abo hochgradig amortisiert)."
+            efficiency_scores["deutschlandticket"] = f"Excellent utilization ({regional_train_trips} regional trips highly amortized by the subscription)."
         else:
-            efficiency_scores["deutschlandticket"] = "Unterdurchschnittliche Nutzung"
+            efficiency_scores["deutschlandticket"] = "Underutilized subscription"
 
-        # Strukturiertes JSON-Output für das Multi-Agenten-System bauen
+        # Build structured JSON payload for the multi-agent system
         output_payload = {
             "user_id": user_id,
             "data_source": "PostgreSQL_Docker_Sandbox",
@@ -63,13 +63,13 @@ class AnalystAgent:
         return json.dumps(output_payload, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
-    # Verbindungsdaten zu deinem Docker-Container
+    # Connection credentials for your Docker container
     DATABASE_URL = "postgresql://postgres:your_secure_password@localhost:5432/mobility_db"
     
     analyst = AnalystAgent(database_url=DATABASE_URL)
     
-    # Majas feste UUID aus dem SQL-Skript
+    # Maja's fixed UUID from the SQL seed script
     maja_uuid = "4ae3d0db-1a6f-42b7-bd20-0fc61266b095"
     
-    print("🚀 Starte Analyst Agent Query gegen Docker-PostgreSQL...\n")
+    print("🚀 Querying Analyst Agent against Docker PostgreSQL...\n")
     print(analyst.analyze_user_mobility(user_id=maja_uuid))
