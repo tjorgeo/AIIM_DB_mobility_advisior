@@ -1,77 +1,152 @@
-# DB MoveOptimizer - Consulting & Delivery Guide
-## BCG Platinion Strategy IT Consulting Pilot (AIIM University)
+# Docker Python + Postgres Setup
 
-**Project:** Deutsche Bahn Mobility Portfolio Management Agent (Pilot)  
-**Partnership:** University AIIM & **BCG Platinion** (Strategy IT Data Consulting Review)  
-**Timeline:** 15 Weeks Remaining (out of 16)  
-**Team:** 5 Consultant Data Scientists  
-**Status:** ✅ Strategic Blueprint Locked — Ready for Technical Execution
+This project runs a Python app and a Postgres database using Docker.
 
----
+## Project Structure
 
-## 📌 PROJECT MISSION
-Establish a cutting-edge **Multi-Agent System** that acts as an intelligent mobility advisor for German transit customers. The prototype reviews historical user travel behavior, predicts 6-month demand, runs multi-scenario cost optimizations against current German transit catalogs (Bahncard, Deutschlandticket, regional fares), and presents conversational, personalized subscription cancellation/addition recommendations.
+```text
+your-project/
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── src/
+    └── main.py
+```
 
-This prototype (Phase 1) is designed as a high-fidelity de-risking sandbox to validate the core architecture and business case prior to a proposed €1.1M enterprise-scale rollout (Phase 2).
+## Requirements
 
----
+To run this project, docker must be installed.
 
-## 🏗️ THE 4-AGENT SANDBOX ARCHITECTURE
-The system operates as a robust, non-negotiable multi-agent architecture coordinated by a FastAPI state machine:
+## Start the Environment
 
-| Agent | Responsibility | Core Methodologies |
-| :--- | :--- | :--- |
-| **1. Analyst** | Pattern detection & inefficiency auditing | Ingests 12-month travel logs; clusters behavior and identifies over/under-provisioning. |
-| **2. Forecaster** | 6-month demand prediction | Models seasonal moving averages and historical patterns to forecast trip demand. |
-| **3. Optimizer** | Scenario formulation & solving | Compares travel demand against current pricing catalogs to output 2 cost-optimized portfolios. |
-| **4. Communicator** | Conversational UI & approval management | Deploys Claude 3.5 Sonnet to draft personalized, context-aware suggestions in a chat widget. |
+```bash
+docker compose up --build
+```
 
----
+This will:
 
-## 📚 STRATEGIC DELIVERABLES CHECKLIST
-The repository is structured to mirror the high-impact output of a professional BCG Platinion IT Strategy engagement:
+1. build the Python Docker image
+2. start the Postgres container
+3. start the Python app container
+4. run `src/main.py`
 
-1.  **[Context Lock Blueprint](DELIVERABLES/CONTEXT_LOCK.md)** — Outlines the "Pilot vs. Scale" roadmap, de-risking strategies, simulated API JSON schemas, and GDPR boundaries.
-2.  **[Architecture Blueprint](DELIVERABLES/ARCHITECTURE.md)** — Features deep technical blueprints of the 4-agent coordination flow, state schema schemas, and 5 detailed ADRs (Architecture Decision Records).
-3.  **[Requirements Spec](DELIVERABLES/MVP_REQUIREMENTS.md)** — Houses 12 user stories, acceptance criteria, and a concrete Definition of Done (DoD) for data scientists.
-4.  **[Project Plan & Roadmap](DELIVERABLES/PROJECT_PLAN.md)** — Schedules the 16-week delivery roadmap, resource ownership, risk registers, and academic deliverables (10-Page Report, Video, Pitch).
-5.  **[Deliverables Index](DELIVERABLES/DELIVERABLES-INDEX.md)** — Central index of consulting methodologies, engagement closeout metrics, and statistics.
+The app container stops automatically when `main.py` finishes.
 
----
+## Run the Python App Again
 
-## 📅 TIMELINE AT A GLANCE (15 Weeks Remaining)
+Recommended during development:
 
-*   **Phase 1: Foundation & Sandbox (Weeks 1-4):** Lock architecture, define simulated API schemas, and compile pricing catalogs.
-*   **Phase 2: Agent Development (Weeks 5-8):** Build and unit-test the 4-agent systems and orchestrator state machine.
-*   **Phase 3: Pilot & Frontend (Weeks 9-12):** Run 100-profile synthetic simulation, deploy Redis caching, and launch the Streamlit chat UI.
-*   **Phase 4: Consulting Delivery (Weeks 13-16):** Perform final hardening, compile the **10-Page Management Report**, record the **Demo Video**, and prepare the **BCG Platinion Final Pitch Presentation**.
+```bash
+docker compose up -d db
+docker compose run --rm app python src/main.py
+```
 
----
+This keeps Postgres running in the background and runs `main.py` whenever needed.
 
-## 🎯 PILOT RUN SUCCESS KPIS
+## Postgres Data
 
-1.  **Full Orchestration:** Complete E2E modular communication (Analyst $\rightarrow$ Forecaster $\rightarrow$ Optimizer $\rightarrow$ Communicator).
-2.  **Mathematical Accuracy:** Solver recommendation costs accurate to within ±5% of real-world optimal values.
-3.  **Latency SLA:** End-to-end user recommendation response time under <30 seconds (P95).
-4.  **Integration Feasibility:** Flawless verification against mock JSON API schemas (simulating DB Navigator exports).
-5.  **Academic Excellence:** Timely handoff of the 10-page report, demo video, and final slide deck.
+Postgres data is stored in a Docker volume:
 
----
+```yaml
+volumes:
+  - postgres_data:/var/lib/postgresql/data
+```
 
-## 📖 DOCUMENT READING PATHWAYS
+This means the database data survives when containers are stopped or deleted.
 
-### For BCG Platinion Partners & Graders (Quick Review - 30 mins)
-1.  **This README** (5 mins) — Core orientation.
-2.  **[Context Lock](DELIVERABLES/CONTEXT_LOCK.md)** (10 mins) — Understand the "Pilot vs. Scale" framework and integration strategy.
-3.  **[Project Plan](DELIVERABLES/PROJECT_PLAN.md)** (15 mins) — Review risk mitigation, WBS, and milestones.
+```bash
+docker compose down
+```
 
-### For Technical Leads & Developers (Deep Dive - 2 hours)
-1.  **[Architecture Blueprint](DELIVERABLES/ARCHITECTURE.md)** (60 mins) — Technical architecture, state machine, and the 5 ADRs.
-2.  **[Requirements Spec](DELIVERABLES/MVP_REQUIREMENTS.md)** (60 mins) — 12 User Stories, acceptance criteria, and testing boundaries.
+Stops and removes containers, but keeps the database data.
 
----
+```bash
+docker compose down -v
+```
 
-**Consulting Team:** AIIM-BCG Strategy IT Data Consulting Team  
-**Last Updated:** May 28, 2026  
-**Classification:** Confidential — For Academic & BCG Platinion Review Only  
+Stops containers and deletes the database volume. This removes all database data.
 
+Summary:
+
+```text
+Container stopped      → data stays
+Container deleted      → data stays
+Volume deleted         → data is gone
+```
+
+## Adding Python Packages
+
+Add new packages to `requirements.txt`:
+
+```txt
+psycopg2-binary
+pandas
+sqlalchemy
+```
+
+Then rebuild the app image:
+
+```bash
+docker compose up --build
+```
+
+Changing Python files in `src/` does not require rebuilding, because the folder is mounted into the container.
+
+Changing `requirements.txt` does require rebuilding.
+
+## Useful Commands
+
+Start everything:
+
+```bash
+docker compose up --build
+```
+
+Start only Postgres in the background:
+
+```bash
+docker compose up -d db
+```
+
+Run the Python script:
+
+```bash
+docker compose run --rm app python src/main.py
+```
+
+Stop containers:
+
+```bash
+docker compose down
+```
+
+Stop containers and delete database data:
+
+```bash
+docker compose down -v
+```
+
+## Connect with DBeaver
+
+Make sure the Postgres container is running:
+
+```bash
+docker compose ps
+```
+
+if you do not see something like: "db postgres:16 ... 0.0.0.0:5432->5432/tcp", run:
+
+```bash
+docker compose up -d db
+```
+
+In DBeaver, create a new PostgreSQL connection with:
+Host: localhost
+Port: 5432
+Database: app_db
+Username: postgres
+Password: postgres
+
+Important distinction:
+From another Docker container: host = db
+From your Mac / DBeaver: host = localhost
