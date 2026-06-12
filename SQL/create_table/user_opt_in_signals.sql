@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS user_opt_in_signals (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
