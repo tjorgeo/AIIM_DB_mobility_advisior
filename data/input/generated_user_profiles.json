@@ -1,0 +1,331 @@
+{
+  "user_profiles": [
+    {
+      "source_persona_id": "urban_hybrid_commuter",
+      "profile_variant": "Berlin_34_female_hybrid",
+      "account": {
+        "email": "lea.schneider@example.com",
+        "username": "lea.schneider34",
+        "external_auth_id": "auth_9f3b7c2d1e"
+      },
+      "person_information": {
+        "first_name": "Lea",
+        "last_name": "Schneider",
+        "display_name": "Lea S.",
+        "date_of_birth": "1992-04-22",
+        "age": 34,
+        "gender": "female",
+        "life_stage": "single_or_couple_without_children",
+        "home_city": "Berlin",
+        "home_postal_code": "10115",
+        "home_country_code": "DE",
+        "city_type": "big_city"
+      },
+      "job_related": {
+        "job_industry": "software_development",
+        "employment_status": "employed_full_time",
+        "income_range": "medium_high",
+        "working_pattern": "hybrid",
+        "commute_frequency": "4_days_per_week"
+      },
+      "mobility_profile": {
+        "has_car": false,
+        "has_bike": true,
+        "has_driving_license": true,
+        "public_transport_affinity": "high",
+        "preferred_modes": [
+          "walking",
+          "bike",
+          "public_transport",
+          "subway",
+          "tram",
+          "bus",
+          "regional_train",
+          "shared_bike"
+        ],
+        "avoided_modes": [
+          "car"
+        ],
+        "typical_weekday_trip_level": "high",
+        "typical_weekend_trip_level": "medium"
+      },
+      "activity_profile": {
+        "leisure_intensity": "high",
+        "preferred_activity_types": [
+          "restaurants",
+          "cafes",
+          "fitness",
+          "cinema",
+          "culture",
+          "nightlife",
+          "friends_visits",
+          "weekend_trips"
+        ],
+        "evening_activity_frequency": "often",
+        "weekend_activity_frequency": "often"
+      },
+      "ticketing_profile": {
+        "subscription_likelihood": "high",
+        "current_ticket_product": "monthly_pass",
+        "likely_ticket_products": [
+          "monthly_pass",
+          "subscription",
+          "job_ticket"
+        ],
+        "price_sensitivity": "medium",
+        "purchase_channel_preference": "mobile_app",
+        "employer_reimbursement_available": true
+      },
+      "user_statements": {
+        "travel_and_priorities": "I usually take the S‑Bahn or U‑Bahn to the office in central Berlin, and I often add a short bike ride to the station when it’s convenient. Public transport is my go‑to because it’s fast, reliable and covered by my employer’s job ticket, so I rarely think about using a car. After work I like to walk to a nearby café or hit the gym, and on evenings I meet friends for dinner or a movie. On weekends I sometimes hop on a regional train to visit friends in nearby cities, preferring the comfort of train travel over driving."
+      },
+      "generation_rationale": "Created a 34‑year‑old female tech professional living in central Berlin who works hybrid, commutes 4 days a week by public transport combined with biking, owns a bike but no car, holds a high public‑transport affinity and a monthly job‑ticket. Her leisure pattern includes frequent after‑work activities and weekend trips by regional train, leading to high weekday trip volume and medium weekend trips. Ticketing choices reflect a subscription mindset with mobile‑app purchases and employer reimbursement.",
+      "user_id": "0f586418-2985-4d24-88a5-3fff5e4c74f9"
+    },
+    {
+      "source_persona_id": "urban_hybrid_commuter",
+      "profile_variant": "Munich_31_male_hybrid",
+      "account": {
+        "email": "max.mueller@example.com",
+        "username": "maxmueller31",
+        "external_auth_id": "auth_a1b2c3d4e5"
+      },
+      "person_information": {
+        "first_name": "Max",
+        "last_name": "Müller",
+        "display_name": "Max M.",
+        "date_of_birth": "1995-02-10",
+        "age": 31,
+        "gender": "male",
+        "life_stage": "single_or_couple_without_children",
+        "home_city": "Munich",
+        "home_postal_code": "80331",
+        "home_country_code": "DE",
+        "city_type": "big_city"
+      },
+      "job_related": {
+        "job_industry": "IT_consulting",
+        "employment_status": "employed_full_time",
+        "income_range": "medium_high",
+        "working_pattern": "hybrid",
+        "commute_frequency": "3_days_per_week"
+      },
+      "mobility_profile": {
+        "has_car": false,
+        "has_bike": true,
+        "has_driving_license": true,
+        "public_transport_affinity": "high",
+        "preferred_modes": [
+          "walking",
+          "bike",
+          "public_transport",
+          "subway",
+          "tram",
+          "bus",
+          "regional_train",
+          "shared_bike"
+        ],
+        "avoided_modes": [
+          "car",
+          "car_sharing",
+          "ride_hailing"
+        ],
+        "typical_weekday_trip_level": "high",
+        "typical_weekend_trip_level": "medium"
+      },
+      "activity_profile": {
+        "leisure_intensity": "high",
+        "preferred_activity_types": [
+          "restaurants",
+          "cafes",
+          "fitness",
+          "cinema",
+          "culture",
+          "nightlife",
+          "friends_visits",
+          "weekend_trips"
+        ],
+        "evening_activity_frequency": "often",
+        "weekend_activity_frequency": "often"
+      },
+      "ticketing_profile": {
+        "subscription_likelihood": "high",
+        "current_ticket_product": "job_ticket",
+        "likely_ticket_products": [
+          "monthly_pass",
+          "subscription",
+          "job_ticket"
+        ],
+        "price_sensitivity": "medium",
+        "purchase_channel_preference": "mobile_app",
+        "employer_reimbursement_available": true
+      },
+      "user_statements": {
+        "travel_and_priorities": "I usually take the U‑Bahn to my office in the Schwabing district, often adding a short bike ride from the station to my building. Public transport is my main choice because it's fast, reliable and covered by my employer’s job ticket, so I rarely consider a car. After work I like to walk to a nearby gym or meet friends at a café, and on evenings I often catch a movie or enjoy a dinner in the city centre. On weekends I sometimes hop on a regional train to visit my sister in Augsburg, preferring the comfort of the train over driving. I value sustainable, multimodal trips and try to combine walking or cycling with public transport whenever possible."
+      },
+      "generation_rationale": "Created a 31‑year‑old male IT consultant living in central Munich who works hybrid (3 days on‑site). He commutes by U‑Bahn combined with a short bike ride, owns a bike but no car, holds a driving licence, and has a high affinity for public transport with a job ticket reimbursed by his employer. He is very active socially, frequently visits gyms, cafés, cinemas and nightlife, and takes regional train trips on weekends to see family. This results in a high weekday trip volume, medium weekend trips, and a strong preference for sustainable multimodal travel.",
+      "user_id": "9851114c-8ec8-4b0c-8cf3-1d2d3a1f43c6"
+    },
+    {
+      "source_persona_id": "suburban_family_commuter",
+      "profile_variant": "Eisenach_42_female_family",
+      "account": {
+        "email": "anna.becker@example.com",
+        "username": "anna.becker42",
+        "external_auth_id": "auth_f3d9a7c2b1"
+      },
+      "person_information": {
+        "first_name": "Anna",
+        "last_name": "Becker",
+        "display_name": "Anna B.",
+        "date_of_birth": "1984-03-20",
+        "age": 42,
+        "gender": "female",
+        "life_stage": "family_with_children",
+        "home_city": "Eisenach",
+        "home_postal_code": "99817",
+        "home_country_code": "DE",
+        "city_type": "small_city"
+      },
+      "job_related": {
+        "job_industry": "education",
+        "employment_status": "employed_full_time",
+        "income_range": "medium",
+        "working_pattern": "on_site",
+        "commute_frequency": "5_days_per_week"
+      },
+      "mobility_profile": {
+        "has_car": true,
+        "has_bike": true,
+        "has_driving_license": true,
+        "public_transport_affinity": "medium",
+        "preferred_modes": [
+          "car",
+          "bike",
+          "public_transport",
+          "bus",
+          "regional_train",
+          "walking"
+        ],
+        "avoided_modes": [
+          "ride_hailing",
+          "car_sharing"
+        ],
+        "typical_weekday_trip_level": "high",
+        "typical_weekend_trip_level": "medium"
+      },
+      "activity_profile": {
+        "leisure_intensity": "medium",
+        "preferred_activity_types": [
+          "parks",
+          "sports",
+          "shopping",
+          "family_visits",
+          "weekend_trips",
+          "friends_visits"
+        ],
+        "evening_activity_frequency": "sometimes",
+        "weekend_activity_frequency": "often"
+      },
+      "ticketing_profile": {
+        "subscription_likelihood": "medium",
+        "current_ticket_product": "monthly_pass",
+        "likely_ticket_products": [
+          "monthly_pass",
+          "subscription",
+          "short_trip_ticket"
+        ],
+        "price_sensitivity": "medium",
+        "purchase_channel_preference": "mobile_app",
+        "employer_reimbursement_available": false
+      },
+      "user_statements": {
+        "travel_and_priorities": "I drive my car to drop my two kids off at the primary school and then continue to my office in the town centre, because it’s the most convenient way to combine school runs and the commute. When the train schedule lines up, I take the regional train to the nearby city of Erfurt for meetings or to visit relatives, and I also use the bus for quick errands like grocery shopping. I try to walk or ride my bike for short trips around the neighbourhood, especially when the weather is nice, but I usually avoid ride‑hailing services. On weekends I often take the train with the family to a nearby lake or visit grandparents, preferring the comfort of public transport for longer trips. My main priority is keeping the family’s schedule running smoothly while staying flexible and not spending too much on tickets."
+      },
+      "generation_rationale": "Created a 42‑year‑old female primary‑school teacher living in the small city of Eisenach with a family and two children. She works on‑site, drives a car for school runs and daily commute, but also uses regional train, bus and bike when convenient. Mobility profile reflects mixed car and public‑transport use with medium affinity for PT. Leisure is family‑oriented with regular weekend trips by train. Ticketing choice is a monthly pass, moderate price sensitivity, and purchases via mobile app.",
+      "user_id": "527c423b-d17c-472c-a6b2-91dba2f76650"
+    },
+    {
+      "source_persona_id": "suburban_family_commuter",
+      "profile_variant": "Luneburg_38_male_family",
+      "account": {
+        "email": "lukas.fischer@example.com",
+        "username": "lukas.fischer38",
+        "external_auth_id": "auth_7a9c3e4f2b"
+      },
+      "person_information": {
+        "first_name": "Lukas",
+        "last_name": "Fischer",
+        "display_name": "Lukas F.",
+        "date_of_birth": "1988-02-05",
+        "age": 38,
+        "gender": "male",
+        "life_stage": "family_with_children",
+        "home_city": "Lüneburg",
+        "home_postal_code": "21335",
+        "home_country_code": "DE",
+        "city_type": "small_city"
+      },
+      "job_related": {
+        "job_industry": "education",
+        "employment_status": "employed_full_time",
+        "income_range": "medium",
+        "working_pattern": "on_site",
+        "commute_frequency": "5_days_per_week"
+      },
+      "mobility_profile": {
+        "has_car": true,
+        "has_bike": true,
+        "has_driving_license": true,
+        "public_transport_affinity": "medium",
+        "preferred_modes": [
+          "car",
+          "bike",
+          "public_transport",
+          "bus",
+          "regional_train",
+          "walking",
+          "shared_bike"
+        ],
+        "avoided_modes": [
+          "ride_hailing",
+          "car_sharing"
+        ],
+        "typical_weekday_trip_level": "high",
+        "typical_weekend_trip_level": "medium"
+      },
+      "activity_profile": {
+        "leisure_intensity": "medium",
+        "preferred_activity_types": [
+          "parks",
+          "sports",
+          "shopping",
+          "family_visits",
+          "weekend_trips",
+          "friends_visits",
+          "culture"
+        ],
+        "evening_activity_frequency": "sometimes",
+        "weekend_activity_frequency": "often"
+      },
+      "ticketing_profile": {
+        "subscription_likelihood": "medium",
+        "current_ticket_product": "monthly_pass",
+        "likely_ticket_products": [
+          "monthly_pass",
+          "short_trip_ticket",
+          "subscription",
+          "day_ticket"
+        ],
+        "price_sensitivity": "medium",
+        "purchase_channel_preference": "mobile_app",
+        "employer_reimbursement_available": false
+      },
+      "user_statements": {
+        "travel_and_priorities": "I drive my family car every morning to drop my two kids at the primary school and then continue to my job at the local health office, because it’s the most reliable way to keep our schedule on track. When the regional train fits my meeting times, I park at the station and take the train to nearby towns, which saves me parking fees and reduces traffic stress. For quick errands like grocery shopping I often hop on the bus or use my bike, especially when the weather is nice. In the evenings, after the kids are in bed, I prefer a short walk or a bike ride to the nearby park to unwind, and on weekends we usually take the train for a day trip to the coast or visit relatives."
+      },
+      "generation_rationale": "Created a 38‑year‑old male public‑sector employee living in the small city of Lüneburg. He works on‑site full‑time, drives his car for the daily school run and commute, but also uses regional train and bus when convenient. He owns a bike, has a medium affinity for public transport, and avoids ride‑hailing. Leisure is family‑focused with medium intensity, favoring parks, sports, shopping and weekend trips. He holds a monthly public‑transport pass, shows medium price sensitivity, purchases tickets via mobile app, and has no employer reimbursement.",
+      "user_id": "4fed9a5a-7b87-4bb6-90a4-6fcc292230ba"
+    }
+  ]
+}

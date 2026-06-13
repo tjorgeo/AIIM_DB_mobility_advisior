@@ -1,0 +1,369 @@
+leg_id,trip_id,sequence_no,start_ts,end_ts,mode,origin_label,destination_label,distance_km,duration_min,ticket_required,ticket_product_used,leg_note
+leg_001_1,trip_001,1,2026-01-04T08:00:00,2026-01-04T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to nearest S‑Bahn station.
+leg_001_2,trip_001,2,2026-01-04T08:05:00,2026-01-04T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride to city centre.
+leg_001_3,trip_001,3,2026-01-04T08:35:00,2026-01-04T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter for last‑mile to office.
+leg_002_1,trip_002,1,2026-01-04T17:30:00,2026-01-04T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to the S‑Bahn platform.
+leg_002_2,trip_002,2,2026-01-04T17:35:00,2026-01-04T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride back to the neighbourhood.
+leg_002_3,trip_002,3,2026-01-04T18:05:00,2026-01-04T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_003_1,trip_003,1,2026-01-05T08:00:00,2026-01-05T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to S‑Bahn.
+leg_003_2,trip_003,2,2026-01-05T08:05:00,2026-01-05T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_003_3,trip_003,3,2026-01-05T08:35:00,2026-01-05T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter for last‑mile.
+leg_004_1,trip_004,1,2026-01-05T17:30:00,2026-01-05T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_004_2,trip_004,2,2026-01-05T17:35:00,2026-01-05T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_004_3,trip_004,3,2026-01-05T18:05:00,2026-01-05T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_005_1,trip_005,1,2026-01-06T08:00:00,2026-01-06T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_005_2,trip_005,2,2026-01-06T08:05:00,2026-01-06T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_005_3,trip_005,3,2026-01-06T08:35:00,2026-01-06T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_006_1,trip_006,1,2026-01-06T17:30:00,2026-01-06T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_006_2,trip_006,2,2026-01-06T17:35:00,2026-01-06T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_006_3,trip_006,3,2026-01-06T18:05:00,2026-01-06T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_007_1,trip_007,1,2026-01-06T19:00:00,2026-01-06T19:10:00,bike,Home,Bistro Bike Dock,3.0,10,False,none,Bike ride to restaurant area.
+leg_007_2,trip_007,2,2026-01-06T19:10:00,2026-01-06T19:15:00,walking,Bistro Bike Dock,Kreuzberg Bistro,0.4,5,False,none,Short walk to table.
+leg_008_1,trip_008,1,2026-01-06T21:30:00,2026-01-06T21:35:00,walking,Kreuzberg Bistro,Bistro Bike Dock,0.4,5,False,none,Walk to bike dock.
+leg_008_2,trip_008,2,2026-01-06T21:35:00,2026-01-06T21:45:00,bike,Bistro Bike Dock,Home,3.0,10,False,none,Bike ride home.
+leg_009_1,trip_009,1,2026-01-08T11:00:00,2026-01-08T11:04:00,walking,Home,Tram Stop Kreuzberg,0.3,4,False,none,Walk to tram stop.
+leg_009_2,trip_009,2,2026-01-08T11:04:00,2026-01-08T11:24:00,public_transport,Tram Stop Kreuzberg,Tram Stop Museum Island,6.0,20,True,monthly_pass,Tram ride to museum area.
+leg_009_3,trip_009,3,2026-01-08T11:24:00,2026-01-08T11:28:00,walking,Tram Stop Museum Island,Museum Island,0.3,4,False,none,Short walk to museum entrance.
+leg_010_1,trip_010,1,2026-01-08T15:00:00,2026-01-08T15:04:00,walking,Museum Island,Tram Stop Museum Island,0.3,4,False,none,Walk to tram stop.
+leg_010_2,trip_010,2,2026-01-08T15:04:00,2026-01-08T15:24:00,public_transport,Tram Stop Museum Island,Tram Stop Kreuzberg,6.0,20,True,monthly_pass,Tram back towards home.
+leg_010_3,trip_010,3,2026-01-08T15:24:00,2026-01-08T15:28:00,walking,Tram Stop Kreuzberg,Home,0.3,4,False,none,Final walk home.
+leg_011_1,trip_011,1,2026-01-09T10:00:00,2026-01-09T10:15:00,bike,Home,Tempelhofer Feld Bike Dock,5.0,15,False,none,Bike ride to park.
+leg_011_2,trip_011,2,2026-01-09T10:15:00,2026-01-09T10:20:00,walking,Tempelhofer Feld Bike Dock,Tempelhofer Feld,0.4,5,False,none,Short walk to park entrance.
+leg_012_1,trip_012,1,2026-01-09T18:00:00,2026-01-09T18:05:00,walking,Tempelhofer Feld,Tempelhofer Feld Bike Dock,0.4,5,False,none,Walk to bike dock.
+leg_012_2,trip_012,2,2026-01-09T18:05:00,2026-01-09T18:20:00,bike,Tempelhofer Feld Bike Dock,Home,5.0,15,False,none,Bike ride home.
+leg_013_1,trip_013,1,2026-01-11T08:00:00,2026-01-11T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_013_2,trip_013,2,2026-01-11T08:05:00,2026-01-11T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_013_3,trip_013,3,2026-01-11T08:35:00,2026-01-11T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_014_1,trip_014,1,2026-01-11T17:30:00,2026-01-11T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_014_2,trip_014,2,2026-01-11T17:35:00,2026-01-11T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_014_3,trip_014,3,2026-01-11T18:05:00,2026-01-11T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_015_1,trip_015,1,2026-01-12T08:00:00,2026-01-12T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_015_2,trip_015,2,2026-01-12T08:05:00,2026-01-12T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_015_3,trip_015,3,2026-01-12T08:35:00,2026-01-12T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_016_1,trip_016,1,2026-01-12T17:30:00,2026-01-12T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_016_2,trip_016,2,2026-01-12T17:35:00,2026-01-12T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_016_3,trip_016,3,2026-01-12T18:05:00,2026-01-12T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_017_1,trip_017,1,2026-01-13T08:00:00,2026-01-13T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_017_2,trip_017,2,2026-01-13T08:05:00,2026-01-13T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_017_3,trip_017,3,2026-01-13T08:35:00,2026-01-13T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_018_1,trip_018,1,2026-01-13T17:30:00,2026-01-13T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_018_2,trip_018,2,2026-01-13T17:35:00,2026-01-13T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_018_3,trip_018,3,2026-01-13T18:05:00,2026-01-13T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_019_1,trip_019,1,2026-01-13T19:00:00,2026-01-13T19:08:00,shared_bike,Home,CineStar Bike Dock,2.5,8,False,none,Shared bike to cinema area.
+leg_019_2,trip_019,2,2026-01-13T19:08:00,2026-01-13T19:12:00,walking,CineStar Bike Dock,CineStar Berlin,0.3,4,False,none,Short walk to cinema entrance.
+leg_020_1,trip_020,1,2026-01-13T22:00:00,2026-01-13T22:04:00,walking,CineStar Berlin,CineStar Bike Dock,0.3,4,False,none,Walk to bike dock.
+leg_020_2,trip_020,2,2026-01-13T22:04:00,2026-01-13T22:12:00,shared_bike,CineStar Bike Dock,Home,2.5,8,False,none,Bike ride home.
+leg_021_1,trip_021,1,2026-01-15T08:00:00,2026-01-15T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_021_2,trip_021,2,2026-01-15T08:05:00,2026-01-15T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_021_3,trip_021,3,2026-01-15T08:35:00,2026-01-15T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_022_1,trip_022,1,2026-01-15T17:30:00,2026-01-15T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_022_2,trip_022,2,2026-01-15T17:35:00,2026-01-15T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_022_3,trip_022,3,2026-01-15T18:05:00,2026-01-15T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_023_1,trip_023,1,2026-01-15T19:30:00,2026-01-15T19:40:00,bike,Home,Grill Bike Dock,3.0,10,False,none,Bike ride to restaurant area.
+leg_023_2,trip_023,2,2026-01-15T19:40:00,2026-01-15T19:45:00,walking,Grill Bike Dock,Kreuzberg Grill,0.4,5,False,none,Short walk to table.
+leg_024_1,trip_024,1,2026-01-15T22:30:00,2026-01-15T22:35:00,walking,Kreuzberg Grill,Grill Bike Dock,0.4,5,False,none,Walk to bike dock.
+leg_024_2,trip_024,2,2026-01-15T22:35:00,2026-01-15T22:45:00,bike,Grill Bike Dock,Home,3.0,10,False,none,Bike ride home.
+leg_025_1,trip_025,1,2026-01-18T08:00:00,2026-01-18T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_025_2,trip_025,2,2026-01-18T08:05:00,2026-01-18T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_025_3,trip_025,3,2026-01-18T08:35:00,2026-01-18T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_026_1,trip_026,1,2026-01-18T17:30:00,2026-01-18T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_026_2,trip_026,2,2026-01-18T17:35:00,2026-01-18T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_026_3,trip_026,3,2026-01-18T18:05:00,2026-01-18T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_027_1,trip_027,1,2026-01-19T08:00:00,2026-01-19T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_027_2,trip_027,2,2026-01-19T08:05:00,2026-01-19T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_027_3,trip_027,3,2026-01-19T08:35:00,2026-01-19T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_028_1,trip_028,1,2026-01-19T17:30:00,2026-01-19T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_028_2,trip_028,2,2026-01-19T17:35:00,2026-01-19T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_028_3,trip_028,3,2026-01-19T18:05:00,2026-01-19T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_029_1,trip_029,1,2026-01-20T08:00:00,2026-01-20T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_029_2,trip_029,2,2026-01-20T08:05:00,2026-01-20T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_029_3,trip_029,3,2026-01-20T08:35:00,2026-01-20T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_030_1,trip_030,1,2026-01-20T17:30:00,2026-01-20T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_030_2,trip_030,2,2026-01-20T17:35:00,2026-01-20T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_030_3,trip_030,3,2026-01-20T18:05:00,2026-01-20T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_031_1,trip_031,1,2026-01-20T19:00:00,2026-01-20T19:05:00,shared_scooter,Home,FitX Scooter Dock,1.5,5,False,none,Scooter to gym area.
+leg_031_2,trip_031,2,2026-01-20T19:05:00,2026-01-20T19:10:00,walking,FitX Scooter Dock,FitX Gym,0.5,5,False,none,Short walk into gym.
+leg_032_1,trip_032,1,2026-01-20T21:00:00,2026-01-20T21:05:00,walking,FitX Gym,FitX Scooter Dock,0.5,5,False,none,Walk to scooter.
+leg_032_2,trip_032,2,2026-01-20T21:05:00,2026-01-20T21:10:00,shared_scooter,FitX Scooter Dock,Home,1.5,5,False,none,Scooter ride home.
+leg_033_1,trip_033,1,2026-01-22T08:00:00,2026-01-22T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_033_2,trip_033,2,2026-01-22T08:05:00,2026-01-22T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_033_3,trip_033,3,2026-01-22T08:35:00,2026-01-22T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_034_1,trip_034,1,2026-01-22T17:30:00,2026-01-22T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_034_2,trip_034,2,2026-01-22T17:35:00,2026-01-22T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_034_3,trip_034,3,2026-01-22T18:05:00,2026-01-22T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_035_1,trip_035,1,2026-01-23T11:00:00,2026-01-23T11:04:00,walking,Home,Tram Stop Kreuzberg,0.3,4,False,none,Walk to tram stop.
+leg_035_2,trip_035,2,2026-01-23T11:04:00,2026-01-23T11:24:00,public_transport,Tram Stop Kreuzberg,Tram Stop Museum Island,6.0,20,True,monthly_pass,Tram ride.
+leg_035_3,trip_035,3,2026-01-23T11:24:00,2026-01-23T11:28:00,walking,Tram Stop Museum Island,Museum Island,0.3,4,False,none,Walk to museum.
+leg_036_1,trip_036,1,2026-01-23T15:00:00,2026-01-23T15:04:00,walking,Museum Island,Tram Stop Museum Island,0.3,4,False,none,Walk to tram stop.
+leg_036_2,trip_036,2,2026-01-23T15:04:00,2026-01-23T15:24:00,public_transport,Tram Stop Museum Island,Tram Stop Kreuzberg,6.0,20,True,monthly_pass,Tram back.
+leg_036_3,trip_036,3,2026-01-23T15:24:00,2026-01-23T15:28:00,walking,Tram Stop Kreuzberg,Home,0.3,4,False,none,Final walk home.
+leg_037_1,trip_037,1,2026-01-24T10:00:00,2026-01-24T10:15:00,bike,Home,Tempelhofer Feld Bike Dock,5.0,15,False,none,Bike ride.
+leg_037_2,trip_037,2,2026-01-24T10:15:00,2026-01-24T10:20:00,walking,Tempelhofer Feld Bike Dock,Tempelhofer Feld,0.4,5,False,none,Walk to park entrance.
+leg_038_1,trip_038,1,2026-01-24T18:00:00,2026-01-24T18:05:00,walking,Tempelhofer Feld,Tempelhofer Feld Bike Dock,0.4,5,False,none,Walk to bike dock.
+leg_038_2,trip_038,2,2026-01-24T18:05:00,2026-01-24T18:20:00,bike,Tempelhofer Feld Bike Dock,Home,5.0,15,False,none,Bike ride home.
+leg_039_1,trip_039,1,2026-01-25T08:00:00,2026-01-25T08:05:00,walking,Home,Kreuzberg S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_039_2,trip_039,2,2026-01-25T08:05:00,2026-01-25T08:35:00,public_transport,Kreuzberg S-Bahn Station,Alexanderplatz Station,12.0,30,True,monthly_pass,S‑Bahn ride.
+leg_039_3,trip_039,3,2026-01-25T08:35:00,2026-01-25T08:40:00,shared_scooter,Alexanderplatz Station,Tech Hub Berlin,0.6,5,False,none,E‑scooter last mile.
+leg_040_1,trip_040,1,2026-01-25T17:30:00,2026-01-25T17:35:00,walking,Tech Hub Berlin,Alexanderplatz Station,0.4,5,False,none,Walk to station.
+leg_040_2,trip_040,2,2026-01-25T17:35:00,2026-01-25T18:05:00,public_transport,Alexanderplatz Station,Kreuzberg S-Bahn Station,12.0,30,True,monthly_pass,S‑Bahn ride home.
+leg_040_3,trip_040,3,2026-01-25T18:05:00,2026-01-25T18:10:00,walking,Kreuzberg S-Bahn Station,Home,0.4,5,False,none,Final walk home.
+leg_001_1,trip_001,1,2026-01-02T07:30:00,2026-01-02T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to S-Bahn station.
+leg_001_2,trip_001,2,2026-01-02T07:35:00,2026-01-02T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride to city centre.
+leg_001_3,trip_001,3,2026-01-02T07:50:00,2026-01-02T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,Shared e‑scooter for last‑mile.
+leg_002_1,trip_002,1,2026-01-02T17:30:00,2026-01-02T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to S-Bahn station.
+leg_002_2,trip_002,2,2026-01-02T17:35:00,2026-01-02T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back to Altona.
+leg_002_3,trip_002,3,2026-01-02T17:50:00,2026-01-02T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_003_1,trip_003,1,2026-01-03T07:30:00,2026-01-03T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_003_2,trip_003,2,2026-01-03T07:35:00,2026-01-03T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_003_3,trip_003,3,2026-01-03T07:50:00,2026-01-03T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_004_1,trip_004,1,2026-01-03T17:30:00,2026-01-03T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_004_2,trip_004,2,2026-01-03T17:35:00,2026-01-03T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_004_3,trip_004,3,2026-01-03T17:50:00,2026-01-03T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_005_1,trip_005,1,2026-01-04T07:30:00,2026-01-04T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_005_2,trip_005,2,2026-01-04T07:35:00,2026-01-04T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_005_3,trip_005,3,2026-01-04T07:50:00,2026-01-04T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_006_1,trip_006,1,2026-01-04T17:30:00,2026-01-04T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_006_2,trip_006,2,2026-01-04T17:35:00,2026-01-04T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_006_3,trip_006,3,2026-01-04T17:50:00,2026-01-04T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_007_1,trip_007,1,2026-01-05T07:30:00,2026-01-05T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_007_2,trip_007,2,2026-01-05T07:35:00,2026-01-05T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_007_3,trip_007,3,2026-01-05T07:50:00,2026-01-05T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_008_1,trip_008,1,2026-01-05T17:30:00,2026-01-05T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_008_2,trip_008,2,2026-01-05T17:35:00,2026-01-05T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_008_3,trip_008,3,2026-01-05T17:50:00,2026-01-05T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_009_1,trip_009,1,2026-01-05T18:30:00,2026-01-05T18:35:00,shared_scooter,Office Entrance,FitX Gym Entrance,1.0,5,False,none,E‑scooter to gym.
+leg_009_2,trip_009,2,2026-01-05T18:35:00,2026-01-05T18:40:00,walking,FitX Gym Entrance,Gym Reception,0.5,5,False,none,Walk to reception.
+leg_010_1,trip_010,1,2026-01-09T07:30:00,2026-01-09T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_010_2,trip_010,2,2026-01-09T07:35:00,2026-01-09T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_010_3,trip_010,3,2026-01-09T07:50:00,2026-01-09T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_011_1,trip_011,1,2026-01-09T17:30:00,2026-01-09T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_011_2,trip_011,2,2026-01-09T17:35:00,2026-01-09T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_011_3,trip_011,3,2026-01-09T17:50:00,2026-01-09T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_012_1,trip_012,1,2026-01-10T07:30:00,2026-01-10T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_012_2,trip_012,2,2026-01-10T07:35:00,2026-01-10T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_012_3,trip_012,3,2026-01-10T07:50:00,2026-01-10T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_013_1,trip_013,1,2026-01-10T17:30:00,2026-01-10T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_013_2,trip_013,2,2026-01-10T17:35:00,2026-01-10T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_013_3,trip_013,3,2026-01-10T17:50:00,2026-01-10T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_014_1,trip_014,1,2026-01-11T07:30:00,2026-01-11T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_014_2,trip_014,2,2026-01-11T07:35:00,2026-01-11T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_014_3,trip_014,3,2026-01-11T07:50:00,2026-01-11T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_015_1,trip_015,1,2026-01-11T17:30:00,2026-01-11T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_015_2,trip_015,2,2026-01-11T17:35:00,2026-01-11T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_015_3,trip_015,3,2026-01-11T17:50:00,2026-01-11T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_016_1,trip_016,1,2026-01-12T07:30:00,2026-01-12T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_016_2,trip_016,2,2026-01-12T07:35:00,2026-01-12T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_016_3,trip_016,3,2026-01-12T07:50:00,2026-01-12T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_017_1,trip_017,1,2026-01-12T17:30:00,2026-01-12T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_017_2,trip_017,2,2026-01-12T17:35:00,2026-01-12T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_017_3,trip_017,3,2026-01-12T17:50:00,2026-01-12T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_018_1,trip_018,1,2026-01-12T18:30:00,2026-01-12T18:35:00,shared_scooter,Office Entrance,FitX Gym Entrance,1.0,5,False,none,E‑scooter to gym.
+leg_018_2,trip_018,2,2026-01-12T18:35:00,2026-01-12T18:40:00,walking,FitX Gym Entrance,Gym Reception,0.5,5,False,none,Walk inside gym.
+leg_019_1,trip_019,1,2026-01-06T10:00:00,2026-01-06T10:10:00,walking,Home,Hamburg Hauptbahnhof,0.8,10,False,none,Walk to main station.
+leg_019_2,trip_019,2,2026-01-06T10:10:00,2026-01-06T10:55:00,regional_train,Hamburg Hauptbahnhof,Lüneburg Bahnhof,50.0,45,True,monthly_pass,Regional train to Lüneburg.
+leg_019_3,trip_019,3,2026-01-06T10:55:00,2026-01-06T11:00:00,walking,Lüneburg Bahnhof,Old Town Center,0.5,5,False,none,Walk to town centre.
+leg_020_1,trip_020,1,2026-01-07T15:00:00,2026-01-07T15:05:00,walking,Old Town Center,Lüneburg Bahnhof,0.5,5,False,none,Walk to station.
+leg_020_2,trip_020,2,2026-01-07T15:05:00,2026-01-07T15:50:00,regional_train,Lüneburg Bahnhof,Hamburg Hauptbahnhof,50.0,45,True,monthly_pass,Regional train back to Hamburg.
+leg_020_3,trip_020,3,2026-01-07T15:50:00,2026-01-07T16:00:00,walking,Hamburg Hauptbahnhof,Home,0.8,10,False,none,Walk home.
+leg_021_1,trip_021,1,2026-01-16T07:30:00,2026-01-16T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_021_2,trip_021,2,2026-01-16T07:35:00,2026-01-16T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_021_3,trip_021,3,2026-01-16T07:50:00,2026-01-16T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_022_1,trip_022,1,2026-01-16T17:30:00,2026-01-16T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_022_2,trip_022,2,2026-01-16T17:35:00,2026-01-16T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_022_3,trip_022,3,2026-01-16T17:50:00,2026-01-16T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_023_1,trip_023,1,2026-01-17T07:30:00,2026-01-17T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_023_2,trip_023,2,2026-01-17T07:35:00,2026-01-17T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_023_3,trip_023,3,2026-01-17T07:50:00,2026-01-17T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_024_1,trip_024,1,2026-01-17T17:30:00,2026-01-17T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_024_2,trip_024,2,2026-01-17T17:35:00,2026-01-17T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_024_3,trip_024,3,2026-01-17T17:50:00,2026-01-17T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_025_1,trip_025,1,2026-01-18T07:30:00,2026-01-18T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_025_2,trip_025,2,2026-01-18T07:35:00,2026-01-18T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_025_3,trip_025,3,2026-01-18T07:50:00,2026-01-18T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_026_1,trip_026,1,2026-01-18T17:30:00,2026-01-18T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_026_2,trip_026,2,2026-01-18T17:35:00,2026-01-18T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_026_3,trip_026,3,2026-01-18T17:50:00,2026-01-18T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_027_1,trip_027,1,2026-01-19T07:30:00,2026-01-19T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_027_2,trip_027,2,2026-01-19T07:35:00,2026-01-19T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_027_3,trip_027,3,2026-01-19T07:50:00,2026-01-19T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_028_1,trip_028,1,2026-01-19T17:30:00,2026-01-19T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_028_2,trip_028,2,2026-01-19T17:35:00,2026-01-19T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_028_3,trip_028,3,2026-01-19T17:50:00,2026-01-19T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_029_1,trip_029,1,2026-01-19T18:30:00,2026-01-19T18:35:00,shared_scooter,Office Entrance,FitX Gym Entrance,1.0,5,False,none,E‑scooter to gym.
+leg_029_2,trip_029,2,2026-01-19T18:35:00,2026-01-19T18:40:00,walking,FitX Gym Entrance,Gym Reception,0.5,5,False,none,Walk inside gym.
+leg_030_1,trip_030,1,2026-01-23T07:30:00,2026-01-23T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_030_2,trip_030,2,2026-01-23T07:35:00,2026-01-23T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_030_3,trip_030,3,2026-01-23T07:50:00,2026-01-23T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_031_1,trip_031,1,2026-01-23T17:30:00,2026-01-23T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_031_2,trip_031,2,2026-01-23T17:35:00,2026-01-23T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_031_3,trip_031,3,2026-01-23T17:50:00,2026-01-23T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_032_1,trip_032,1,2026-01-24T07:30:00,2026-01-24T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_032_2,trip_032,2,2026-01-24T07:35:00,2026-01-24T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_032_3,trip_032,3,2026-01-24T07:50:00,2026-01-24T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_033_1,trip_033,1,2026-01-24T17:30:00,2026-01-24T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_033_2,trip_033,2,2026-01-24T17:35:00,2026-01-24T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_033_3,trip_033,3,2026-01-24T17:50:00,2026-01-24T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_034_1,trip_034,1,2026-01-25T07:30:00,2026-01-25T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_034_2,trip_034,2,2026-01-25T07:35:00,2026-01-25T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_034_3,trip_034,3,2026-01-25T07:50:00,2026-01-25T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_035_1,trip_035,1,2026-01-25T17:30:00,2026-01-25T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_035_2,trip_035,2,2026-01-25T17:35:00,2026-01-25T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_035_3,trip_035,3,2026-01-25T17:50:00,2026-01-25T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_036_1,trip_036,1,2026-01-26T07:30:00,2026-01-26T07:35:00,walking,Home,Altona S-Bahn Station,0.4,5,False,none,Walk to station.
+leg_036_2,trip_036,2,2026-01-26T07:35:00,2026-01-26T07:50:00,public_transport,Altona S-Bahn Station,Jungfernstieg Station,6.0,15,True,monthly_pass,S-Bahn ride.
+leg_036_3,trip_036,3,2026-01-26T07:50:00,2026-01-26T07:55:00,shared_scooter,Jungfernstieg Station,Office Entrance,1.0,5,False,none,E‑scooter to office.
+leg_037_1,trip_037,1,2026-01-26T17:30:00,2026-01-26T17:35:00,shared_scooter,Office Entrance,Jungfernstieg Station,1.0,5,False,none,E‑scooter to station.
+leg_037_2,trip_037,2,2026-01-26T17:35:00,2026-01-26T17:50:00,public_transport,Jungfernstieg Station,Altona S-Bahn Station,6.0,15,True,monthly_pass,S-Bahn back.
+leg_037_3,trip_037,3,2026-01-26T17:50:00,2026-01-26T17:55:00,walking,Altona S-Bahn Station,Home,0.4,5,False,none,Walk home.
+leg_038_1,trip_038,1,2026-01-26T18:30:00,2026-01-26T18:35:00,shared_scooter,Office Entrance,FitX Gym Entrance,1.0,5,False,none,E‑scooter to gym.
+leg_038_2,trip_038,2,2026-01-26T18:35:00,2026-01-26T18:40:00,walking,FitX Gym Entrance,Gym Reception,0.5,5,False,none,Walk inside gym.
+leg_039_1,trip_039,1,2026-01-13T10:00:00,2026-01-13T10:10:00,walking,Home,Hamburg Hauptbahnhof,0.8,10,False,none,Walk to main station.
+leg_039_2,trip_039,2,2026-01-13T10:10:00,2026-01-13T10:55:00,regional_train,Hamburg Hauptbahnhof,Lüneburg Bahnhof,50.0,45,True,monthly_pass,Regional train to Lüneburg.
+leg_039_3,trip_039,3,2026-01-13T10:55:00,2026-01-13T11:00:00,walking,Lüneburg Bahnhof,Old Town Center,0.5,5,False,none,Walk to town centre.
+leg_040_1,trip_040,1,2026-01-14T15:00:00,2026-01-14T15:05:00,walking,Old Town Center,Lüneburg Bahnhof,0.5,5,False,none,Walk to station.
+leg_040_2,trip_040,2,2026-01-14T15:05:00,2026-01-14T15:50:00,regional_train,Lüneburg Bahnhof,Hamburg Hauptbahnhof,50.0,45,True,monthly_pass,Regional train back to Hamburg.
+leg_040_3,trip_040,3,2026-01-14T15:50:00,2026-01-14T16:00:00,walking,Hamburg Hauptbahnhof,Home,0.8,10,False,none,Walk home.
+leg_trip_001_1,trip_001,1,2026-01-02T07:15:00,2026-01-02T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_002_1,trip_002,1,2026-01-02T16:15:00,2026-01-02T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_003_1,trip_003,1,2026-01-05T07:00:00,2026-01-05T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_003_2,trip_003,2,2026-01-05T07:10:00,2026-01-05T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_003_3,trip_003,3,2026-01-05T07:22:00,2026-01-05T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_004_1,trip_004,1,2026-01-05T16:00:00,2026-01-05T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_004_2,trip_004,2,2026-01-05T16:10:00,2026-01-05T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_004_3,trip_004,3,2026-01-05T16:22:00,2026-01-05T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_005_1,trip_005,1,2026-01-06T07:15:00,2026-01-06T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_006_1,trip_006,1,2026-01-06T16:15:00,2026-01-06T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_007_1,trip_007,1,2026-01-07T07:00:00,2026-01-07T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_007_2,trip_007,2,2026-01-07T07:10:00,2026-01-07T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_007_3,trip_007,3,2026-01-07T07:22:00,2026-01-07T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_008_1,trip_008,1,2026-01-07T16:00:00,2026-01-07T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_008_2,trip_008,2,2026-01-07T16:10:00,2026-01-07T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_008_3,trip_008,3,2026-01-07T16:22:00,2026-01-07T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_009_1,trip_009,1,2026-01-08T07:15:00,2026-01-08T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_010_1,trip_010,1,2026-01-08T16:15:00,2026-01-08T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_011_1,trip_011,1,2026-01-09T07:00:00,2026-01-09T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_011_2,trip_011,2,2026-01-09T07:10:00,2026-01-09T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_011_3,trip_011,3,2026-01-09T07:22:00,2026-01-09T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_012_1,trip_012,1,2026-01-09T16:00:00,2026-01-09T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_012_2,trip_012,2,2026-01-09T16:10:00,2026-01-09T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_012_3,trip_012,3,2026-01-09T16:22:00,2026-01-09T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_013_1,trip_013,1,2026-01-12T07:15:00,2026-01-12T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_014_1,trip_014,1,2026-01-12T16:15:00,2026-01-12T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_015_1,trip_015,1,2026-01-13T07:00:00,2026-01-13T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_015_2,trip_015,2,2026-01-13T07:10:00,2026-01-13T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_015_3,trip_015,3,2026-01-13T07:22:00,2026-01-13T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_016_1,trip_016,1,2026-01-13T16:00:00,2026-01-13T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_016_2,trip_016,2,2026-01-13T16:10:00,2026-01-13T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_016_3,trip_016,3,2026-01-13T16:22:00,2026-01-13T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_017_1,trip_017,1,2026-01-14T07:15:00,2026-01-14T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_018_1,trip_018,1,2026-01-14T16:15:00,2026-01-14T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_019_1,trip_019,1,2026-01-15T07:00:00,2026-01-15T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_019_2,trip_019,2,2026-01-15T07:10:00,2026-01-15T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_019_3,trip_019,3,2026-01-15T07:22:00,2026-01-15T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_020_1,trip_020,1,2026-01-15T16:00:00,2026-01-15T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_020_2,trip_020,2,2026-01-15T16:10:00,2026-01-15T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_020_3,trip_020,3,2026-01-15T16:22:00,2026-01-15T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_021_1,trip_021,1,2026-01-16T07:15:00,2026-01-16T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_022_1,trip_022,1,2026-01-16T16:15:00,2026-01-16T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_023_1,trip_023,1,2026-01-19T07:00:00,2026-01-19T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_023_2,trip_023,2,2026-01-19T07:10:00,2026-01-19T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_023_3,trip_023,3,2026-01-19T07:22:00,2026-01-19T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_024_1,trip_024,1,2026-01-19T16:00:00,2026-01-19T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_024_2,trip_024,2,2026-01-19T16:10:00,2026-01-19T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_024_3,trip_024,3,2026-01-19T16:22:00,2026-01-19T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_025_1,trip_025,1,2026-01-20T07:15:00,2026-01-20T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_026_1,trip_026,1,2026-01-20T16:15:00,2026-01-20T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_027_1,trip_027,1,2026-01-21T07:00:00,2026-01-21T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_027_2,trip_027,2,2026-01-21T07:10:00,2026-01-21T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_027_3,trip_027,3,2026-01-21T07:22:00,2026-01-21T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_028_1,trip_028,1,2026-01-21T16:00:00,2026-01-21T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_028_2,trip_028,2,2026-01-21T16:10:00,2026-01-21T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_028_3,trip_028,3,2026-01-21T16:22:00,2026-01-21T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_029_1,trip_029,1,2026-01-22T07:15:00,2026-01-22T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_030_1,trip_030,1,2026-01-22T16:15:00,2026-01-22T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_031_1,trip_031,1,2026-01-23T07:00:00,2026-01-23T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_031_2,trip_031,2,2026-01-23T07:10:00,2026-01-23T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_031_3,trip_031,3,2026-01-23T07:22:00,2026-01-23T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_032_1,trip_032,1,2026-01-23T16:00:00,2026-01-23T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_032_2,trip_032,2,2026-01-23T16:10:00,2026-01-23T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_032_3,trip_032,3,2026-01-23T16:22:00,2026-01-23T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_033_1,trip_033,1,2026-01-26T07:15:00,2026-01-26T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_034_1,trip_034,1,2026-01-26T16:15:00,2026-01-26T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_035_1,trip_035,1,2026-01-27T07:00:00,2026-01-27T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_035_2,trip_035,2,2026-01-27T07:10:00,2026-01-27T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_035_3,trip_035,3,2026-01-27T07:22:00,2026-01-27T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_036_1,trip_036,1,2026-01-27T16:00:00,2026-01-27T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_036_2,trip_036,2,2026-01-27T16:10:00,2026-01-27T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_036_3,trip_036,3,2026-01-27T16:22:00,2026-01-27T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_trip_037_1,trip_037,1,2026-01-28T07:15:00,2026-01-28T07:30:00,car,Meier Residence,Lüneburg Primary School,5.0,15,False,none,Drive directly from home to school.
+leg_trip_038_1,trip_038,1,2026-01-28T16:15:00,2026-01-28T16:30:00,car,Lüneburg Primary School,Meier Residence,5.0,15,False,none,Drive directly from school to home.
+leg_trip_039_1,trip_039,1,2026-01-29T07:00:00,2026-01-29T07:07:00,walking,Meier Residence,Lüneburg Station,0.5,7,False,none,Walk to the regional train station.
+leg_trip_039_2,trip_039,2,2026-01-29T07:10:00,2026-01-29T07:22:00,regional_train,Lüneburg Station,School Station,10.0,12,True,monthly_pass,Regional train ride to the school stop.
+leg_trip_039_3,trip_039,3,2026-01-29T07:22:00,2026-01-29T07:28:00,walking,School Station,Lüneburg Primary School,0.5,6,False,none,Walk from station to school.
+leg_trip_040_1,trip_040,1,2026-01-29T16:00:00,2026-01-29T16:07:00,walking,Lüneburg Primary School,School Station,0.5,7,False,none,Walk to the school stop.
+leg_trip_040_2,trip_040,2,2026-01-29T16:10:00,2026-01-29T16:22:00,regional_train,School Station,Lüneburg Station,10.0,12,True,monthly_pass,Regional train back towards home.
+leg_trip_040_3,trip_040,3,2026-01-29T16:22:00,2026-01-29T16:28:00,walking,Lüneburg Station,Meier Residence,0.5,6,False,none,Walk home from the station.
+leg_001_1,trip_001,1,2026-01-02T07:00:00,2026-01-02T07:20:00,car,Müller Residence,St. Marien Kindergarten,8.0,20,False,none,"Drive from home to kindergarten, using family car."
+leg_002_1,trip_002,1,2026-01-02T07:25:00,2026-01-02T07:45:00,car,St. Marien Kindergarten,Gymnasium Bamberg,7.0,20,False,none,Short drive to the school where Jonas works.
+leg_003_1,trip_003,1,2026-01-02T15:30:00,2026-01-02T16:15:00,car,Gymnasium Bamberg,Müller Residence,15.0,45,False,none,Drive home after the school day.
+leg_004_1,trip_004,1,2026-01-02T16:30:00,2026-01-02T16:45:00,bike,Gymnasium Bamberg,Bamberg Sports Club,5.0,15,False,none,Bike from school to sports club.
+leg_005_1,trip_005,1,2026-01-02T18:30:00,2026-01-02T18:45:00,bike,Bamberg Sports Club,Müller Residence,5.0,15,False,none,Bike home after the club.
+leg_006_1,trip_006,1,2026-01-03T07:00:00,2026-01-03T07:20:00,car,Müller Residence,St. Marien Kindergarten,8.0,20,False,none,Drive to kindergarten.
+leg_007_1,trip_007,1,2026-01-03T07:25:00,2026-01-03T07:45:00,car,St. Marien Kindergarten,Gymnasium Bamberg,7.0,20,False,none,Short drive to school.
+leg_008_1,trip_008,1,2026-01-03T15:30:00,2026-01-03T16:15:00,car,Gymnasium Bamberg,Müller Residence,15.0,45,False,none,Drive home after school.
+leg_009_1,trip_009,1,2026-01-03T16:30:00,2026-01-03T16:45:00,bike,Gymnasium Bamberg,Bamberg Sports Club,5.0,15,False,none,Bike to the club.
+leg_010_1,trip_010,1,2026-01-03T18:30:00,2026-01-03T18:45:00,bike,Bamberg Sports Club,Müller Residence,5.0,15,False,none,Bike home.
+leg_011_1,trip_011,1,2026-01-04T07:00:00,2026-01-04T07:20:00,car,Müller Residence,St. Marien Kindergarten,8.0,20,False,none,Drive to kindergarten.
+leg_012_1,trip_012,1,2026-01-04T07:25:00,2026-01-04T07:45:00,car,St. Marien Kindergarten,Gymnasium Bamberg,7.0,20,False,none,Drive to school.
+leg_013_1,trip_013,1,2026-01-04T15:30:00,2026-01-04T16:15:00,car,Gymnasium Bamberg,Müller Residence,15.0,45,False,none,Drive home.
+leg_014_1,trip_014,1,2026-01-04T16:30:00,2026-01-04T16:45:00,bike,Gymnasium Bamberg,Bamberg Sports Club,5.0,15,False,none,Bike ride.
+leg_015_1,trip_015,1,2026-01-04T18:30:00,2026-01-04T18:45:00,bike,Bamberg Sports Club,Müller Residence,5.0,15,False,none,Bike home.
+leg_016_1,trip_016,1,2026-01-05T07:00:00,2026-01-05T07:20:00,car,Müller Residence,St. Marien Kindergarten,8.0,20,False,none,Drive to kindergarten.
+leg_017_1,trip_017,1,2026-01-05T07:25:00,2026-01-05T07:45:00,car,St. Marien Kindergarten,Gymnasium Bamberg,7.0,20,False,none,Drive to school.
+leg_018_1,trip_018,1,2026-01-05T15:30:00,2026-01-05T16:15:00,car,Gymnasium Bamberg,Müller Residence,15.0,45,False,none,Drive home.
+leg_019_1,trip_019,1,2026-01-05T16:30:00,2026-01-05T16:45:00,bike,Gymnasium Bamberg,Bamberg Sports Club,5.0,15,False,none,Bike ride.
+leg_020_1,trip_020,1,2026-01-05T18:30:00,2026-01-05T18:45:00,bike,Bamberg Sports Club,Müller Residence,5.0,15,False,none,Bike home.
+leg_021_1,trip_021,1,2026-01-06T07:00:00,2026-01-06T07:20:00,car,Müller Residence,St. Marien Kindergarten,8.0,20,False,none,Drive to kindergarten.
+leg_022_1,trip_022,1,2026-01-06T07:25:00,2026-01-06T07:45:00,car,St. Marien Kindergarten,Gymnasium Bamberg,7.0,20,False,none,Drive to school.
+leg_023_1,trip_023,1,2026-01-06T15:30:00,2026-01-06T16:15:00,car,Gymnasium Bamberg,Müller Residence,15.0,45,False,none,Drive home.
+leg_024_1,trip_024,1,2026-01-06T16:30:00,2026-01-06T16:45:00,bike,Gymnasium Bamberg,Bamberg Sports Club,5.0,15,False,none,Bike ride.
+leg_025_1,trip_025,1,2026-01-06T18:30:00,2026-01-06T18:45:00,bike,Bamberg Sports Club,Müller Residence,5.0,15,False,none,Bike home.
+leg_026_1,trip_026,1,2026-01-07T09:00:00,2026-01-07T09:30:00,car,Müller Residence,Bamberg Stadtpark,12.0,30,False,none,Drive to the park.
+leg_027_1,trip_027,1,2026-01-07T16:00:00,2026-01-07T16:30:00,car,Bamberg Stadtpark,Müller Residence,12.0,30,False,none,Drive back home.
+leg_028_1,trip_028,1,2026-01-07T11:00:00,2026-01-07T11:35:00,car,Müller Residence,Bamberg Shopping Center,15.0,35,False,none,Drive to shopping center.
+leg_029_1,trip_029,1,2026-01-07T15:30:00,2026-01-07T16:05:00,car,Bamberg Shopping Center,Müller Residence,15.0,35,False,none,Drive back home.
+leg_030_1,trip_030,1,2026-01-08T10:00:00,2026-01-08T10:45:00,car,Müller Residence,Parents' House,20.0,45,False,none,Drive to parents.
+leg_031_1,trip_031,1,2026-01-08T17:00:00,2026-01-08T17:45:00,car,Parents' House,Müller Residence,20.0,45,False,none,Drive back home.
+leg_032_1,trip_032,1,2026-01-08T08:00:00,2026-01-08T08:10:00,car,Müller Residence,Parkhaus am Bahnhof,5.0,10,False,none,Drive to park at the train station.
+leg_032_2,trip_032,2,2026-01-08T08:10:00,2026-01-08T08:15:00,walking,Parkhaus am Bahnhof,Bamberg Hauptbahnhof,0.4,5,False,none,Walk to the platform.
+leg_032_3,trip_032,3,2026-01-08T08:15:00,2026-01-08T08:45:00,regional_train,Bamberg Hauptbahnhof,Bamberg City Centre Station,30.0,30,True,monthly_pass,Regional train ride.
+leg_032_4,trip_032,4,2026-01-08T08:45:00,2026-01-08T08:55:00,walking,Bamberg City Centre Station,Bamberg City Centre,0.6,10,False,none,Walk to final destination.
+leg_033_1,trip_033,1,2026-01-08T17:30:00,2026-01-08T17:40:00,walking,Bamberg City Centre,Bamberg City Centre Station,0.6,10,False,none,Walk to train station.
+leg_033_2,trip_033,2,2026-01-08T17:40:00,2026-01-08T18:10:00,regional_train,Bamberg City Centre Station,Bamberg Hauptbahnhof,30.0,30,True,monthly_pass,Regional train back.
+leg_033_3,trip_033,3,2026-01-08T18:10:00,2026-01-08T18:15:00,walking,Bamberg Hauptbahnhof,Parkhaus am Bahnhof,0.4,5,False,none,Walk to car park.
+leg_033_4,trip_033,4,2026-01-08T18:15:00,2026-01-08T18:25:00,car,Parkhaus am Bahnhof,Müller Residence,5.0,10,False,none,Drive home.
+leg_034_1,trip_034,1,2026-01-09T08:00:00,2026-01-09T08:10:00,car,Müller Residence,Parkhaus am Bahnhof,5.0,10,False,none,Drive to park.
+leg_034_2,trip_034,2,2026-01-09T08:10:00,2026-01-09T08:15:00,walking,Parkhaus am Bahnhof,Bamberg Hauptbahnhof,0.4,5,False,none,Walk to platform.
+leg_034_3,trip_034,3,2026-01-09T08:15:00,2026-01-09T08:45:00,regional_train,Bamberg Hauptbahnhof,Bamberg City Centre Station,30.0,30,True,monthly_pass,Regional train.
+leg_034_4,trip_034,4,2026-01-09T08:45:00,2026-01-09T08:55:00,walking,Bamberg City Centre Station,Bamberg City Centre,0.6,10,False,none,Walk to destination.
+leg_035_1,trip_035,1,2026-01-09T17:30:00,2026-01-09T17:40:00,walking,Bamberg City Centre,Bamberg City Centre Station,0.6,10,False,none,Walk to station.
+leg_035_2,trip_035,2,2026-01-09T17:40:00,2026-01-09T18:10:00,regional_train,Bamberg City Centre Station,Bamberg Hauptbahnhof,30.0,30,True,monthly_pass,Regional train back.
+leg_035_3,trip_035,3,2026-01-09T18:10:00,2026-01-09T18:15:00,walking,Bamberg Hauptbahnhof,Parkhaus am Bahnhof,0.4,5,False,none,Walk to car.
+leg_035_4,trip_035,4,2026-01-09T18:15:00,2026-01-09T18:25:00,car,Parkhaus am Bahnhof,Müller Residence,5.0,10,False,none,Drive home.
+leg_036_1,trip_036,1,2026-01-11T08:00:00,2026-01-11T08:10:00,car,Müller Residence,Parkhaus am Bahnhof,5.0,10,False,none,Drive to park.
+leg_036_2,trip_036,2,2026-01-11T08:10:00,2026-01-11T08:15:00,walking,Parkhaus am Bahnhof,Bamberg Hauptbahnhof,0.4,5,False,none,Walk to platform.
+leg_036_3,trip_036,3,2026-01-11T08:15:00,2026-01-11T08:45:00,regional_train,Bamberg Hauptbahnhof,Bamberg City Centre Station,30.0,30,True,monthly_pass,Regional train.
+leg_036_4,trip_036,4,2026-01-11T08:45:00,2026-01-11T08:55:00,walking,Bamberg City Centre Station,Bamberg City Centre,0.6,10,False,none,Walk to destination.
+leg_037_1,trip_037,1,2026-01-11T17:30:00,2026-01-11T17:40:00,walking,Bamberg City Centre,Bamberg City Centre Station,0.6,10,False,none,Walk to station.
+leg_037_2,trip_037,2,2026-01-11T17:40:00,2026-01-11T18:10:00,regional_train,Bamberg City Centre Station,Bamberg Hauptbahnhof,30.0,30,True,monthly_pass,Regional train back.
+leg_037_3,trip_037,3,2026-01-11T18:10:00,2026-01-11T18:15:00,walking,Bamberg Hauptbahnhof,Parkhaus am Bahnhof,0.4,5,False,none,Walk to car.
+leg_037_4,trip_037,4,2026-01-11T18:15:00,2026-01-11T18:25:00,car,Parkhaus am Bahnhof,Müller Residence,5.0,10,False,none,Drive home.
+leg_038_1,trip_038,1,2026-01-13T08:00:00,2026-01-13T08:10:00,car,Müller Residence,Parkhaus am Bahnhof,5.0,10,False,none,Drive to park.
+leg_038_2,trip_038,2,2026-01-13T08:10:00,2026-01-13T08:15:00,walking,Parkhaus am Bahnhof,Bamberg Hauptbahnhof,0.4,5,False,none,Walk to platform.
+leg_038_3,trip_038,3,2026-01-13T08:15:00,2026-01-13T08:45:00,regional_train,Bamberg Hauptbahnhof,Bamberg City Centre Station,30.0,30,True,monthly_pass,Regional train.
+leg_038_4,trip_038,4,2026-01-13T08:45:00,2026-01-13T08:55:00,walking,Bamberg City Centre Station,Bamberg City Centre,0.6,10,False,none,Walk to destination.
+leg_039_1,trip_039,1,2026-01-13T17:30:00,2026-01-13T17:40:00,walking,Bamberg City Centre,Bamberg City Centre Station,0.6,10,False,none,Walk to station.
+leg_039_2,trip_039,2,2026-01-13T17:40:00,2026-01-13T18:10:00,regional_train,Bamberg City Centre Station,Bamberg Hauptbahnhof,30.0,30,True,monthly_pass,Regional train back.
+leg_039_3,trip_039,3,2026-01-13T18:10:00,2026-01-13T18:15:00,walking,Bamberg Hauptbahnhof,Parkhaus am Bahnhof,0.4,5,False,none,Walk to car.
+leg_039_4,trip_039,4,2026-01-13T18:15:00,2026-01-13T18:25:00,car,Parkhaus am Bahnhof,Müller Residence,5.0,10,False,none,Drive home.
+leg_040_1,trip_040,1,2026-01-12T17:00:00,2026-01-12T17:15:00,bike,Gymnasium Bamberg,Bamberg Stadtpark,6.0,15,False,none,Bike to park.

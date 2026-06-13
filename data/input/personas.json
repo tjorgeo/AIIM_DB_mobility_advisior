@@ -1,0 +1,49 @@
+{
+  "personas": [
+    {
+      "persona_id": "urban_hybrid_commuter",
+      "persona_name": "Urban hybrid commuter",
+      "person_information": {
+        "age_range": "28-42",
+        "gender": "mixed",
+        "city_type": "big_city",
+        "life_stage": "single_or_couple_without_children"
+      },
+      "job_related": {
+        "job_industry": "technology_or_professional_services",
+        "income_range": "medium_to_high",
+        "working_pattern": "hybrid"
+      },
+      "travel_behavior": {
+        "travel_statement": "Uses public transport regularly, especially for commuting into central areas. Sometimes combines public transport with biking or shared mobility. Car usage is uncommon."
+      },
+      "activity_behavior": {
+        "activity_statement": "Often combines workdays with after-work activities such as fitness, restaurants, cafes, cinema or meeting friends. On some weekends, this user visits friends or family in nearby cities and occasionally takes long-distance train trips for leisure or work."
+      },
+      "generation_notes": "Vary age, district, income, commute frequency, ticket ownership, preferred modes and leisure intensity."
+    },
+
+    {
+      "persona_id": "suburban_family_commuter",
+      "persona_name": "Suburban family commuter",
+      "person_information": {
+        "age_range": "35-50",
+        "gender": "mixed",
+        "city_type": "small_city",
+        "life_stage": "family_with_children"
+      },
+      "job_related": {
+        "job_industry": "education_healthcare_public_sector",
+        "income_range": "medium",
+        "working_pattern": "on_site"
+      },
+      "travel_behavior": {
+        "travel_statement": "Travels regularly between home, work, school or childcare and local errands. Public transport is used when convenient, but car usage is more common than for urban personas."
+      },
+      "activity_behavior": {
+        "activity_statement": "Leisure activities are often family-oriented, such as parks, sports clubs, shopping, visiting relatives or weekend outings nearby."
+      },
+      "generation_notes": "Vary car ownership, number of commute days, public transport usage, family-related trip intensity and ticket products."
+    }
+  ]
+}
