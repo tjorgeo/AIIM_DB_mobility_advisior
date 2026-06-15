@@ -1,10 +1,13 @@
 from pathlib import Path
+import pandas as pd
 
 from db_manager import get_db_connection, load_user_profile
 from university_api_connection import call_university_gpt, build_university_gpt_connection
 import json
 from datetime import date
 from typing import Any, Optional
+import uuid
+
 """
 1. use persona to generate user profiles
 2. use user profiles to generate trips
@@ -435,3 +438,251 @@ def save_user_profiles_to_file(
         json.dump(output_data, file, ensure_ascii=False, indent=2)
 
     print(f"Saved {len(user_profiles)} user profiles to: {path}")
+    
+
+USER_PROFILE_DB_COLUMNS = [
+    "user_id",
+
+    # Persona / Generierung
+    "source_persona_id",
+    "profile_variant",
+    "generation_rationale",
+
+    # Account
+    "email",
+    "username",
+    "external_auth_id",
+
+    # Person Information
+    "first_name",
+    "last_name",
+    "display_name",
+    "date_of_birth",
+    "age",
+    "gender",
+    "life_stage",
+    "home_city",
+    "home_postal_code",
+    "home_country_code",
+    "city_type",
+
+    # Job Related
+    "job_industry",
+    "employment_status",
+    "income_range",
+    "working_pattern",
+    "commute_frequency",
+
+    # Mobility Profile
+    "has_car",
+    "has_bike",
+    "has_driving_license",
+    "public_transport_affinity",
+    "preferred_modes",
+    "avoided_modes",
+    "typical_weekday_trip_level",
+    "typical_weekend_trip_level",
+
+    # Activity Profile
+    "leisure_intensity",
+    "preferred_activity_types",
+    "evening_activity_frequency",
+    "weekend_activity_frequency",
+
+    # Ticketing Profile
+    "subscription_likelihood",
+    "current_ticket_product",
+    "likely_ticket_products",
+    "price_sensitivity",
+    "purchase_channel_preference",
+    "employer_reimbursement_available",
+
+    # User Statements
+    "travel_and_priorities",
+]
+
+
+def to_postgres_text_array(value: Any) -> str:
+    """
+    Converts a Python list into a PostgreSQL TEXT[] array literal.
+
+    Example:
+    ["walking", "subway"] -> {"walking","subway"}
+    """
+
+    if value is None:
+        return "{}"
+
+    if not isinstance(value, list):
+        return "{}"
+
+    if not value:
+        return "{}"
+
+    escaped_values = []
+
+    for item in value:
+        item_str = str(item)
+
+        # Escape backslashes and double quotes for PostgreSQL array literal
+        item_str = item_str.replace("\\", "\\\\").replace('"', '\\"')
+
+        escaped_values.append(f'"{item_str}"')
+
+    return "{" + ",".join(escaped_values) + "}"
+
+
+def user_profile_to_db_row(user_profile: dict[str, Any]) -> dict[str, Any]:
+    """
+    Maps one nested generated user_profile JSON object to one flat DB row
+    matching the user_profiles DDL.
+    """
+
+    account = user_profile.get("account", {})
+    person = user_profile.get("person_information", {})
+    job = user_profile.get("job_related", {})
+    mobility = user_profile.get("mobility_profile", {})
+    activity = user_profile.get("activity_profile", {})
+    ticketing = user_profile.get("ticketing_profile", {})
+    statements = user_profile.get("user_statements", {})
+
+    row = {
+        "user_id": user_profile.get("user_id") or str(uuid.uuid4()),
+
+        # Persona / Generierung
+        "source_persona_id": user_profile.get("source_persona_id"),
+        "profile_variant": user_profile.get("profile_variant"),
+        "generation_rationale": user_profile.get("generation_rationale"),
+
+        # Account
+        "email": account.get("email"),
+        "username": account.get("username"),
+        "external_auth_id": account.get("external_auth_id"),
+
+        # Person Information
+        "first_name": person.get("first_name"),
+        "last_name": person.get("last_name"),
+        "display_name": person.get("display_name"),
+        "date_of_birth": person.get("date_of_birth"),
+        "age": person.get("age"),
+        "gender": person.get("gender", "not_specified"),
+        "life_stage": person.get("life_stage"),
+        "home_city": person.get("home_city"),
+        "home_postal_code": person.get("home_postal_code"),
+        "home_country_code": person.get("home_country_code", "DE"),
+        "city_type": person.get("city_type"),
+
+        # Job Related
+        "job_industry": job.get("job_industry"),
+        "employment_status": job.get("employment_status"),
+        "income_range": job.get("income_range"),
+        "working_pattern": job.get("working_pattern"),
+        "commute_frequency": job.get("commute_frequency"),
+
+        # Mobility Profile
+        "has_car": mobility.get("has_car"),
+        "has_bike": mobility.get("has_bike"),
+        "has_driving_license": mobility.get("has_driving_license"),
+        "public_transport_affinity": mobility.get("public_transport_affinity"),
+        "preferred_modes": to_postgres_text_array(
+            mobility.get("preferred_modes")
+        ),
+        "avoided_modes": to_postgres_text_array(
+            mobility.get("avoided_modes")
+        ),
+        "typical_weekday_trip_level": mobility.get("typical_weekday_trip_level"),
+        "typical_weekend_trip_level": mobility.get("typical_weekend_trip_level"),
+
+        # Activity Profile
+        "leisure_intensity": activity.get("leisure_intensity"),
+        "preferred_activity_types": to_postgres_text_array(
+            activity.get("preferred_activity_types")
+        ),
+        "evening_activity_frequency": activity.get("evening_activity_frequency"),
+        "weekend_activity_frequency": activity.get("weekend_activity_frequency"),
+
+        # Ticketing Profile
+        "subscription_likelihood": ticketing.get("subscription_likelihood"),
+        "current_ticket_product": ticketing.get("current_ticket_product"),
+        "likely_ticket_products": to_postgres_text_array(
+            ticketing.get("likely_ticket_products")
+        ),
+        "price_sensitivity": ticketing.get("price_sensitivity"),
+        "purchase_channel_preference": ticketing.get("purchase_channel_preference"),
+        "employer_reimbursement_available": ticketing.get(
+            "employer_reimbursement_available"
+        ),
+
+        # User Statements
+        "travel_and_priorities": statements.get("travel_and_priorities"),
+    }
+
+    return row
+
+
+def load_user_profiles_json(input_path: str | Path) -> list[dict[str, Any]]:
+    """
+    Loads user profiles from JSON.
+
+    Supports both:
+    {
+      "user_profiles": [...]
+    }
+
+    and:
+    [...]
+    """
+
+    input_path = Path(input_path)
+
+    if not input_path.exists():
+        raise FileNotFoundError(f"User profiles JSON file not found: {input_path}")
+
+    with input_path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    if isinstance(data, dict):
+        user_profiles = data.get("user_profiles")
+    elif isinstance(data, list):
+        user_profiles = data
+    else:
+        raise ValueError("Input JSON must be either an object or a list.")
+
+    if not isinstance(user_profiles, list):
+        raise ValueError("Input JSON must contain a 'user_profiles' list.")
+
+    if not user_profiles:
+        raise ValueError("No user profiles found in input JSON.")
+
+    return user_profiles
+
+
+def save_user_profiles_json_as_db_csv(
+    input_path: str | Path,
+    output_path: str | Path,
+) -> pd.DataFrame:
+    """
+    Loads generated user profiles from JSON, maps them to the columns of the
+    user_profiles PostgreSQL DDL, and saves them as CSV.
+    """
+
+    user_profiles = load_user_profiles_json(input_path)
+
+    rows = [
+        user_profile_to_db_row(user_profile)
+        for user_profile in user_profiles
+    ]
+
+    df = pd.DataFrame(rows)
+
+    # Ensure exact column order
+    df = df[USER_PROFILE_DB_COLUMNS]
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df.to_csv(output_path, index=False, encoding="utf-8")
+
+    print(f"Saved {len(df)} user profiles to CSV: {output_path}")
+
+    return df

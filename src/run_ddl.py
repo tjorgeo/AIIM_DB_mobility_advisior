@@ -17,6 +17,7 @@ def execute_sql_file(conn, sql_file: Path):
         return
 
     with conn.cursor() as cur:
+    
         cur.execute(sql)
 
     print(f"Ausgeführt: {sql_file}")
