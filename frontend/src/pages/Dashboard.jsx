@@ -6,9 +6,8 @@ import { euro } from '../lib/format'
 import AppShell from '../components/AppShell.jsx'
 import StatCards from '../components/StatCards.jsx'
 import RecommendationCard from '../components/RecommendationCard.jsx'
-import ForecastChart from '../components/ForecastChart.jsx'
+import TravelModes from '../components/TravelModes.jsx'
 import Insights from '../components/Insights.jsx'
-import AdvisorNote from '../components/AdvisorNote.jsx'
 import SkeletonDashboard from '../components/SkeletonDashboard.jsx'
 import ChatWidget from '../components/chat/ChatWidget.jsx'
 
@@ -84,11 +83,10 @@ export default function Dashboard() {
   actionsRef.current.approve = handleApprove
 
   const analyst = result?.raw_agent_payloads?.analyst?.output
-  const forecaster = result?.raw_agent_payloads?.forecaster?.output
   const rec = result ? recOf(result) : null
   const savings = rec?.annual_savings || 0
   const memo = lang === 'de' ? result?.summary?.memos?.german : result?.summary?.memos?.english
-  const dataReady = status === 'ready' && analyst && forecaster && result?.summary
+  const dataReady = status === 'ready' && analyst && result?.summary
 
   return (
     <>
@@ -167,16 +165,15 @@ export default function Dashboard() {
               </div>
 
               <div className="dash__stack">
-                <ForecastChart forecaster={forecaster} lang={lang} />
+                <TravelModes analyst={analyst} lang={lang} />
                 <Insights inefficiencies={analyst.inefficiencies} lang={lang} />
-                <AdvisorNote memo={memo} lang={lang} />
               </div>
             </div>
           </div>
         )}
       </main>
 
-      <ChatWidget user={currentUser} lang={lang} getContext={getContext} actions={actionsRef.current} />
+      <ChatWidget user={currentUser} lang={lang} getContext={getContext} actions={actionsRef.current} advisorMemo={memo} />
     </>
   )
 }

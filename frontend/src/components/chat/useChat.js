@@ -11,8 +11,8 @@ function pickRec(result) {
 export function greetingText(user, lang) {
   const name = user.firstName
   return lang === 'de'
-    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Soll ich deine Mobilität optimieren und schauen, wo du sparen kannst?`
-    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. Want me to optimize your mobility and find where you can save?`
+    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus — dein persönlicher Plan erscheint gleich hier.`
+    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — your personalized plan will appear here in a moment.`
 }
 
 // Frontend-only scripted assistant — used whenever POST /api/chat is unavailable.
@@ -93,13 +93,23 @@ async function scriptedReply(text, { user, lang, getContext, actions }) {
   )
 }
 
-export function useChat({ user, lang, getContext, actions }) {
+export function useChat({ user, lang, getContext, actions, advisorMemo }) {
   const [messages, setMessages] = useState(() => [{ role: 'assistant', content: greetingText(user, lang) }])
   const [sending, setSending] = useState(false)
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
   const push = (role, content) => setMessages((m) => [...m, { role, content }])
+
+  // When the analysis finishes, the advisor delivers the personalized memo
+  // straight into the chat (once).
+  const advisorPostedRef = useRef(false)
+  useEffect(() => {
+    if (!advisorMemo || advisorPostedRef.current) return
+    advisorPostedRef.current = true
+    const intro = lang === 'de' ? 'Hier ist dein persönlicher Plan 📋\n\n' : 'Here’s your personalized plan 📋\n\n'
+    setMessages((m) => [...m, { role: 'assistant', content: intro + advisorMemo }])
+  }, [advisorMemo, lang])
 
   const send = useCallback(async (raw) => {
     const text = String(raw || '').trim()

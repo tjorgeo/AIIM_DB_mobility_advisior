@@ -1,21 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { MessageCircle, X, Send } from 'lucide-react'
 import { useChat } from './useChat'
 
-export default function ChatWidget({ user, lang, getContext, actions }) {
+export default function ChatWidget({ user, lang, getContext, actions, advisorMemo }) {
   const [open, setOpen] = useState(false)
-  const [teaser, setTeaser] = useState(false)
+  const [unread, setUnread] = useState(0)
+  const [teaserDismissed, setTeaserDismissed] = useState(false)
   const [input, setInput] = useState('')
-  const { messages, sending, send } = useChat({ user, lang, getContext, actions })
+  const { messages, sending, send } = useChat({ user, lang, getContext, actions, advisorMemo })
   const bodyRef = useRef(null)
+  const prevLenRef = useRef(messages.length)
   const t = (en, de) => (lang === 'de' ? de : en)
 
-  // One-time greeting teaser on the launcher.
+  // Count assistant messages that arrive while the panel is closed → unread.
   useEffect(() => {
-    if (open) return undefined
-    const id = setTimeout(() => setTeaser(true), 1400)
-    return () => clearTimeout(id)
-  }, [open])
+    if (messages.length > prevLenRef.current) {
+      const added = messages.slice(prevLenRef.current)
+      const assistantAdded = added.filter((m) => m.role === 'assistant').length
+      if (!open && assistantAdded > 0) {
+        setUnread((u) => u + assistantAdded)
+        setTeaserDismissed(false)
+      }
+    }
+    prevLenRef.current = messages.length
+  }, [messages, open])
+
+  // Opening the chat clears the notification.
+  useEffect(() => { if (open) setUnread(0) }, [open])
 
   // Keep the conversation scrolled to the latest message.
   useEffect(() => {
@@ -33,26 +45,33 @@ export default function ChatWidget({ user, lang, getContext, actions }) {
     send(v)
   }
 
-  if (!open) {
-    return (
-      <>
-        {teaser && (
-          <div className="chat-teaser">
-            <button className="chat-teaser__close" onClick={() => setTeaser(false)} aria-label={t('Dismiss', 'Schließen')}>×</button>
-            <p className="chat-teaser__text">
-              {t(`Hi ${user.firstName} 👋 Want to optimize your mobility?`, `Hi ${user.firstName} 👋 Mobilität optimieren?`)}
-            </p>
-          </div>
-        )}
-        <button className="chat-launcher" onClick={() => { setOpen(true); setTeaser(false) }} aria-label={t('Open assistant', 'Assistent öffnen')}>
-          <MessageCircle size={26} />
-          <span className="chat-launcher__badge" />
-        </button>
-      </>
-    )
-  }
+  const showTeaser = !open && unread > 0 && !teaserDismissed
 
-  return (
+  const content = !open ? (
+    <>
+      {showTeaser && (
+        <div className="chat-teaser" role="button" tabIndex={0} onClick={() => setOpen(true)}>
+          <button
+            className="chat-teaser__close"
+            onClick={(e) => { e.stopPropagation(); setTeaserDismissed(true) }}
+            aria-label={t('Dismiss', 'Schließen')}
+          >×</button>
+          <span className="chat-teaser__title">{t('New message from your advisor', 'Neue Nachricht von deinem Berater')}</span>
+          <span className="chat-teaser__text">{t('Your personalized mobility plan is ready 📋', 'Dein persönlicher Mobilitätsplan ist fertig 📋')}</span>
+        </div>
+      )}
+      <button
+        className={`chat-launcher${unread > 0 ? ' chat-launcher--alert' : ''}`}
+        onClick={() => setOpen(true)}
+        aria-label={unread > 0 ? t('Open assistant — new message', 'Assistent öffnen — neue Nachricht') : t('Open assistant', 'Assistent öffnen')}
+      >
+        <MessageCircle size={26} />
+        {unread > 0
+          ? <span className="chat-launcher__count">{unread}</span>
+          : <span className="chat-launcher__badge" />}
+      </button>
+    </>
+  ) : (
     <div className="chat-panel" role="dialog" aria-label={t('MoveOptimizer assistant', 'MoveOptimizer-Assistent')}>
       <div className="chat__header">
         <span className="chat__avatar">AI<span className="status-dot" /></span>
@@ -92,4 +111,8 @@ export default function ChatWidget({ user, lang, getContext, actions }) {
       </form>
     </div>
   )
+
+  // Portal to <body> so fixed positioning resolves against the viewport
+  // (not the transformed .app-view wrapper) — keeps the bubble pinned.
+  return createPortal(content, document.body)
 }
