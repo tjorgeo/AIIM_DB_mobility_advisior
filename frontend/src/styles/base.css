@@ -64,6 +64,9 @@ a {
 ::-webkit-scrollbar-thumb { background: var(--slate-200); border-radius: var(--radius-pill); }
 ::-webkit-scrollbar-thumb:hover { background: var(--slate-400); }
 
+/* Icons — DB icons use a lighter, even stroke than the lucide default (2px) */
+.lucide { stroke-width: 1.75px; }
+
 /* Utilities */
 .sr-only {
   position: absolute;

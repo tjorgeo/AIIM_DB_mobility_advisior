@@ -1,5 +1,5 @@
 import React from 'react'
-import { Wallet, Train, Route, Leaf } from 'lucide-react'
+import { Wallet, TrainFront, Route, Leaf } from 'lucide-react'
 import { euro, number, co2 } from '../lib/format'
 
 export default function StatCards({ analyst, lang }) {
@@ -13,7 +13,7 @@ export default function StatCards({ analyst, lang }) {
       sub: t('Subscriptions + tickets', 'Abos + Tickets'),
     },
     {
-      icon: Train, tone: 'blue',
+      icon: TrainFront, tone: 'blue',
       label: t('Trips (12 mo)', 'Fahrten (12 Mon.)'),
       value: number(analyst.total_trips, lang),
       sub: t('Journeys logged', 'Erfasste Fahrten'),

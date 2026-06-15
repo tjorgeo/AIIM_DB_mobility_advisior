@@ -1,11 +1,13 @@
 /* ==========================================================================
-   Design tokens — Refined Deutsche Bahn corporate identity
+   Design tokens — aligned to the Deutsche Bahn UX Design System
+   Colors: DB UX neutral + functional ramps (@db-ux/core-foundations v4),
+   brand kept as DB "Verkehrsrot" #EC0016. Type: DB Screen Sans / Open Sans.
    ========================================================================== */
 
 :root {
-  /* Typography */
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-heading: 'Outfit', 'Inter', sans-serif;
+  /* Typography — DB digital typeface, with Open Sans as the open fallback */
+  --font-body: 'DB Screen Sans', 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'DB Screen Head', 'DB Screen Sans', 'Open Sans', sans-serif;
 
   /* Fluid type scale */
   --text-xs: 0.6875rem;   /* 11px */
@@ -16,22 +18,23 @@
   --text-xl: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
   --text-2xl: clamp(2rem, 1.5rem + 2.4vw, 3.25rem);
 
-  /* Brand palette */
+  /* Brand — DB Verkehrsrot (red ramp anchored on #EC0016) */
   --db-red: #EC0016;
-  --db-red-hover: #C30012;
-  --db-red-dark: #9E000F;
-  --db-red-light: #FDE8EA;
+  --db-red-hover: #C00010;
+  --db-red-dark: #9C000B;
+  --db-red-light: #FFE9E9;
   --db-red-tint: #FFF5F6;
 
-  --slate-900: #1B1E26;
-  --slate-800: #2D323D;
-  --slate-600: #4A505E;
-  --slate-500: #6B7280;
-  --slate-400: #9AA1AD;
-  --slate-200: #DCDFE3;
-  --slate-100: #ECEEF1;
-  --slate-50:  #F4F6F8;
-  --canvas:    #F0F3F5;
+  /* Neutral — DB UX neutral ramp (cool grays) */
+  --slate-900: #16181B;   /* neutral-1  — headings / ink */
+  --slate-800: #222428;   /* neutral-2  — body text */
+  --slate-600: #5A5E67;   /* neutral-6  — secondary text */
+  --slate-500: #727782;   /* neutral-7  — muted text */
+  --slate-400: #8B919D;   /* neutral-8  — placeholder / disabled */
+  --slate-200: #E1E2E6;   /* neutral-11 — borders */
+  --slate-100: #EDEEF0;   /* neutral-12 — dividers / skeleton */
+  --slate-50:  #F3F3F5;   /* neutral-13 — subtle fills */
+  --canvas:    #F3F3F5;   /* neutral-13 — page background */
   --white:     #FFFFFF;
 
   /* Aliases kept for continuity */
@@ -41,21 +44,21 @@
   --db-border: var(--slate-200);
   --db-white: var(--white);
 
-  /* Status colors */
-  --green: #00875A;
-  --green-hover: #006B47;
-  --green-light: #E2F0EA;
-  --green-tint: #F1F8F5;
-  --blue: #0066B3;
-  --blue-light: #E5F0FA;
-  --amber: #B26B00;
-  --amber-light: #FBEFDD;
+  /* Functional — DB UX successful / informational / warning */
+  --green: #408335;          /* db-green origin — eco / savings */
+  --green-hover: #316828;    /* db-green pressed */
+  --green-light: #DBFCD8;    /* db-green-13 */
+  --green-tint: #EEFEEC;     /* db-green-14 */
+  --blue: #0463FB;           /* db-blue origin — informational */
+  --blue-light: #EAEDFF;     /* db-blue-12 */
+  --amber: #AD6600;          /* db-warning-7 — legible on light */
+  --amber-light: #FFEADF;    /* db-warning-12 */
 
-  /* Elevation */
-  --shadow-xs: 0 1px 2px rgba(27, 30, 38, 0.05);
-  --shadow-sm: 0 2px 10px rgba(27, 30, 38, 0.05);
-  --shadow-md: 0 8px 24px rgba(27, 30, 38, 0.08);
-  --shadow-lg: 0 18px 48px rgba(27, 30, 38, 0.14);
+  /* Elevation (DB neutral-tinted) */
+  --shadow-xs: 0 1px 2px rgba(22, 24, 27, 0.05);
+  --shadow-sm: 0 2px 10px rgba(22, 24, 27, 0.05);
+  --shadow-md: 0 8px 24px rgba(22, 24, 27, 0.08);
+  --shadow-lg: 0 18px 48px rgba(22, 24, 27, 0.14);
   --shadow-brand: 0 14px 34px rgba(236, 0, 22, 0.28);
 
   /* Radius */

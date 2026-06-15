@@ -1,9 +1,9 @@
 import React from 'react'
-import { Train, Bus, Car, Bike, Compass } from 'lucide-react'
+import { TrainFront, Bus, Car, Bike, Compass } from 'lucide-react'
 import { number } from '../lib/format'
 
 const MODE_META = {
-  train: { Icon: Train, en: 'Train', de: 'Bahn', cls: 'mode--train' },
+  train: { Icon: TrainFront, en: 'Train', de: 'Bahn', cls: 'mode--train' },
   bus: { Icon: Bus, en: 'Bus', de: 'Bus', cls: 'mode--bus' },
   car: { Icon: Car, en: 'Car-sharing', de: 'Carsharing', cls: 'mode--car' },
   scooter: { Icon: Bike, en: 'Scooter', de: 'Roller', cls: 'mode--scooter' },
