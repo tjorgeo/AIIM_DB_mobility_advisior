@@ -1,17 +1,30 @@
 """
 DB MoveOptimizer — Onboarding Agent
 Conversational agent that collects a new user's mobility profile after login/registration.
-The collected profile is combined with the user's historical Deutsche Bahn and partner
-travel data to power the downstream Analyst → Forecaster → Optimizer pipeline.
+On completion it persists the profile to SQLite so the downstream pipeline can read it.
 
 How memory works (no database required for testing):
   LangGraph's `add_messages` reducer accumulates the full conversation history inside
   the graph state. Within a single LangSmith Studio thread the agent remembers every
   prior exchange automatically. No external store is needed at this stage.
+
+Graph flow:
+    onboarding_node  (conversational, multi-turn)
+        ↓ (conditional: only when JSON profile block detected in last reply)
+    save_profile_node  (persists profile to SQLite, no LLM)
+        ↓
+       END
+    (if no JSON yet → loops back to END to wait for next user message)
 """
 
+import json
 import os
-from typing import Annotated
+import re
+import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Optional
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -20,15 +33,38 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from db.db_utils import add_user_subscription, init_db, upsert_user
+
 load_dotenv()
+init_db()
 
 # ---------------------------------------------------------------------------
-# Configuration — same University GPT endpoint used by the other agents
+# Configuration
 # ---------------------------------------------------------------------------
 
 UNI_GPT_BASE_URL = "https://chat.kiconnect.nrw/api/v1"
 UNI_GPT_MODEL = "Openai GPT OSS 120B"
 UNI_GPT_API_KEY = os.getenv("UNI_GPT_API_KEY", "")
+
+# Map free-text subscription names from onboarding to product_ids in the catalogue
+SUBSCRIPTION_NAME_MAP: dict[str, str] = {
+    "deutschlandticket": "DT-49",
+    "deutschland ticket": "DT-49",
+    "49-euro-ticket": "DT-49",
+    "bahncard 25 (2nd class)": "BC25-2",
+    "bahncard 25": "BC25-2",
+    "bc25": "BC25-2",
+    "bahncard 50 (2nd class)": "BC50-2",
+    "bahncard 50": "BC50-2",
+    "bc50": "BC50-2",
+    "bahncard 100 (2nd class)": "BC100-2",
+    "bahncard 100": "BC100-2",
+    "bc100": "BC100-2",
+    "bahncard 25 (1st class)": "BC25-1",
+    "bahncard 50 (1st class)": "BC50-1",
+    "bahncard 100 (1st class)": "BC100-1",
+}
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -178,12 +214,17 @@ Field types for reference (do not include this comment in output):
 # State
 # ---------------------------------------------------------------------------
 
+
 class OnboardingState(TypedDict):
-    messages: Annotated[list, add_messages]  # full conversation history; grows each turn
+    messages: Annotated[list, add_messages]
+    # Optional: pre-fill user_id from auth system; generated if absent
+    user_id: Optional[str]
+    # Set to True once the profile has been saved to avoid double-writes
+    profile_saved: bool
 
 
 # ---------------------------------------------------------------------------
-# LLM — lazy initialisation so import succeeds before .env is loaded
+# LLM — lazy init
 # ---------------------------------------------------------------------------
 
 _llm = None
@@ -196,26 +237,102 @@ def _get_llm() -> ChatOpenAI:
             model=UNI_GPT_MODEL,
             openai_api_key=UNI_GPT_API_KEY,
             openai_api_base=UNI_GPT_BASE_URL,
-            temperature=0.0,  # deterministic — keeps the agent on the script
+            temperature=0.0,
         )
     return _llm
 
 
 # ---------------------------------------------------------------------------
-# Node
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _extract_profile_json(text: str) -> dict | None:
+    """Return parsed profile dict if the message contains a ```json block."""
+    match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def _map_profile_to_db(profile: dict, user_id: str) -> dict:
+    """Translate the onboarding JSON schema to the users table column names."""
+    prefs = profile.get("preferences") or {}
+    return {
+        "user_id": user_id,
+        "username": f"user_{user_id[:8]}",   # placeholder; overwrite if auth provides it
+        "home_city": profile.get("home_location"),
+        "job_industry": profile.get("occupation"),
+        "has_car": 1 if profile.get("owns_car") else 0,
+        "has_bike": 1 if profile.get("owns_bike") else 0,
+        "pref_cost_savings": prefs.get("cost_savings"),
+        "pref_co2_savings": prefs.get("co2_savings"),
+        "pref_flexibility": prefs.get("flexibility"),
+        "future_travel_plans": profile.get("future_travel_plans"),
+        "onboarding_completed_at": datetime.utcnow().isoformat(),
+    }
+
+
+def _save_subscriptions(profile: dict, user_id: str) -> None:
+    """Write any recognised subscription names to user_subscriptions."""
+    for name in profile.get("current_subscriptions") or []:
+        product_id = SUBSCRIPTION_NAME_MAP.get(name.lower().strip())
+        if not product_id:
+            continue
+        add_user_subscription({
+            "user_subscription_id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "product_id": product_id,
+            "status": "active",
+            "start_date": datetime.utcnow().date().isoformat(),
+            "source": "onboarding",
+        })
+
+
+# ---------------------------------------------------------------------------
+# Nodes
 # ---------------------------------------------------------------------------
 
 def onboarding_node(state: OnboardingState) -> dict:
-    """
-    Single-node conversational loop.
-    Receives the accumulated message history, prepends the system prompt,
-    calls the LLM, and appends the assistant reply to the history.
-    LangGraph's add_messages reducer handles accumulation automatically.
-    """
+    """Single-node conversational loop. Runs on every user message."""
     response = _get_llm().invoke(
         [SystemMessage(content=ONBOARDING_SYSTEM_PROMPT)] + state["messages"]
     )
     return {"messages": [response]}
+
+
+def save_profile_node(state: OnboardingState) -> dict:
+    """Extract the JSON from the last assistant message and persist to SQLite."""
+    if state.get("profile_saved"):
+        return {}
+
+    last_content = state["messages"][-1].content
+    profile = _extract_profile_json(last_content)
+    if not profile:
+        return {}
+
+    user_id = state.get("user_id") or str(uuid.uuid4())
+    db_row = _map_profile_to_db(profile, user_id)
+    upsert_user(db_row)
+    _save_subscriptions(profile, user_id)
+
+    return {"user_id": user_id, "profile_saved": True}
+
+
+# ---------------------------------------------------------------------------
+# Routing
+# ---------------------------------------------------------------------------
+
+def _should_save(state: OnboardingState) -> str:
+    """Route to save_profile only when the LLM has emitted the final JSON block."""
+    if state.get("profile_saved"):
+        return END
+    last_msg = state["messages"][-1] if state["messages"] else None
+    if last_msg and hasattr(last_msg, "content") and "```json" in last_msg.content:
+        return "save_profile"
+    return END
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +342,10 @@ def onboarding_node(state: OnboardingState) -> dict:
 def build_graph() -> StateGraph:
     workflow = StateGraph(OnboardingState)
     workflow.add_node("onboarding", onboarding_node)
+    workflow.add_node("save_profile", save_profile_node)
     workflow.add_edge(START, "onboarding")
-    workflow.add_edge("onboarding", END)
+    workflow.add_conditional_edges("onboarding", _should_save)
+    workflow.add_edge("save_profile", END)
     return workflow.compile()
 
 

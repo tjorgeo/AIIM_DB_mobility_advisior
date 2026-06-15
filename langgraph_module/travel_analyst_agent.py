@@ -1,14 +1,15 @@
 """
 DB MoveOptimizer — Travel Pattern Analyst Agent
-Reads synthetic CSV data for a given user_id and produces a concise mobility
+Reads user profile and trip data from SQLite and produces a concise mobility
 behaviour summary. Runs as a two-node pipeline: load_data → analyze.
 """
 
+import json
 import os
+import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
-import pandas as pd
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -16,7 +17,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+# db_utils lives one level up from this file
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from db.db_utils import get_trips, get_user, get_user_by_username, get_user_subscriptions, init_db
+
 load_dotenv()
+init_db()
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -26,21 +32,18 @@ UNI_GPT_BASE_URL = "https://chat.kiconnect.nrw/api/v1"
 UNI_GPT_MODEL = "Openai GPT OSS 120B"
 UNI_GPT_API_KEY = os.getenv("UNI_GPT_API_KEY", "")
 
-DATA_DIR = Path(__file__).parent.parent / "data"
-
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 
 
 class TravelAnalystState(TypedDict):
-    # ── Input ──────────────────────────────────────────────────────────────
-    # Accepts either an exact user_id UUID or a username (e.g. "mia.schmidt").
+    # Input: UUID or username (e.g. "mia.schmidt")
     user_id: str
-    # ── Internal ───────────────────────────────────────────────────────────
-    data_summary: Optional[str]   # structured stats built by load_data_node
-    # ── Output ─────────────────────────────────────────────────────────────
-    messages: Annotated[list, add_messages]  # LLM response accumulated here
+    # Internal
+    data_summary: Optional[str]
+    # Output
+    messages: Annotated[list, add_messages]
 
 
 # ---------------------------------------------------------------------------
@@ -95,122 +98,123 @@ Rules:
 """
 
 # ---------------------------------------------------------------------------
-# Node 1 — Load & summarise data
+# Node 1 — Load & summarise data from SQLite
 # ---------------------------------------------------------------------------
 
 
 def load_data_node(state: TravelAnalystState) -> dict:
-    """Load CSVs, filter for the requested user, and compute key statistics."""
+    """Query SQLite for the requested user and compute key statistics."""
     raw_id = state["user_id"].strip()
 
-    # LangSmith Studio sometimes passes the entire JSON object as the field value.
-    # If that happens, unwrap it.
+    # LangSmith Studio sometimes passes the whole JSON object as the field value
     if raw_id.startswith("{"):
-        import json as _json
         try:
-            raw_id = _json.loads(raw_id).get("user_id", raw_id).strip()
-        except _json.JSONDecodeError:
+            raw_id = json.loads(raw_id).get("user_id", raw_id).strip()
+        except json.JSONDecodeError:
             pass
 
-    profiles = pd.read_csv(DATA_DIR / "user_profiles.csv")
-    trips_df = pd.read_csv(DATA_DIR / "user_trips.csv")
-
-    # Support lookup by UUID or by username
-    profile_row = profiles[profiles["user_id"] == raw_id]
-    if profile_row.empty:
-        profile_row = profiles[profiles["username"] == raw_id]
-    if profile_row.empty:
+    # Support UUID or username lookup
+    p = get_user(raw_id) or get_user_by_username(raw_id)
+    if not p:
         return {"data_summary": f"ERROR: No user found for identifier '{raw_id}'."}
 
-    p = profile_row.iloc[0]
     resolved_id = p["user_id"]
-    user_trips = trips_df[trips_df["user_id"] == resolved_id].copy()
+    trips = get_trips(resolved_id)
+    active_subs = get_user_subscriptions(resolved_id, status="active")
 
     lines: list[str] = []
 
-    # ── Profile section ─────────────────────────────────────────────────────
+    # ── Profile ──────────────────────────────────────────────────────────────
     lines += [
         "## User Profile",
         f"- Name: {p['first_name']} {p['last_name']}",
-        f"- Age: {p['age']} | Gender: {p['gender']} | Life stage: {p['life_stage']}",
+        f"- Age: {p.get('date_of_birth', 'unknown')} | Gender: {p['gender']} | Life stage: {p['life_stage']}",
         f"- Home city: {p['home_city']} ({p['city_type']}, {p['home_country_code']})",
         f"- Occupation: {p['job_industry']} | Status: {p['employment_status']}",
         f"- Work pattern: {p['working_pattern']} | Commute frequency: {p['commute_frequency']}",
         f"- Income range: {p['income_range']}",
-        f"- Has car: {p['has_car']} | Has bike: {p['has_bike']} | Driving licence: {p['has_driving_license']}",
+        f"- Has car: {bool(p['has_car'])} | Has bike: {bool(p['has_bike'])} | Licence: {bool(p['has_driving_license'])}",
         f"- PT affinity: {p['public_transport_affinity']}",
         f"- Preferred modes: {p['preferred_modes']}",
         f"- Avoided modes: {p['avoided_modes']}",
-        f"- Current ticket product: {p['current_ticket_product']}",
-        f"- Subscription likelihood: {p['subscription_likelihood']}",
         f"- Price sensitivity: {p['price_sensitivity']}",
-        f"- Purchase channel: {p['purchase_channel_preference']}",
-        f"- Employer reimbursement: {p['employer_reimbursement_available']}",
+        f"- Employer reimbursement: {bool(p['employer_reimbursement_available'])}",
         f"- Leisure intensity: {p['leisure_intensity']}",
-        f"- Preferred activities: {p['preferred_activity_types']}",
-        f"- Travel statement: {p['travel_and_priorities']}",
     ]
 
-    if user_trips.empty:
+    if active_subs:
+        sub_names = ", ".join(s["product_name"] for s in active_subs)
+        lines.append(f"- Active subscriptions: {sub_names}")
+    else:
+        lines.append("- Active subscriptions: none")
+
+    if not trips:
         lines.append("\n## Trip Data: No trips recorded for this user.")
         return {"data_summary": "\n".join(lines)}
 
-    # Normalise boolean column (CSV stores "true"/"false" as strings)
-    user_trips["is_commute"] = user_trips["is_commute"].astype(str).str.lower() == "true"
-
-    n = len(user_trips)
-    total_cost = user_trips["estimated_cost_eur"].sum()
-    total_dist = user_trips["distance_km"].sum()
-    total_dur_min = user_trips["duration_min"].sum()
-    commute_n = user_trips["is_commute"].sum()
+    # ── Trip statistics ───────────────────────────────────────────────────────
+    n = len(trips)
+    total_cost = sum(t["estimated_cost_eur"] or 0 for t in trips)
+    total_dist = sum(t["distance_km"] or 0 for t in trips)
+    total_co2 = sum(t["co2_kg"] or 0 for t in trips)
+    total_dur = sum(t["duration_min"] or 0 for t in trips)
+    commute_n = sum(1 for t in trips if t["is_commute"])
 
     lines += [
         f"\n## Trip Statistics ({n} trips total)",
         f"- Total distance: {total_dist:.1f} km",
-        f"- Total duration: {total_dur_min:.0f} min ({total_dur_min / 60:.1f} h)",
+        f"- Total duration: {total_dur:.0f} min ({total_dur / 60:.1f} h)",
         f"- Total estimated cost: €{total_cost:.2f}",
         f"- Average cost per trip: €{total_cost / n:.2f}",
+        f"- Total CO₂: {total_co2:.1f} kg",
         f"- Commute trips: {commute_n} ({commute_n / n * 100:.0f}%)",
         f"- Non-commute trips: {n - commute_n} ({(n - commute_n) / n * 100:.0f}%)",
     ]
 
     # Mode distribution
-    mode_dist = user_trips["main_mode"].value_counts()
+    from collections import Counter
+    mode_counts = Counter(t["main_mode"] for t in trips)
     lines.append("\n### Mode Distribution (by trip count):")
-    for mode, count in mode_dist.items():
+    for mode, count in mode_counts.most_common():
         lines.append(f"  - {mode}: {count} trips ({count / n * 100:.0f}%)")
 
     # Trip purposes
-    purpose_dist = user_trips["trip_purpose"].value_counts()
+    purpose_counts = Counter(t["trip_purpose"] for t in trips)
     lines.append("\n### Trip Purposes:")
-    for purpose, count in purpose_dist.items():
+    for purpose, count in purpose_counts.most_common():
         lines.append(f"  - {purpose}: {count}")
 
-    # Ticket products
-    ticket_dist = user_trips["ticket_product_used"].value_counts()
+    # Ticket products with cost
+    ticket_cost: dict[str, list] = {}
+    for t in trips:
+        key = t["ticket_product_used"] or "none"
+        ticket_cost.setdefault(key, [0, 0])
+        ticket_cost[key][0] += 1
+        ticket_cost[key][1] += t["estimated_cost_eur"] or 0
     lines.append("\n### Ticket Products Used:")
-    for ticket, count in ticket_dist.items():
-        cost_for_ticket = user_trips[user_trips["ticket_product_used"] == ticket]["estimated_cost_eur"].sum()
-        lines.append(f"  - {ticket}: {count} trips | total cost €{cost_for_ticket:.2f}")
+    for ticket, (count, cost) in sorted(ticket_cost.items(), key=lambda x: -x[1][0]):
+        lines.append(f"  - {ticket}: {count} trips | total cost €{cost:.2f}")
 
     # Weekday pattern
     weekday_order = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    weekday_dist = user_trips["weekday"].value_counts().reindex(weekday_order).dropna().astype(int)
+    weekday_counts = Counter(t["weekday"] for t in trips)
     lines.append("\n### Trips by Weekday:")
-    for day, count in weekday_dist.items():
-        lines.append(f"  - {day}: {count}")
+    for day in weekday_order:
+        if day in weekday_counts:
+            lines.append(f"  - {day}: {weekday_counts[day]}")
 
     # Top 5 routes
-    user_trips["route"] = user_trips["origin_city"] + " → " + user_trips["destination_city"]
-    top_routes = user_trips["route"].value_counts().head(5)
+    route_counts = Counter(
+        f"{t['origin_city']} → {t['destination_city']}" for t in trips
+    )
     lines.append("\n### Top 5 Routes:")
-    for route, count in top_routes.items():
+    for route, count in route_counts.most_common(5):
         lines.append(f"  - {route}: {count} trips")
 
     # Planning style
-    plan_dist = user_trips["planning_style"].value_counts()
+    style_counts = Counter(t["planning_style"] for t in trips if t["planning_style"])
     lines.append("\n### Planning Style:")
-    for style, count in plan_dist.items():
+    for style, count in style_counts.most_common():
         lines.append(f"  - {style}: {count} trips")
 
     return {"data_summary": "\n".join(lines)}
@@ -222,7 +226,6 @@ def load_data_node(state: TravelAnalystState) -> dict:
 
 
 def analyze_node(state: TravelAnalystState) -> dict:
-    """Send the pre-computed statistics to the LLM for a readable summary."""
     summary = state.get("data_summary") or "No data available."
     response = _get_llm().invoke([
         SystemMessage(content=ANALYST_SYSTEM_PROMPT),
