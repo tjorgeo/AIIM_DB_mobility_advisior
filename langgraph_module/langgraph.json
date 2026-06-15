@@ -2,7 +2,8 @@
   "graphs": {
     "db_mover": "langgraph_agent:graph",
     "analyst_optimizer_pipeline": "pipeline_agent:graph",
-    "onboarding": "onboarding_agent:graph"
+    "onboarding": "onboarding_agent:graph",
+    "travel_analyst": "travel_analyst_agent:graph"
   },
   "source": {
     "kind": "uv",
