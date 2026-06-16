@@ -24,7 +24,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.db_utils import DB_PATH, executemany, init_db
-from db.seed_subscription_products import seed_products
+from archive.seed_subscription_products import seed_products
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
