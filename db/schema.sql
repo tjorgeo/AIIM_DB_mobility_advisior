@@ -124,7 +124,19 @@ CREATE TABLE IF NOT EXISTS subscription_products (
     auto_renews                 INTEGER,    -- 0/1
     combinable_with             TEXT,       -- JSON array of compatible product_ids
     is_active                   INTEGER DEFAULT 1,
-    notes                       TEXT
+    notes                       TEXT,
+    -- Extended pricing fields (added in subscription catalogue expansion)
+    pricing_model               TEXT,   -- flat_monthly / per_minute / per_km / per_km_and_time / time_pass / hybrid
+    cost_per_minute_eur         REAL,
+    cost_per_km_eur             REAL,
+    unlock_fee_eur              REAL,
+    free_minutes_per_ride       INTEGER,
+    period_days                 INTEGER,    -- 1/3/7/30/90/365
+    eligibility_min_age         INTEGER,
+    eligibility_max_age         INTEGER,
+    eligibility_notes           TEXT,
+    city_availability           TEXT,
+    markdown_ref                TEXT        -- relative path inside data/ for detailed AGB
 );
 
 -- ---------------------------------------------------------------------------

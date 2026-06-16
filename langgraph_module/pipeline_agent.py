@@ -78,10 +78,14 @@ Be factual and brief. Do not make recommendations."""
 
 OPTIMIZER_PROMPT = """You are a Deutsche Bahn mobility optimizer.
 You receive an analyst summary of a user's travel behaviour and their current subscriptions.
-Use the lookup_subscriptions tool to retrieve the current product catalog,
-then recommend the single best subscription change for this user.
-Explain the expected annual saving and why it fits their travel pattern.
-Be concise — four sentences maximum."""
+The catalogue includes: DB cards (BahnCard 25/50/100), public transport subscriptions
+(Deutschlandticket, Jobticket), bike sharing (Call a Bike, Nextbike, Swapfiets),
+e-scooter passes (Dott, Voi, Lime, Bolt) and car sharing (Miles, Sixt Share, teilAuto).
+Use the lookup_subscriptions tool with a targeted filter (e.g. 'bahncard', 'bike',
+'scooter', 'carsharing', 'deutschlandticket') to retrieve only the relevant products.
+Recommend the single best subscription change for this user — or the best combination
+of two products if clearly beneficial. Explain the expected annual saving or convenience
+gain and why it fits their travel pattern. Be concise — five sentences maximum."""
 
 # ---------------------------------------------------------------------------
 # Tool
@@ -90,19 +94,79 @@ Be concise — four sentences maximum."""
 
 @tool
 def lookup_subscriptions(filter_type: str = "all") -> str:
-    """Look up Deutsche Bahn subscription products from the catalog.
+    """Look up mobility subscription products from the catalogue.
 
     Args:
-        filter_type: 'card', 'subscription', or 'all'.
+        filter_type: Product category filter. Options:
+            'all'          – all 56 products (large; prefer narrower filters)
+            'card'         – BahnCard discount cards
+            'subscription' – monthly/annual subscriptions (DT, bike, car sharing)
+            'pass'         – time or usage passes (e-scooter day passes, PayG, car sharing)
+            'bahncard'     – only BahnCard variants (BC25/50/100 in all flavours)
+            'bike'         – bike sharing products (Call a Bike, Nextbike, Swapfiets)
+            'scooter'      – e-scooter products (Dott, Voi, Lime, Bolt)
+            'carsharing'   – car sharing products (Miles, Sixt Share, teilAuto)
+            'deutschlandticket' – Deutschlandticket and Jobticket only
 
     Returns:
-        JSON string of matching DB products with prices and conditions.
+        JSON string with key pricing fields per product.
     """
-    products = get_subscription_products(filter_type)
+    MODE_FILTERS: dict[str, list[str]] = {
+        "bike":              ["shared_bike"],
+        "scooter":           ["shared_scooter"],
+        "carsharing":        ["car_sharing"],
+        "deutschlandticket": [],  # handled by product_id prefix
+        "bahncard":          [],  # handled by product_id prefix
+    }
+
+    products = get_subscription_products("all")
+
+    ft = filter_type.lower().strip()
+    if ft == "bahncard":
+        products = [p for p in products if p["product_id"].startswith("BC") or p["product_id"].startswith("MY-BC")]
+    elif ft == "deutschlandticket":
+        products = [p for p in products if p["product_id"].startswith("DT")]
+    elif ft in MODE_FILTERS:
+        target_modes = MODE_FILTERS[ft]
+        products = [
+            p for p in products
+            if any(m in (p.get("valid_modes") or "") for m in target_modes)
+        ]
+    elif ft in ("card", "subscription", "pass"):
+        products = [p for p in products if p.get("type") == ft]
+    # else: 'all' — return everything
+
     if not products:
-        return f"No products found for type '{filter_type}'."
-    # Return compact JSON so the LLM can reason over structured data
-    return json.dumps(products, ensure_ascii=False, indent=2)
+        return f"No products found for filter '{filter_type}'."
+
+    # Return only the fields useful for recommendation reasoning
+    slim = []
+    for p in products:
+        slim.append({
+            "product_id":               p["product_id"],
+            "product_name":             p["product_name"],
+            "type":                     p["type"],
+            "monthly_cost_eur":         p["monthly_cost_eur"],
+            "annual_cost_eur":          p["annual_cost_eur"],
+            "discount_pct":             p["discount_pct"],
+            "pricing_model":            p.get("pricing_model"),
+            "cost_per_minute_eur":      p.get("cost_per_minute_eur"),
+            "cost_per_km_eur":          p.get("cost_per_km_eur"),
+            "unlock_fee_eur":           p.get("unlock_fee_eur"),
+            "free_minutes_per_ride":    p.get("free_minutes_per_ride"),
+            "period_days":              p.get("period_days"),
+            "valid_modes":              p.get("valid_modes"),
+            "coverage_scope":           p["coverage_scope"],
+            "min_commitment_months":    p["min_commitment_months"],
+            "auto_renews":              p["auto_renews"],
+            "combinable_with":          p.get("combinable_with"),
+            "eligibility_min_age":      p.get("eligibility_min_age"),
+            "eligibility_max_age":      p.get("eligibility_max_age"),
+            "eligibility_notes":        p.get("eligibility_notes"),
+            "city_availability":        p.get("city_availability"),
+            "notes":                    p["notes"],
+        })
+    return json.dumps(slim, ensure_ascii=False, indent=2)
 
 
 tools = [lookup_subscriptions]

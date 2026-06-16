@@ -24,6 +24,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.db_utils import DB_PATH, executemany, init_db
+from db.seed_subscription_products import seed_products
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -282,19 +283,8 @@ def main() -> None:
     print(f"  {len(user_rows)} users inserted.")
 
     # ── Subscription products ─────────────────────────────────────────────────
-    print("Migrating subscription products...")
-    subs_df = pd.read_csv(DATA_DIR / "subscriptions.csv")
-    sub_rows = migrate_subscription_products(subs_df)
-    executemany(
-        """INSERT OR REPLACE INTO subscription_products
-           (product_id, product_name, type, monthly_cost_eur, annual_cost_eur,
-            discount_pct, travel_class, coverage_scope, valid_modes,
-            min_commitment_months, cancellation_notice_months, auto_renews,
-            combinable_with, is_active, notes)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        sub_rows,
-    )
-    print(f"  {len(sub_rows)} products inserted.")
+    print("Seeding subscription products from catalogue...")
+    seed_products()
 
     # ── User subscriptions ────────────────────────────────────────────────────
     print("Seeding user_subscriptions from profile data...")

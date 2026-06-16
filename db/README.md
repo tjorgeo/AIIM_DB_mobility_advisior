@@ -15,6 +15,7 @@ It is the first thing to read if you are joining this branch or setting it up on
 | **`travel_analyst_agent`** | New agent — analyses one user's travel patterns from the database |
 | **`pipeline_agent`** | Added `load_context_node` — no longer requires a hand-crafted input JSON |
 | **`onboarding_agent`** | Now writes completed profiles to the database instead of just printing JSON |
+| **Subscription catalogue** | Expanded from 7 CSV products to 56 products across 4 mobility categories |
 
 ---
 
@@ -22,10 +23,11 @@ It is the first thing to read if you are joining this branch or setting it up on
 
 ```
 db/
-├── schema.sql                 ← canonical table definitions (single source of truth)
-├── db_utils.py                ← shared SQLite helpers imported by all agents
-├── migrate_csv_to_sqlite.py   ← one-time migration script (CSV → SQLite)
-└── moveoptimizer.db           ← the database file (committed so colleagues can use it directly)
+├── schema.sql                     ← canonical table definitions (single source of truth)
+├── db_utils.py                    ← shared SQLite helpers imported by all agents
+├── seed_subscription_products.py  ← catalogue seeder — 56 products across 4 categories
+├── migrate_csv_to_sqlite.py       ← one-time migration script (CSV → SQLite)
+└── moveoptimizer.db               ← the database file (committed so colleagues can use it directly)
 ```
 
 ### `schema.sql` — tables
@@ -142,6 +144,70 @@ rows = fetchall('SELECT username, home_city, job_industry, onboarding_completed_
 for r in rows: print(r)
 "
 ```
+
+---
+
+## Subscription product catalogue
+
+The original CSV had 7 products (basic BahnCard tiers only). The catalogue has been expanded to **56 products** across four mobility categories, sourced from `data/subscription_overview.xlsx` and the markdown files in `data/Markdownfiles Abos/`.
+
+### Products by category
+
+| Category | Count | Products |
+|---|---|---|
+| ÖPNV / Bahn | 18 | Deutschlandticket, Jobticket, BahnCard 25/50/100 in all variants (standard, Probe, My, Senioren, Ermäßigt, Jugend) |
+| Bike Sharing | 9 | Call a Bike (Starter, Member, Member Plus), Nextbike (PayG, Monat, Jahr), Swapfiets (Stadtrad, E-Bike P1/P7) |
+| E-Scooter | 24 | Dott, Voi, Lime, Bolt — each with PayG, subscription, and time-pass variants |
+| Car Sharing | 5 | Miles (per-km), Sixt Share (per-minute), teilAuto (Starttarif, Rahmentarif, Vielfahrertarif) |
+
+### New columns added to `subscription_products`
+
+| Column | Type | Description |
+|---|---|---|
+| `pricing_model` | TEXT | `flat_monthly` / `per_minute` / `per_km` / `per_km_and_time` / `time_pass` / `hybrid` |
+| `cost_per_minute_eur` | REAL | Base per-minute rate (where applicable) |
+| `cost_per_km_eur` | REAL | Base per-km rate (car sharing, BahnCard is nil) |
+| `unlock_fee_eur` | REAL | One-time unlock / activation fee per ride |
+| `free_minutes_per_ride` | INTEGER | Free minutes included per trip (bike/scooter plans) |
+| `period_days` | INTEGER | Validity window: 1 / 3 / 7 / 30 / 90 / 365 |
+| `eligibility_min_age` | INTEGER | Minimum age (e.g. 6 for Jugend BC, 21 for car sharing) |
+| `eligibility_max_age` | INTEGER | Maximum age (e.g. 26 for My BahnCard, 64 for standard BahnCard) |
+| `eligibility_notes` | TEXT | Human-readable eligibility conditions |
+| `city_availability` | TEXT | Where the product is available |
+| `markdown_ref` | TEXT | Path inside `data/` to the detailed pricing / AGB markdown file |
+
+### Seeder script: `db/seed_subscription_products.py`
+
+The seeder is safe to re-run at any time — it clears the table and re-inserts all 56 products. It also adds missing columns to existing databases automatically (via `PRAGMA table_info` + `ALTER TABLE`), so colleagues do not need to rebuild the DB from scratch.
+
+```bash
+cd langgraph_module
+uv run python ../db/seed_subscription_products.py
+```
+
+The migrate script (`migrate_csv_to_sqlite.py`) now calls the seeder internally, so a full rebuild also uses the expanded catalogue.
+
+### Detail files for pricing / AGB
+
+Complex pricing (e.g. Sixt dynamic rates, teilAuto vehicle classes, BahnCard AGB) is kept in the original markdown files under `data/Markdownfiles Abos/`. The `markdown_ref` column points the LLM to the right file when a user needs detail beyond what is stored in the database.
+
+### `lookup_subscriptions` tool — updated filters
+
+The optimizer agent's tool now accepts nine filter values:
+
+| Filter | Returns |
+|---|---|
+| `all` | All 56 products |
+| `card` | BahnCard discount cards only |
+| `subscription` | Monthly/annual subscriptions (DT, Jobticket, bike, car sharing) |
+| `pass` | Single-use and time-pass products (scooter day passes, PayG) |
+| `bahncard` | All BahnCard variants (BC25/50/100) |
+| `deutschlandticket` | DT-49 and Jobticket only |
+| `bike` | All bike-sharing products |
+| `scooter` | All e-scooter products |
+| `carsharing` | Miles, Sixt Share, teilAuto |
+
+Use narrow filters in the optimizer to avoid sending the full 56-product list to the LLM.
 
 ---
 
