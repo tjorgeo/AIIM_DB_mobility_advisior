@@ -1,7 +1,7 @@
 {
   "graphs": {
-    "db_mover": "langgraph_agent:graph",
     "analyst_optimizer_pipeline": "pipeline_agent:graph",
+    "analyst_forecaster_pipeline": "pipeline_with_forecaster:graph",
     "onboarding": "onboarding_agent:graph",
     "travel_analyst": "travel_analyst_agent:graph"
   },
