@@ -9,8 +9,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Any
 
-
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 

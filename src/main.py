@@ -1,7 +1,7 @@
 import os
 import time
 import psycopg2
-from university_api_connection import build_university_gpt_connection, call_university_gpt
+from utils.university_api_connection import build_university_gpt_connection, call_university_gpt
 
 
 DATABASE_URL = os.environ["DATABASE_URL"]

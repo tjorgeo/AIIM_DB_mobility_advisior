@@ -1,6 +1,7 @@
--- Optional, falls gen_random_uuid() genutzt werden soll
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS user_profiles (
-    user_id TEXT PRIMARY KEY,
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- Persona / Generierung
     source_persona_id TEXT NOT NULL,
@@ -13,69 +14,79 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     external_auth_id TEXT,
 
     -- Person Information
-    first_name TEXT,
-    last_name TEXT,
-    display_name TEXT,
-    date_of_birth DATE,
-    age INTEGER CHECK (age >= 0),
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    date_of_birth DATE NOT NULL,
+    age INTEGER NOT NULL CHECK (age >= 0),
     gender TEXT NOT NULL DEFAULT 'not_specified'
         CHECK (gender IN ('female', 'male', 'diverse', 'not_specified')),
     life_stage TEXT,
+
+    -- Home Location
     home_city TEXT NOT NULL,
     home_postal_code TEXT NOT NULL,
-    home_country_code CHAR(2) DEFAULT 'DE',
+    home_country_code CHAR(2) NOT NULL DEFAULT 'DE',
     city_type TEXT,
 
-    -- Job Related
-    job_industry TEXT,
+    -- Work / Employment
     employment_status TEXT,
-    income_range TEXT,
-    working_pattern TEXT,
-    commute_frequency TEXT,
+    occupation TEXT,
+    work_city TEXT,
+    work_postal_code TEXT,
+    work_country_code CHAR(2),
+    work_arrangement TEXT,
+    remote_work_share NUMERIC(4,3)
+        CHECK (remote_work_share IS NULL OR remote_work_share BETWEEN 0 AND 1),
 
-    -- Mobility Profile
-    has_car BOOLEAN,
-    has_bike BOOLEAN,
+    -- Household / Finance
+    household_size INTEGER
+        CHECK (household_size IS NULL OR household_size >= 1),
+    household_type TEXT,
+    income_band TEXT,
+    mobility_budget_monthly_eur NUMERIC(10,2)
+        CHECK (
+            mobility_budget_monthly_eur IS NULL
+            OR mobility_budget_monthly_eur >= 0
+        ),
+
+    -- Mobility Access
     has_driving_license BOOLEAN,
-    public_transport_affinity TEXT,
-    preferred_modes TEXT[],
-    avoided_modes TEXT[],
-    typical_weekday_trip_level TEXT,
-    typical_weekend_trip_level TEXT,
 
-    -- Activity Profile
-    leisure_intensity TEXT,
-    preferred_activity_types TEXT[],
-    evening_activity_frequency TEXT,
-    weekend_activity_frequency TEXT,
+    car_access TEXT
+        CHECK (
+            car_access IS NULL
+            OR car_access IN ('none', 'occasional', 'shared', 'own')
+        ),
 
-    -- Ticketing Profile
-    subscription_likelihood TEXT,
-    current_ticket_product TEXT,
-    likely_ticket_products TEXT[],
-    price_sensitivity TEXT,
-    purchase_channel_preference TEXT,
-    employer_reimbursement_available BOOLEAN,
+    bike_access TEXT
+        CHECK (
+            bike_access IS NULL
+            OR bike_access IN ('none', 'occasional', 'own', 'shared')
+        ),
 
-    -- User Statements
-    travel_and_priorities TEXT,
+    public_transport_subscription TEXT
+        CHECK (
+            public_transport_subscription IS NULL
+            OR public_transport_subscription IN (
+                'none',
+                'monthly_pass',
+                'deutschlandticket',
+                'job_ticket',
+                'student_ticket',
+                'other'
+            )
+        ),
 
-    -- Metadata
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Mobility Preferences
+    preferred_transport_modes TEXT[] NOT NULL DEFAULT '{}',
+    avoided_transport_modes TEXT[] NOT NULL DEFAULT '{}',
+    mobility_constraints TEXT[] NOT NULL DEFAULT '{}',
+
+    typical_weekday_pattern TEXT,
+    typical_weekend_pattern TEXT,
+
+    -- Statements
+    travel_statement TEXT NOT NULL,
+    activity_statement TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_user_profiles_city
-ON user_profiles (home_city);
-
-CREATE INDEX IF NOT EXISTS idx_user_profiles_source_persona
-ON user_profiles (source_persona_id);
-
-CREATE INDEX IF NOT EXISTS idx_user_profiles_email
-ON user_profiles (email);
-
-CREATE INDEX IF NOT EXISTS idx_user_profiles_preferred_modes
-ON user_profiles USING GIN (preferred_modes);
-
-CREATE INDEX IF NOT EXISTS idx_user_profiles_activity_types
-ON user_profiles USING GIN (preferred_activity_types);

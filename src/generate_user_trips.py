@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import ast
-from university_api_connection import call_university_gpt
+from utils.university_api_connection import call_university_gpt
 from generate_user_profiles import parse_json_response
 
 def ensure_user_ids(user_profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:

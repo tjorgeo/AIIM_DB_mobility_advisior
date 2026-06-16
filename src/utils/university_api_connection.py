@@ -3,7 +3,7 @@ from openai import OpenAI
 
 # University of Cologne GPT Endpoint Configuration
 UNI_GPT_BASE_URL = "https://chat.kiconnect.nrw/api/v1"
-UNI_GPT_MODEL = "Openai GPT OSS 120B"
+UNI_GPT_MODEL = "OpenAI GPT OSS 120b KI:Inferenz.nrw"
 
 def build_university_gpt_connection():
     # Get API key from environment variable or prompt user

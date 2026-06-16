@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 from db_manager import get_db_connection, load_user_profile
-from university_api_connection import call_university_gpt, build_university_gpt_connection
+from utils.university_api_connection import call_university_gpt, build_university_gpt_connection
 import json
 from datetime import date
 from typing import Any, Optional

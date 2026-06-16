@@ -1,10 +1,10 @@
 from pathlib import Path
 import pandas as pd
 from generate_user_profiles import generate_user_profiles_from_personas, load_personas_from_file, save_user_profiles_to_file, save_user_profiles_json_as_db_csv
-from university_api_connection import build_university_gpt_connection
+from utils.university_api_connection import build_university_gpt_connection
 from generate_user_trips import ensure_user_ids, save_trips_and_legs_to_csv, generate_full_trip_history_for_user_profiles_with_checkpoint, save_user_trips_csv_as_db_csv, save_trip_legs_csv_as_db_csv
 
-generate_mode = False
+generate_mode = True
 
 def main() -> None:
     
