@@ -1,9 +1,9 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS user_subscriptions (
-    subscription_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subscription_id TEXT PRIMARY KEY,
 
-    user_id UUID NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
 
     -- Subscription Information
     subscription_category TEXT NOT NULL

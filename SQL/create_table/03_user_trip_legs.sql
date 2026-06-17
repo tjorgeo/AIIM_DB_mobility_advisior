@@ -1,10 +1,10 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS trip_legs (
-    leg_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    leg_id TEXT PRIMARY KEY,
 
-    trip_id UUID NOT NULL REFERENCES user_trips(trip_id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
+    trip_id TEXT NOT NULL REFERENCES user_trips(trip_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
 
     leg_sequence_number INTEGER NOT NULL
         CHECK (leg_sequence_number >= 1),

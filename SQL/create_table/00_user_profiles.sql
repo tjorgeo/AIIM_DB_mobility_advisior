@@ -1,7 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS user_profiles (
-    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT PRIMARY KEY,
 
     -- Persona / Generierung
     source_persona_id TEXT NOT NULL,
