@@ -1,0 +1,7 @@
+/* ==========================================================================
+   DB MoveOptimizer — consumer app styles
+   Order matters: tokens → base → components
+   ========================================================================== */
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/components.css';
