@@ -1,152 +1,743 @@
-# Docker Python + Postgres Setup
+# DB MoveOptimizer / AIIM Mobility Advisor
 
-This project runs a Python app and a Postgres database using Docker.
+Dieses Repository enthält eine lokale Docker-basierte Entwicklungsumgebung für den DB MoveOptimizer / AIIM Mobility Advisor. Das Projekt besteht aus einem Frontend, einem Backend und einer PostgreSQL-Datenbank, die gemeinsam über Docker Compose gestartet werden.
 
-## Project Structure
+---
 
-```text
-your-project/
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── src/
-    └── main.py
+## Projekt ausführen
+
+### Voraussetzungen
+
+Auf dem Rechner muss Docker inklusive Docker Compose verfügbar sein.
+
+Prüfen:
+
+```bash
+docker --version
+docker compose version
 ```
 
-## Requirements
+### 1. Repository klonen
 
-To run this project, docker must be installed.
+```bash
+git clone <repo-url>
+cd <repo-name>
+```
 
-## Start the Environment
+### 2. Environment-Datei anlegen
+
+Falls noch keine `.env` existiert, eine neue Datei im Root-Verzeichnis anlegen:
+
+```bash
+touch .env
+```
+
+Falls eine `.env.example` vorhanden ist, kann diese kopiert werden:
+
+```bash
+cp .env.example .env
+```
+
+Typische Inhalte können z. B. sein:
+
+```env
+UNI_GPT_API_KEY=your_api_key_here
+DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+```
+
+Wichtig: Die `.env` enthält lokale Konfiguration und Secrets. Sie sollte nicht ins Git Repository committed werden.
+
+### 3. Services starten
+
+Das gesamte Projekt wird über das Startscript ausgeführt:
+
+```bash
+./run.sh
+```
+
+Falls das Script noch nicht ausführbar ist:
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+Alternativ kann Docker Compose direkt verwendet werden:
 
 ```bash
 docker compose up --build
 ```
 
-This will:
+### 4. Anwendung öffnen
 
-1. build the Python Docker image
-2. start the Postgres container
-3. start the Python app container
-4. run `src/main.py`
+Nach erfolgreichem Start sind die Services unter folgenden URLs erreichbar:
 
-The app container stops automatically when `main.py` finishes.
+| Service    | URL                   |
+| ---------- | --------------------- |
+| Frontend   | http://localhost:5173 |
+| Backend    | http://localhost:8000 |
+| PostgreSQL | localhost:5432        |
 
-## Run the Python App Again
+Das Frontend ist im Browser unter folgender Adresse erreichbar:
 
-Recommended during development:
-
-```bash
-docker compose up -d db
-docker compose run --rm app python src/main.py
+```text
+http://localhost:5173
 ```
 
-This keeps Postgres running in the background and runs `main.py` whenever needed.
+### 5. Services stoppen
 
-## Postgres Data
+Wenn das Projekt über `run.sh` gestartet wurde, können alle Services mit `Ctrl+C` gestoppt werden.
 
-Postgres data is stored in a Docker volume:
+Alternativ:
+
+```bash
+docker compose down
+```
+
+Die PostgreSQL-Daten bleiben dabei im Docker Volume erhalten. Erst dieser Befehl würde das Datenbank-Volume löschen:
+
+```bash
+docker compose down -v
+```
+
+---
+
+## Projektstruktur
+
+Die empfohlene Struktur des Repositories ist:
+
+```text
+.
+├── README.md
+├── run.sh
+├── docker-compose.yml
+├── .env
+├── .env.example
+├── .gitignore
+│
+├── frontend/
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── index.html
+│   └── src/
+│
+├── backend/
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── requirements.txt
+│   └── src/
+│
+├── database/
+│   ├── init/
+│   ├── migrations/
+│   └── seed/
+│
+├── data/
+│   ├── raw/
+│   ├── generated/
+│   └── processed/
+│
+└── scripts/
+```
+
+---
+
+## Services
+
+Das Projekt läuft lokal über Docker Compose mit mehreren Services.
+
+### Frontend
+
+Das Frontend basiert auf Vite und wird in einem Node.js-Container ausgeführt.
+
+Typischer Service in `docker-compose.yml`:
 
 ```yaml
-volumes:
-  - postgres_data:/var/lib/postgresql/data
+frontend:
+  build:
+    context: ./frontend
+    dockerfile: Dockerfile
+  container_name: aiim_frontend
+  volumes:
+    - ./frontend:/app
+    - /app/node_modules
+  depends_on:
+    - backend
+  environment:
+    VITE_API_BASE_URL: http://localhost:8000
+  ports:
+    - "5173:5173"
 ```
 
-This means the database data survives when containers are stopped or deleted.
-
-```bash
-docker compose down
-```
-
-Stops and removes containers, but keeps the database data.
-
-```bash
-docker compose down -v
-```
-
-Stops containers and deletes the database volume. This removes all database data.
-
-Summary:
+Das Frontend wird lokal unter folgender URL geöffnet:
 
 ```text
-Container stopped      → data stays
-Container deleted      → data stays
-Volume deleted         → data is gone
+http://localhost:5173
 ```
 
-## Adding Python Packages
+Wichtig für Vite im Docker-Container ist, dass der Dev Server auf `0.0.0.0` läuft. Deshalb sollte das Frontend-Dockerfile ungefähr so aussehen:
 
-Add new packages to `requirements.txt`:
+```dockerfile
+FROM node:22-bookworm-slim
 
-```txt
-psycopg2-binary
-pandas
-sqlalchemy
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --no-audit --no-fund
+
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
 ```
 
-Then rebuild the app image:
+### Backend
+
+Das Backend läuft in einem Python-Container. Es enthält die API, Business Logic, Datenbankzugriffe und ggf. die Anbindung an externe GPT-Services.
+
+Typischer Service in `docker-compose.yml`:
+
+```yaml
+backend:
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  container_name: aiim_backend
+  volumes:
+    - ./backend:/app
+    - ./data:/app/data
+    - ./database:/app/database
+  depends_on:
+    - db
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: postgresql://postgres:postgres@db:5432/app_db
+  ports:
+    - "8000:8000"
+```
+
+Innerhalb des Docker-Netzwerks ist die Datenbank nicht über `localhost`, sondern über den Service-Namen erreichbar:
+
+```text
+db:5432
+```
+
+Beispiel:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+```
+
+### Datenbank
+
+Die Datenbank verwendet das offizielle PostgreSQL-Image. Deshalb benötigt der Ordner `database/` normalerweise kein eigenes Dockerfile.
+
+Typischer Service in `docker-compose.yml`:
+
+```yaml
+db:
+  image: postgres:16
+  container_name: aiim_postgres
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: app_db
+  ports:
+    - "5432:5432"
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+```
+
+Das Volume `postgres_data` sorgt dafür, dass Datenbankdaten erhalten bleiben, auch wenn Container gestoppt oder neu gebaut werden.
+
+---
+
+## Docker Compose
+
+Die zentrale Datei zum Starten aller Services ist:
+
+```text
+docker-compose.yml
+```
+
+Ein vollständiges Beispiel:
+
+```yaml
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aiim_backend
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./database:/app/database
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/app_db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aiim_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+
+  db:
+    image: postgres:16
+    container_name: aiim_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+---
+
+## Startscript `run.sh`
+
+Das Script `run.sh` dient nur noch als komfortabler Wrapper um Docker Compose. Es installiert keine lokalen Python- oder Node-Abhängigkeiten mehr.
+
+Empfohlener Inhalt:
+
+```bash
+#!/usr/bin/env bash
+
+# ==============================================================================
+# DB MoveOptimizer Docker Runner
+# Starts frontend, backend, and database via Docker Compose.
+# ==============================================================================
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "======================================================================"
+echo "🚉 DB MoveOptimizer — Starting Docker Environment"
+echo "======================================================================"
+
+echo "🔍 Checking Docker..."
+
+if ! command -v docker &> /dev/null; then
+    echo "❌ Error: Docker is not installed or not available in PATH."
+    exit 1
+fi
+
+if ! docker compose version &> /dev/null; then
+    echo "❌ Error: Docker Compose is not available."
+    exit 1
+fi
+
+echo "✅ Docker and Docker Compose are available."
+
+if [ ! -f ".env" ]; then
+    echo "⚠️  Warning: .env file not found."
+    echo "ℹ️  Create one from .env.example if your services need environment variables."
+fi
+
+cleanup() {
+    echo ""
+    echo "🔌 Stopping Docker services..."
+    docker compose down --remove-orphans
+    echo "✅ Docker services stopped."
+}
+
+trap cleanup EXIT SIGINT SIGTERM
+
+echo "🚀 Building and starting services..."
+echo "📡 Backend:  http://localhost:8000"
+echo "🎨 Frontend: http://localhost:5173"
+echo "🗄️  Postgres: localhost:5432"
+echo "======================================================================"
+echo "ℹ️  Press Ctrl+C to stop all services."
+echo "======================================================================"
+
+docker compose up --build
+```
+
+Ausführbar machen:
+
+```bash
+chmod +x run.sh
+```
+
+Starten:
+
+```bash
+./run.sh
+```
+
+---
+
+## Nützliche Docker-Befehle
+
+Alle Services starten:
 
 ```bash
 docker compose up --build
 ```
 
-Changing Python files in `src/` does not require rebuilding, because the folder is mounted into the container.
-
-Changing `requirements.txt` does require rebuilding.
-
-## Useful Commands
-
-Start everything:
+Services im Hintergrund starten:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-Start only Postgres in the background:
-
-```bash
-docker compose up -d db
-```
-
-Run the Python script:
-
-```bash
-docker compose run --rm app python src/main.py
-```
-
-Stop containers:
+Services stoppen:
 
 ```bash
 docker compose down
 ```
 
-Stop containers and delete database data:
+Services inklusive Volumes löschen:
 
 ```bash
 docker compose down -v
 ```
 
-## Connect with DBeaver
-
-Make sure the Postgres container is running:
+Laufende Services anzeigen:
 
 ```bash
 docker compose ps
 ```
 
-if you do not see something like: "db postgres:16 ... 0.0.0.0:5432->5432/tcp", run:
+Logs aller Services anzeigen:
 
 ```bash
-docker compose up -d db
+docker compose logs
 ```
 
-In DBeaver, create a new PostgreSQL connection with:
-Host: localhost
-Port: 5432
-Database: app_db
-Username: postgres
-Password: postgres
+Logs des Frontends anzeigen:
 
-Important distinction:
-From another Docker container: host = db
-From your Mac / DBeaver: host = localhost
+```bash
+docker compose logs frontend
+```
+
+Logs des Backends anzeigen:
+
+```bash
+docker compose logs backend
+```
+
+Nur das Frontend neu bauen:
+
+```bash
+docker compose build --no-cache frontend
+```
+
+Nur das Backend neu bauen:
+
+```bash
+docker compose build --no-cache backend
+```
+
+In den Backend-Container wechseln:
+
+```bash
+docker compose exec backend bash
+```
+
+In den Frontend-Container wechseln:
+
+```bash
+docker compose exec frontend sh
+```
+
+In die PostgreSQL-Datenbank wechseln:
+
+```bash
+docker compose exec db psql -U postgres -d app_db
+```
+
+---
+
+## Entwicklung
+
+### Frontend-Entwicklung
+
+Der Ordner `frontend/` ist als Volume in den Frontend-Container eingebunden:
+
+```yaml
+volumes:
+  - ./frontend:/app
+  - /app/node_modules
+```
+
+Dadurch werden Änderungen am lokalen Frontend-Code direkt im Container sichtbar.
+
+Das zweite Volume verhindert, dass lokale `node_modules` die im Container installierten Dependencies überschreiben:
+
+```yaml
+- /app/node_modules
+```
+
+### Backend-Entwicklung
+
+Der Ordner `backend/` ist als Volume in den Backend-Container eingebunden:
+
+```yaml
+volumes:
+  - ./backend:/app
+```
+
+Dadurch sind Änderungen am Backend-Code direkt im Container sichtbar. Je nach Backend-Framework muss der Backend-Prozess eventuell neu gestartet werden, damit Änderungen aktiv werden.
+
+### Datenbankdaten
+
+PostgreSQL-Daten werden im Docker Volume gespeichert:
+
+```yaml
+volumes:
+  postgres_data:
+```
+
+Dieses Volume bleibt erhalten, wenn Container gestoppt oder neu gebaut werden.
+
+---
+
+## Environment-Variablen
+
+Lokale Konfiguration erfolgt über `.env`.
+
+Beispiel:
+
+```env
+UNI_GPT_API_KEY=your_api_key_here
+DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+```
+
+Für Vite-Frontend-Variablen gilt: Variablen, die im Frontend-Code verfügbar sein sollen, müssen mit `VITE_` beginnen.
+
+Beispiel:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+Im Frontend-Code kann darauf so zugegriffen werden:
+
+```js
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+```
+
+---
+
+## Git-Hinweise
+
+Die `.env` sollte nicht committed werden. Stattdessen sollte eine `.env.example` mit Platzhaltern versioniert werden.
+
+Empfohlene `.gitignore`-Einträge:
+
+```gitignore
+# Environment
+.env
+.env.local
+.env.local.backup
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+```
+
+---
+
+## Troubleshooting
+
+### `services.depends_on must be a mapping`
+
+Diese Fehlermeldung bedeutet meistens, dass `depends_on` in der `docker-compose.yml` falsch eingerückt ist.
+
+Richtig:
+
+```yaml
+frontend:
+  build:
+    context: ./frontend
+  depends_on:
+    - backend
+```
+
+Falsch:
+
+```yaml
+services:
+  frontend:
+    build:
+      context: ./frontend
+
+  depends_on:
+    - backend
+```
+
+Die Compose-Datei kann geprüft werden mit:
+
+```bash
+docker compose config
+```
+
+### Frontend ist im Browser nicht erreichbar
+
+Zuerst prüfen, ob der Frontend-Service läuft:
+
+```bash
+docker compose ps
+```
+
+Die Ports sollten ungefähr so aussehen:
+
+```text
+0.0.0.0:5173->5173/tcp
+```
+
+Dann Logs prüfen:
+
+```bash
+docker compose logs frontend
+```
+
+Außerdem muss Vite im Container auf `0.0.0.0` lauschen:
+
+```dockerfile
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+```
+
+Browser-URL:
+
+```text
+http://localhost:5173
+```
+
+### `curl: (56) Recv failure: Connection reset by peer`
+
+Das bedeutet häufig, dass Docker den Port zwar veröffentlicht, aber der Prozess im Container nicht korrekt darauf antwortet.
+
+Prüfen:
+
+```bash
+docker compose logs frontend
+```
+
+Danach sicherstellen, dass das Frontend-Dockerfile Host und Port explizit setzt:
+
+```dockerfile
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+```
+
+Anschließend neu bauen:
+
+```bash
+docker compose down
+docker compose build --no-cache frontend
+docker compose up
+```
+
+### `npm error Exit handler never called!`
+
+Dieser Fehler kann beim Docker-Build im Schritt `npm install` auftreten. Empfohlen ist, im Dockerfile `npm ci` zu verwenden und ein Debian-basiertes Node-Image zu nutzen:
+
+```dockerfile
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --no-audit --no-fund
+
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+```
+
+Danach neu bauen:
+
+```bash
+docker compose build --no-cache frontend
+```
+
+### Backend kann die Datenbank nicht erreichen
+
+Innerhalb von Docker darf das Backend nicht `localhost` als Datenbank-Host verwenden. Stattdessen muss der Service-Name aus `docker-compose.yml` verwendet werden:
+
+```text
+db
+```
+
+Beispiel:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+```
+
+### Datenbank zurücksetzen
+
+Achtung: Dieser Befehl löscht die lokalen Datenbankdaten im Docker Volume.
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+---
+
+## Branch- und Integrationshinweise
+
+Die bisher getrennten Branches für Datenbank, Backend und Frontend sollten in einem Integrationsbranch zusammengeführt werden, z. B.:
+
+```text
+integration/docker
+```
+
+Die Zielstruktur ist ein Monorepo mit getrennten Services:
+
+```text
+frontend/   → Frontend-Code
+backend/    → Backend-Code und Business Logic
+database/   → SQL, Migrationen und Seed-Daten
+data/       → Rohdaten, generierte Daten und Testdaten
+scripts/    → Hilfsskripte für Import, Export und Daten-Generierung
+```
+
+Alle Services werden gemeinsam über Docker Compose gestartet.

@@ -1,17 +1,40 @@
 services:
-  app:
-    build: .
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aiim_backend
     volumes:
-      - .:/app
+      - ./backend:/app
+      - ./data:/app/data
+      - ./database:/app/database
     depends_on:
       - db
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/app_db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aiim_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
 
   db:
     image: postgres:16
+    container_name: aiim_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
