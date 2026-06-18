@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS user_opt_in_signals (
+CREATE TABLE IF NOT EXISTS subscription_catalogs (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     city TEXT NOT NULL,

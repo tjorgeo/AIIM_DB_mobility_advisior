@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS trip_legs (
     leg_id TEXT PRIMARY KEY,
 
     trip_id TEXT NOT NULL REFERENCES user_trips(trip_id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES user_information(user_id) ON DELETE CASCADE,
 
     leg_sequence_number INTEGER NOT NULL
         CHECK (leg_sequence_number >= 1),

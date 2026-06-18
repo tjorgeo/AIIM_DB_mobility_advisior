@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS user_profiles (
+CREATE TABLE IF NOT EXISTS user_information (
     user_id TEXT PRIMARY KEY,
 
     -- Persona / Generierung

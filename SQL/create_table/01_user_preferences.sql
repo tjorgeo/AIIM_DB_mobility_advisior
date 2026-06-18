@@ -1,6 +1,5 @@
-CREATE TABLE IF NOT EXISTS product_catalogs (
+CREATE TABLE IF NOT EXISTS user_preferences (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
-    city TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

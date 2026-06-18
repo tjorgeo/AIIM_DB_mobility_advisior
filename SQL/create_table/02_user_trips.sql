@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS user_trips (
     trip_id TEXT PRIMARY KEY,
 
-    user_id TEXT NOT NULL REFERENCES user_profiles(user_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES user_information(user_id) ON DELETE CASCADE,
 
     trip_sequence_number INTEGER NOT NULL
         CHECK (trip_sequence_number >= 1),
