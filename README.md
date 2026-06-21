@@ -115,31 +115,29 @@ Die empfohlene Struktur des Repositories ist:
 ├── .env.example
 ├── .gitignore
 │
-├── frontend/
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── index.html
+├── frontend/                 # Vite + React UI (final)
+│   ├── dockerfile
+│   ├── vite.config.js        # /api proxied to backend (BACKEND_URL in Docker)
 │   └── src/
 │
-├── backend/
-│   ├── Dockerfile
-│   ├── .dockerignore
+├── backend/                  # single merged service (FastAPI + agentic LangGraph)
+│   ├── dockerfile
 │   ├── requirements.txt
 │   └── src/
+│       ├── main.py           # API: /api/personas, /api/analyze, /api/.../approve, /api/chat, /api/onboarding
+│       ├── database.py       # Postgres access layer
+│       ├── seed_data.py      # demo personas + pricing catalogue seed
+│       ├── orchestrator.py   # session/persistence over the graph
+│       ├── agents/           # deterministic analyst/forecaster/optimizer/communicator
+│       └── graph/            # LangGraph pipeline, LLM, tools, chat & onboarding agents
 │
 ├── database/
-│   ├── init/
-│   ├── migrations/
-│   └── seed/
+│   └── init/                 # canonical Postgres schema (target for Phase 3+; not yet loaded)
 │
-├── data/
-│   ├── raw/
-│   ├── generated/
-│   └── processed/
-│
-└── scripts/
+├── data/                     # raw + generated mobility data, subscription markdown/AGB
+├── data_generator/           # synthetic data generation
+├── scripts/                  # helper scripts (e.g. Jira backlog import)
+└── DELIVERABLES/             # architecture, contract & merge report
 ```
 
 ---
@@ -529,9 +527,32 @@ Lokale Konfiguration erfolgt über `.env`.
 Beispiel:
 
 ```env
-UNI_GPT_API_KEY=your_api_key_here
+# Database (set automatically for the backend container by docker-compose)
 DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+
+# University GPT — enables the LLM features (memos, /api/chat, /api/onboarding).
+# Without a key the backend stays fully functional using deterministic fallbacks.
+UNI_GPT_API_KEY=your_api_key_here
+# Optional overrides (defaults shown). Model id must match GET /api/v1/models exactly.
+UNI_GPT_BASE_URL=https://chat.kiconnect.nrw/api/v1
+UNI_GPT_MODEL=OpenAI GPT OSS 120b KI:Inferenz.nrw
 ```
+
+> Hinweis: `.env` enthält Secrets und ist in `.gitignore` — nicht committen.
+
+### Backend — agentic LangGraph
+
+Das Backend vereint die Session-/User-API (FastAPI, für das Frontend) mit einer
+agentischen LangGraph-Engine:
+
+- `POST /api/analyze` — LangGraph-Pipeline (`load_context → analyst ∥ forecaster ∥ optimizer → communicator`).
+  Die deterministischen Agenten liefern die Zahlen (stabiler Contract); die Memos werden vom LLM
+  geschrieben (Fallback: Template, wenn kein Key gesetzt ist).
+- `POST /api/chat` — konversationeller Berater (ReAct-Agent mit `lookup_subscriptions`-Tool).
+- `POST /api/onboarding` — geführtes Profil-Onboarding, speichert neue Nutzer in Postgres.
+
+`/api/chat` und `/api/onboarding` benötigen einen API-Key (sonst `503`, Frontend nutzt seinen
+Fallback). `/api/analyze` funktioniert immer.
 
 Für Vite-Frontend-Variablen gilt: Variablen, die im Frontend-Code verfügbar sein sollen, müssen mit `VITE_` beginnen.
 

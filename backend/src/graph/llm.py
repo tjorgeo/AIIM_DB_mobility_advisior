@@ -9,7 +9,9 @@ app stays fully usable without a key.
 import os
 
 UNI_GPT_BASE_URL = os.getenv("UNI_GPT_BASE_URL", "https://chat.kiconnect.nrw/api/v1")
-UNI_GPT_MODEL = os.getenv("UNI_GPT_MODEL", "Openai GPT OSS 120B")
+# Exact model id as listed by GET /api/v1/models on the kiconnect endpoint.
+# Override via UNI_GPT_MODEL if the catalogue changes.
+UNI_GPT_MODEL = os.getenv("UNI_GPT_MODEL", "OpenAI GPT OSS 120b KI:Inferenz.nrw")
 UNI_GPT_API_KEY = os.getenv("UNI_GPT_API_KEY", "")
 
 
