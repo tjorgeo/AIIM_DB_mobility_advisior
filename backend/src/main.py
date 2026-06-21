@@ -1,28 +1,22 @@
-import os
 import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-from database import init_db, DB_FILE
+from database import init_db
 from seed_data import seed_database
 from orchestrator import Orchestrator
 
 # Automate database creation and seeding on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Check if database file exists. If not, initialize and seed it!
-    db_exists = os.path.exists(DB_FILE)
-    if not db_exists:
-        print("Database not found. Initializing and seeding database...")
-        init_db()
-        seed_database()
-    else:
-        # Hitting it anyway on startup to ensure latest persona schemas and catalog are synced
-        print("Database found. Syncing latest pricing catalog and traveler personas...")
-        init_db()
-        seed_database()
+    # Ensure tables exist and the demo personas / pricing catalog are synced.
+    # init_db() is idempotent (CREATE TABLE IF NOT EXISTS) and seed_database()
+    # clears + re-inserts, so this is safe to run on every startup.
+    print("Initializing Postgres schema and syncing pricing catalog + personas...")
+    init_db()
+    seed_database()
     yield
     print("Shutting down DB MoveOptimizer Backend...")
 
@@ -51,6 +45,14 @@ class AnalyzeRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     scenario_id: str
+
+class ChatRequest(BaseModel):
+    user_id: str
+    messages: list
+
+class OnboardingRequest(BaseModel):
+    messages: list
+    user_id: str | None = None
 
 # --- API ENDPOINTS ---
 
@@ -117,6 +119,42 @@ def approve_recommendation(rec_id: str, req: ApproveRequest):
         "recommendation_id": rec_id,
         "scenario_id": req.scenario_id
     }
+
+@app.post("/api/chat")
+def chat(req: ChatRequest):
+    """
+    Conversational mobility advisor (agentic ReAct loop with catalogue tool use).
+    Requires an LLM key; without one we return 503 and the frontend falls back to
+    its scripted assistant.
+    """
+    from graph.llm import llm_available
+    if not llm_available():
+        raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
+    try:
+        from graph.chat_agent import run_chat
+        reply = run_chat(req.user_id, req.messages)
+        return {"reply": reply}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.post("/api/onboarding")
+def onboarding(req: OnboardingRequest):
+    """
+    Conversational onboarding agent. Collects a new user's mobility profile and
+    persists it on completion. Requires an LLM key (503 otherwise).
+    """
+    from graph.llm import llm_available
+    if not llm_available():
+        raise HTTPException(status_code=503, detail="Onboarding LLM not configured (UNI_GPT_API_KEY missing).")
+    try:
+        from graph.onboarding import run_onboarding
+        return run_onboarding(req.messages, req.user_id)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Onboarding error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

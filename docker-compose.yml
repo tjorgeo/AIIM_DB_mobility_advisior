@@ -29,6 +29,8 @@ services:
       - backend
     environment:
       VITE_API_BASE_URL: http://localhost:8000
+      # Vite dev-server proxies /api to the backend container (see frontend/vite.config.js)
+      BACKEND_URL: http://backend:8000
     ports:
       - "5173:5173"
 

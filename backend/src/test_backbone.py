@@ -1,7 +1,6 @@
 import unittest
-import os
 import json
-from database import init_db, DB_FILE, get_connection
+from database import init_db, get_connection
 from seed_data import seed_database
 from orchestrator import Orchestrator
 
@@ -17,11 +16,15 @@ class TestMobilityAdvisorBackbone(unittest.TestCase):
         seed_database()
         cls.orchestrator = Orchestrator()
 
-    def test_database_exists(self):
+    def test_database_connects(self):
         """
-        Confirms that the SQLite database file exists.
+        Confirms the Postgres database is reachable.
         """
-        self.assertTrue(os.path.exists(DB_FILE), "Database file was not created.")
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 AS ok")
+        self.assertEqual(cursor.fetchone()["ok"], 1, "Database connection failed.")
+        conn.close()
 
     def test_personas_seeded(self):
         """
@@ -29,8 +32,8 @@ class TestMobilityAdvisorBackbone(unittest.TestCase):
         """
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM users")
-        count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) AS n FROM users")
+        count = cursor.fetchone()["n"]
         conn.close()
         self.assertEqual(count, 5, "Database must seed precisely 5 personas.")
 
@@ -40,8 +43,8 @@ class TestMobilityAdvisorBackbone(unittest.TestCase):
         """
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM pricing_catalog")
-        count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) AS n FROM pricing_catalog")
+        count = cursor.fetchone()["n"]
         conn.close()
         self.assertGreater(count, 5, "Database must seed pricing models.")
 
