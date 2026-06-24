@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
-import { PERSONAS, DEMO_PASSWORD, findPersonaByEmail, findPersonaById } from '../data/personas'
+import { login as apiLogin } from '../api/client'
 
 const STORAGE_KEY = 'moveoptimizer.session'
 
@@ -9,16 +9,18 @@ function loadSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    const id = JSON.parse(raw)?.id
-    return findPersonaById(id)
+    const user = JSON.parse(raw)
+    // Only restore a usable session; drops stale id-only sessions from the
+    // previous persona-based login.
+    return user && user.id ? user : null
   } catch {
     return null
   }
 }
 
-function persist(persona) {
+function persist(user) {
   try {
-    if (persona) localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: persona.id }))
+    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
     else localStorage.removeItem(STORAGE_KEY)
   } catch {
     /* storage unavailable — session simply won't persist */
@@ -28,21 +30,13 @@ function persist(persona) {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(loadSession)
 
-  const loginAs = useCallback((personaId) => {
-    const persona = findPersonaById(personaId)
-    if (!persona) return { ok: false, error: 'Profile not found.' }
-    setCurrentUser(persona)
-    persist(persona)
-    return { ok: true }
-  }, [])
-
-  const login = useCallback((email, password) => {
-    const persona = findPersonaByEmail(email)
-    if (!persona) return { ok: false, error: 'No account matches that email.' }
-    if (password !== DEMO_PASSWORD) return { ok: false, error: 'Incorrect password. Try the demo password.' }
-    setCurrentUser(persona)
-    persist(persona)
-    return { ok: true }
+  const login = useCallback(async (identifier, password) => {
+    const res = await apiLogin(identifier, password)
+    if (res.ok) {
+      setCurrentUser(res.user)
+      persist(res.user)
+    }
+    return res
   }, [])
 
   const logout = useCallback(() => {
@@ -50,7 +44,7 @@ export function AuthProvider({ children }) {
     persist(null)
   }, [])
 
-  const value = { currentUser, login, loginAs, logout, personas: PERSONAS }
+  const value = { currentUser, login, logout }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

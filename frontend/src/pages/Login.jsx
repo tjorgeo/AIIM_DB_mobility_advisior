@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { ArrowRight, Wallet, Leaf, Route, AlertCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { DEMO_PASSWORD } from '../data/personas'
 
 const FEATURES = [
   { icon: Wallet, text: 'See exactly what your mobility costs — and where it leaks.' },
@@ -10,14 +9,17 @@ const FEATURES = [
 ]
 
 export default function Login() {
-  const { login, loginAs, personas } = useAuth()
-  const [email, setEmail] = useState('')
+  const { login } = useAuth()
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const res = login(email, password)
+    setSubmitting(true)
+    const res = await login(identifier, password)
+    setSubmitting(false)
     if (!res.ok) setError(res.error)
   }
 
@@ -51,15 +53,15 @@ export default function Login() {
 
           <form className="login__form" onSubmit={handleSubmit} noValidate>
             <div className="field">
-              <label className="field__label" htmlFor="email">Email</label>
+              <label className="field__label" htmlFor="identifier">Username or email</label>
               <input
-                id="email"
+                id="identifier"
                 className="field__input"
-                type="email"
+                type="text"
                 autoComplete="username"
-                placeholder="you@dbmove.de"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError('') }}
+                placeholder="your username or you@dbmove.de"
+                value={identifier}
+                onChange={(e) => { setIdentifier(e.target.value); setError('') }}
               />
             </div>
 
@@ -83,34 +85,15 @@ export default function Login() {
               </div>
             )}
 
-            <button className="btn btn--primary btn--block" type="submit">
-              Sign in <ArrowRight size={16} />
+            <button className="btn btn--primary btn--block" type="submit" disabled={submitting}>
+              {submitting ? 'Signing in…' : <>Sign in <ArrowRight size={16} /></>}
             </button>
 
             <p className="login__hint">
-              Demo access — password <code>{DEMO_PASSWORD}</code> for any profile below.
+              Demo access — sign in with your username or email and the shared
+              password <code>mobility</code>.
             </p>
           </form>
-
-          <div className="login__divider">or jump straight in</div>
-
-          <div className="demo__grid">
-            {personas.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="demo-persona"
-                onClick={() => loginAs(p.id)}
-              >
-                <span className="avatar">{p.initials}</span>
-                <span>
-                  <span className="demo-persona__name">{p.name}</span><br />
-                  <span className="demo-persona__role">{p.tagline}</span>
-                </span>
-                <ArrowRight className="demo-persona__go" size={18} />
-              </button>
-            ))}
-          </div>
         </div>
       </main>
     </div>

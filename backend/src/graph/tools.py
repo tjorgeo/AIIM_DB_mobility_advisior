@@ -1,8 +1,7 @@
 """Agent tools. The chat agent calls these to read live data.
 
 `lookup_subscriptions` reads the production `subscription_catalogs` table and
-exposes each product with a normalized service slug so the agent's answers line
-up with the optimizer's vocabulary.
+exposes each product keyed by its catalog id (the optimizer keys on the same id).
 """
 
 import json
@@ -10,7 +9,7 @@ import json
 from langchain_core.tools import tool
 
 from database import get_connection
-from schema_map import clean_row, normalize_service
+from schema_map import clean_row
 
 
 @tool
@@ -33,11 +32,7 @@ def lookup_subscriptions(filter_type: str = "all") -> str:
 
     products = [
         {
-            "id": normalize_service(
-                r.get("provider_plan_name"),
-                r.get("subscription_category"),
-                r.get("travel_class"),
-            ),
+            "id": r.get("subscription_id"),
             "name": r.get("provider_plan_name"),
             "provider": r.get("provider_name"),
             "category": r.get("subscription_category"),

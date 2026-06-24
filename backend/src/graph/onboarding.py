@@ -21,7 +21,6 @@ from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import add_messages
 
 from database import get_connection
-from schema_map import normalize_service
 from graph.llm import get_llm
 
 ONBOARDING_SYSTEM_PROMPT = """
@@ -190,10 +189,9 @@ def save_profile(profile: dict, user_id: Optional[str] = None) -> str:
 
     # 3. user_subscriptions — only for products present in the catalog (FK).
     for raw in profile.get("current_subscriptions") or []:
-        service = normalize_service(str(raw))
         cursor.execute(
-            "SELECT subscription_id FROM subscription_catalogs WHERE subscription_id = %s OR provider_plan_name ILIKE %s LIMIT 1",
-            (service, f"%{raw}%"),
+            "SELECT subscription_id FROM subscription_catalogs WHERE provider_plan_name ILIKE %s LIMIT 1",
+            (f"%{raw}%",),
         )
         match = cursor.fetchone()
         if not match:

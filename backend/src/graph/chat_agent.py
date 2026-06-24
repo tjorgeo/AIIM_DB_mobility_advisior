@@ -14,7 +14,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 
 from database import get_connection
-from schema_map import normalize_service, preferences_from_onboarding
+from schema_map import preferences_from_onboarding
 from graph.llm import get_llm
 from graph.tools import lookup_subscriptions
 
@@ -39,17 +39,14 @@ def _load_user_context(user_id: str) -> str:
 
     cursor.execute(
         """
-        SELECT c.provider_plan_name, c.subscription_category, c.travel_class
+        SELECT c.provider_plan_name
         FROM user_subscriptions s
         LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
         WHERE s.user_id = ? AND s.subscription_status = 'active'
         """,
         (user_id,),
     )
-    services = [
-        normalize_service(r["provider_plan_name"], r["subscription_category"], r["travel_class"])
-        for r in cursor.fetchall()
-    ]
+    services = [r["provider_plan_name"] for r in cursor.fetchall() if r["provider_plan_name"]]
 
     cursor.execute(
         "SELECT optimizer_scenarios FROM recommendations WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",

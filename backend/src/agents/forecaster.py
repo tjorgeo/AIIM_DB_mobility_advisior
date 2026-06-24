@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from schema_map import simplify_mode
+from schema_map import group_mode
 
 
 def _month_key(started_at) -> str | None:
@@ -39,7 +39,7 @@ class ForecasterAgent:
             month_key = _month_key(trip.get("started_at"))
             if not month_key:
                 continue
-            mode = simplify_mode(trip.get("transport_mode"))
+            mode = group_mode(trip.get("transport_mode"))
 
             if month_key not in monthly_trips:
                 monthly_trips[month_key] = {}
@@ -49,7 +49,7 @@ class ForecasterAgent:
             monthly_trips[month_key][mode] += 1
 
         # Compute baseline average trips per month per mode
-        modes = list(set(simplify_mode(trip.get("transport_mode")) for trip in travel_history))
+        modes = list(set(group_mode(trip.get("transport_mode")) for trip in travel_history))
         mode_averages = {mode: 0.0 for mode in modes}
         
         num_months = len(monthly_trips) if monthly_trips else 12

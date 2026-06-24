@@ -98,7 +98,9 @@ class Orchestrator:
                     "input": {
                         "travel_history_length": len(travel_history),
                         "subscriptions": [
-                            s["service"] for s in subscriptions if s["subscription_status"] == "active"
+                            s.get("provider_plan_name")
+                            for s in subscriptions
+                            if s["subscription_status"] == "active"
                         ],
                     },
                     "output": analyst_out,

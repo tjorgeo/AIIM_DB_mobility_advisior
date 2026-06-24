@@ -17,7 +17,7 @@ from typing import TypedDict
 from langgraph.graph import START, END, StateGraph
 
 from database import get_connection
-from schema_map import clean_row, normalize_service, preferences_from_onboarding
+from schema_map import clean_row, preferences_from_onboarding
 from agents.analyst import AnalystAgent
 from agents.forecaster import ForecasterAgent
 from agents.optimizer import OptimizerAgent
@@ -73,13 +73,14 @@ def load_context_node(state: AnalyzeState) -> dict:
     onboarding_row = cursor.fetchone()
     preferences = preferences_from_onboarding(onboarding_row)
 
-    # Subscriptions joined to the catalog, with a normalized service slug.
+    # Subscriptions joined to the catalog. The agents key on the catalog PK
+    # (subscription_id) and the subscription category, not on a service slug.
     cursor.execute(
         """
         SELECT s.user_subscription_id, s.subscription_status,
                s.is_primary_mobility_option, s.estimated_usage_frequency,
                c.subscription_id, c.provider_name, c.provider_plan_name,
-               c.subscription_category, c.travel_class, c.monthly_cost_eur
+               c.subscription_category, c.monthly_cost_eur, c.annual_cost_eur
         FROM user_subscriptions s
         LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
         WHERE s.user_id = ?
@@ -89,11 +90,6 @@ def load_context_node(state: AnalyzeState) -> dict:
     subscriptions = []
     for row in cursor.fetchall():
         sub = clean_row(row)
-        sub["service"] = normalize_service(
-            sub.get("provider_plan_name"),
-            sub.get("subscription_category"),
-            sub.get("travel_class"),
-        )
         sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
         subscriptions.append(sub)
 
@@ -111,22 +107,19 @@ def load_context_node(state: AnalyzeState) -> dict:
     )
     travel_history = [clean_row(r) for r in cursor.fetchall()]
 
-    # The optimizer's candidate catalog comes from subscription_catalogs.
+    # The optimizer's candidate catalog comes straight from subscription_catalogs,
+    # keyed by the real PK.
     cursor.execute("SELECT * FROM subscription_catalogs")
     pricing_catalog = []
     for row in cursor.fetchall():
         item = clean_row(row)
         pricing_catalog.append(
             {
-                "id": normalize_service(
-                    item.get("provider_plan_name"),
-                    item.get("subscription_category"),
-                    item.get("travel_class"),
-                ),
+                "id": item.get("subscription_id"),
                 "name": item.get("provider_plan_name"),
+                "category": item.get("subscription_category"),
                 "monthly_cost": item.get("monthly_cost_eur") or 0.0,
                 "annual_cost": item.get("annual_cost_eur"),
-                "coverage": item.get("subscription_category"),
                 "subscription_type": item.get("subscription_type"),
             }
         )

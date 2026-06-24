@@ -1,24 +1,30 @@
-"""Adapters between the production schema (database/init/*.sql) and the
-deterministic agents.
+"""Domain helpers for the production schema (database/init/*.sql).
 
-The agents reason over a simplified mobility vocabulary (modes like ``train`` /
-``car`` and service slugs like ``deutschlandticket`` / ``bahncard_25_2nd``). The
-production schema stores a richer set of transport modes and a free-form
-subscription catalog, so these helpers translate one onto the other in a single
-place shared by the pipeline, onboarding, chat and tool layers.
+The deterministic agents compute over the production data model directly (full
+transport-mode taxonomy, trips/legs, and the generic ``subscription_catalogs``).
+This module holds the small amount of shared domain knowledge they need:
+
+* ``group_mode`` — collapse the 11 production transport modes into the handful of
+  display buckets the frontend's ``TravelModes`` component knows about. Grouping
+  happens only at the *output* boundary; the agents keep full-fidelity modes
+  internally.
+* ``category_covers_mode`` — the coverage assumption that replaces the old
+  hardcoded product logic: which transport modes a subscription category pays for.
+* ``clean_row`` / ``jsonable`` — coerce psycopg2 scalars into JSON/arithmetic
+  friendly types.
 """
 
-import re
 from datetime import date, datetime
 from decimal import Decimal
 
-# Production ``transport_mode`` / ``main_transport_mode`` -> simplified mode the
-# analyst, forecaster and optimizer reason about.
-_SIMPLE_MODE = {
+# Production ``transport_mode`` / ``main_transport_mode`` -> the display bucket the
+# frontend's TravelModes MODE_META renders (train/bus/car/scooter known; bike/walk/
+# other fall back to a generic icon + raw label).
+_DISPLAY_MODE = {
     "walking": "walk",
     "bicycle": "bike",
     "bike_sharing": "bike",
-    "public_transport": "train",
+    "public_transport": "bus",
     "regional_train": "train",
     "long_distance_train": "train",
     "car": "car",
@@ -31,29 +37,28 @@ _SIMPLE_MODE = {
 }
 
 
-def simplify_mode(transport_mode) -> str:
-    """Collapse a production transport mode into the agents' coarse vocabulary."""
-    return _SIMPLE_MODE.get((transport_mode or "").lower(), "other")
+def group_mode(transport_mode) -> str:
+    """Group a production transport mode into a frontend display bucket."""
+    return _DISPLAY_MODE.get((transport_mode or "").lower(), "other")
 
 
-def normalize_service(provider_plan_name, subscription_category=None, travel_class=None) -> str:
-    """Map a ``subscription_catalogs`` plan to the service slug the optimizer and
-    analyst reason about (e.g. ``deutschlandticket``, ``bahncard_50_2nd``,
-    ``miles_sharing``). Falls back to a slugified plan name for unknown products."""
-    name = (provider_plan_name or "").lower()
-    cls = "1st" if str(travel_class) == "1" else "2nd"
-    if "deutschlandticket" in name or "deutschland" in name or "49-euro" in name:
-        return "deutschlandticket"
-    if "bahncard 100" in name or "bc100" in name:
-        return f"bahncard_100_{cls}"
-    if "bahncard 50" in name or "bc50" in name:
-        return f"bahncard_50_{cls}"
-    if "bahncard 25" in name or "bc25" in name:
-        return f"bahncard_25_{cls}"
-    if (subscription_category or "") == "car_sharing" or "miles" in name or "sharing" in name:
-        return "miles_sharing"
-    slug = re.sub(r"[^a-z0-9]+", "_", name).strip("_")
-    return slug or "unknown"
+# Which transport modes a subscription category pays for. This is the project's
+# coverage assumption — the generic replacement for the old hardcoded product
+# logic. Long-distance rail is intentionally not covered by a public-transport
+# pass (it stays out-of-pocket).
+_CATEGORY_COVERAGE = {
+    "public_transport": {"public_transport", "regional_train"},
+    "bike_sharing": {"bike_sharing"},
+    "car_sharing": {"car_sharing"},
+    "e_scooter": {"e_scooter"},
+}
+
+
+def category_covers_mode(subscription_category, transport_mode) -> bool:
+    """True when a subscription of ``subscription_category`` pays for a leg taken
+    with ``transport_mode``."""
+    covered = _CATEGORY_COVERAGE.get((subscription_category or "").lower(), set())
+    return (transport_mode or "").lower() in covered
 
 
 def preferences_from_onboarding(row) -> dict:

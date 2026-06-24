@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,6 +7,11 @@ from contextlib import asynccontextmanager
 
 from database import ping_db
 from orchestrator import Orchestrator
+
+# Shared demo password. The seed data has no per-user credentials, so login
+# authenticates the identifier (username/email) against the real users and
+# checks this single shared password. Override via the DEMO_LOGIN_PASSWORD env.
+DEMO_LOGIN_PASSWORD = os.environ.get("DEMO_LOGIN_PASSWORD", "mobility")
 
 # Verify the database is reachable on startup. The production schema and the
 # dummy test user are provisioned by Postgres from database/init/*.sql, so the
@@ -50,6 +57,10 @@ class OnboardingRequest(BaseModel):
     messages: list
     user_id: str | None = None
 
+class LoginRequest(BaseModel):
+    identifier: str
+    password: str
+
 # --- API ENDPOINTS ---
 
 @app.get("/")
@@ -59,6 +70,51 @@ def read_root():
         "service": "DB MoveOptimizer Agent Sandbox Backend",
         "version": "1.0.0"
     }
+
+@app.post("/api/login")
+def login(req: LoginRequest):
+    """
+    Authenticate a real database user by username or email plus the shared demo
+    password. Matches username first (always unique), falling back to email, and
+    returns the compact user object the frontend stores as the session.
+    """
+    if req.password != DEMO_LOGIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+
+    from database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT user_id, first_name, last_name, email, username
+        FROM users
+        WHERE username = ? OR email = ?
+        ORDER BY (username = ?) DESC
+        LIMIT 1
+        """,
+        (req.identifier, req.identifier, req.identifier),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(
+            status_code=401, detail="No account matches that username or email."
+        )
+
+    user = dict(row)
+    first = user.get("first_name") or ""
+    last = user.get("last_name") or ""
+    initials = f"{first[:1]}{last[:1]}".upper()
+    return {
+        "id": user["user_id"],
+        "name": f"{first} {last}".strip(),
+        "firstName": first,
+        "email": user.get("email"),
+        "username": user.get("username"),
+        "initials": initials,
+    }
+
 
 @app.get("/api/personas")
 def get_personas():

@@ -16,6 +16,26 @@ export async function getPersonas() {
   return parseJson(res, 'Loading profiles')
 }
 
+// Authenticate against the real database users. Unlike the other helpers this
+// resolves (rather than throws) on a 401 so the sign-in form can show the
+// backend's message inline.
+export async function login(identifier, password) {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password }),
+  })
+  if (res.ok) return { ok: true, user: await res.json() }
+  let error = `Sign in failed (${res.status})`
+  try {
+    const body = await res.json()
+    if (body?.detail) error = body.detail
+  } catch {
+    /* non-JSON error body — keep the generic message */
+  }
+  return { ok: false, error }
+}
+
 export async function analyze(userId) {
   const res = await fetch('/api/analyze', {
     method: 'POST',
