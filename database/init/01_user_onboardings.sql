@@ -1,31 +1,6 @@
-CREATE TABLE IF NOT EXISTS user_information (
-    user_id TEXT PRIMARY KEY,
-
-    -- Persona / Generierung
-    source_persona_id TEXT NOT NULL,
-    profile_variant TEXT NOT NULL,
-    generation_rationale TEXT,
-
-    -- Account
-    email TEXT,
-    username TEXT,
-    external_auth_id TEXT,
-
-    -- Person Information
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    date_of_birth DATE NOT NULL,
-    age INTEGER NOT NULL CHECK (age >= 0),
-    gender TEXT NOT NULL DEFAULT 'not_specified'
-        CHECK (gender IN ('female', 'male', 'diverse', 'not_specified')),
-    life_stage TEXT,
-
-    -- Home Location
-    home_city TEXT NOT NULL,
-    home_postal_code TEXT NOT NULL,
-    home_country_code CHAR(2) NOT NULL DEFAULT 'DE',
-    city_type TEXT,
+CREATE TABLE IF NOT EXISTS user_onboardings (
+    onboarding_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
 
     -- Work / Employment
     employment_status TEXT,
@@ -63,23 +38,14 @@ CREATE TABLE IF NOT EXISTS user_information (
             OR bike_access IN ('none', 'occasional', 'own', 'shared')
         ),
 
-    public_transport_subscription TEXT
-        CHECK (
-            public_transport_subscription IS NULL
-            OR public_transport_subscription IN (
-                'none',
-                'monthly_pass',
-                'deutschlandticket',
-                'job_ticket',
-                'student_ticket',
-                'other'
-            )
-        ),
-
     -- Mobility Preferences
     preferred_transport_modes TEXT[] NOT NULL DEFAULT '{}',
     avoided_transport_modes TEXT[] NOT NULL DEFAULT '{}',
     mobility_constraints TEXT[] NOT NULL DEFAULT '{}',
+
+    score_emission INTEGER,
+    score_money INTEGER,
+    score_flexibility INTEGER,
 
     typical_weekday_pattern TEXT,
     typical_weekend_pattern TEXT,
@@ -87,4 +53,5 @@ CREATE TABLE IF NOT EXISTS user_information (
     -- Statements
     travel_statement TEXT NOT NULL,
     activity_statement TEXT NOT NULL
+   
 );

@@ -1,12 +1,6 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS user_trips (
     trip_id TEXT PRIMARY KEY,
-
-    user_id TEXT NOT NULL REFERENCES user_information(user_id) ON DELETE CASCADE,
-
-    trip_sequence_number INTEGER NOT NULL
-        CHECK (trip_sequence_number >= 1),
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
 
     -- Time
     started_at TIMESTAMPTZ NOT NULL,
@@ -44,6 +38,7 @@ CREATE TABLE IF NOT EXISTS user_trips (
                 'other'
             )
         ),
+    trip_purpose_other TEXT,
 
     main_transport_mode TEXT NOT NULL
         CHECK (
@@ -63,6 +58,7 @@ CREATE TABLE IF NOT EXISTS user_trips (
                 'other'
             )
         ),
+    main_transport_mode_other TEXT,
 
     -- Estimates
     estimated_distance_km NUMERIC(10,3) NOT NULL
@@ -71,13 +67,6 @@ CREATE TABLE IF NOT EXISTS user_trips (
     -- Flags
     is_commute BOOLEAN NOT NULL DEFAULT FALSE,
     is_intermodal BOOLEAN NOT NULL DEFAULT FALSE,
-    is_recurring_pattern BOOLEAN NOT NULL DEFAULT FALSE,
+    is_recurring_pattern BOOLEAN NOT NULL DEFAULT FALSE
 
-    -- Generation Metadata
-    generation_rationale TEXT,
-
-    -- Plausibility checks
-    CHECK (ended_at >= started_at),
-
-    UNIQUE (user_id, trip_sequence_number)
 );

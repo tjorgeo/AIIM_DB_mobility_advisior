@@ -1,10 +1,8 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS trip_legs (
     leg_id TEXT PRIMARY KEY,
-
     trip_id TEXT NOT NULL REFERENCES user_trips(trip_id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES user_information(user_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    user_subscription_id TEXT REFERENCES user_subscriptions(user_subscription_id) ON DELETE CASCADE,
 
     leg_sequence_number INTEGER NOT NULL
         CHECK (leg_sequence_number >= 1),
@@ -46,29 +44,9 @@ CREATE TABLE IF NOT EXISTS trip_legs (
             )
         ),
 
-    ticket_type TEXT NOT NULL
-        CHECK (
-            ticket_type IN (
-                'single_ticket',
-                'subscription',
-                'pay-as-you-go',
-                'other',
-                'none'
-            )
-        ),
-
-    ticket_class TEXT NOT NULL DEFAULT 'none'
-        CHECK (
-            ticket_class IN (
-                'second_class',
-                'first_class',
-                'none'
-            )
-        ),
-
-    provider_name TEXT,
-    service_line TEXT,
-    vehicle_type TEXT,
+    ticket_type TEXT NOT NULL,
+    ticket_class INTEGER,
+    ticket_purchased_at TIMESTAMPTZ,
 
     -- Estimates
     estimated_distance_km NUMERIC(10,3) NOT NULL
@@ -99,20 +77,5 @@ CREATE TABLE IF NOT EXISTS trip_legs (
         ),
 
     transfer_count_before_leg INTEGER NOT NULL DEFAULT 0
-        CHECK (transfer_count_before_leg >= 0),
-
-    -- Generation Metadata
-    generation_rationale TEXT,
-
-    -- Plausibility checks
-    CHECK (ended_at >= started_at),
-
-    CHECK (
-        (
-            is_access_leg::INTEGER +
-            is_main_leg::INTEGER +
-            is_egress_leg::INTEGER +
-            is_transfer_leg::INTEGER
-        ) >= 1
-    )
+        CHECK (transfer_count_before_leg >= 0)
 );

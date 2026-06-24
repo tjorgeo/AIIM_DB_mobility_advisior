@@ -9,8 +9,7 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ./src/
-COPY SQL/ ./SQL/
 COPY data/ ./data/
+COPY scr/ ./src/
 
 CMD ["python", "src/main.py"]
