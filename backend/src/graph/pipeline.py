@@ -210,10 +210,10 @@ def build_graph():
     # fan-out: analyst, forecaster, optimizer run in parallel
     workflow.add_edge("load_context", "analyst")
     workflow.add_edge("load_context", "forecaster")
-    workflow.add_edge("load_context", "optimizer")
+    # workflow.add_edge("load_context", "optimizer")
     # fan-in: communicator waits for all three
-    workflow.add_edge("analyst", "communicator")
-    workflow.add_edge("forecaster", "communicator")
+    workflow.add_edge("analyst", "optimizer")
+    workflow.add_edge("forecaster", "optimizer")
     workflow.add_edge("optimizer", "communicator")
     workflow.add_edge("communicator", END)
 
