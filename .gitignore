@@ -1,20 +1,48 @@
-# gitignore template for LangChain products, e.g., LangGraph, LangSmith
-# website: https://www.langchain.com/
-# website: https://www.langchain.com/langgraph
-
 # LangGraph
 .langgraph_api/
-.gemini/
+
+# Node.js / Vite / React
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Python Virtual Environments & Cache
+venv/
+env/
 .env
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Databases
+backend/*.db
+backend/*.db-journal
+backend/**/*.db
+backend/**/*.db-journal
+*.sqlite
+*.sqlite3
+
+# Log Files
+*.log
+backend/backend.log
+frontend/frontend.log
+
+# OS Specific
+.DS_Store
+Thumbs.db
 
 /node_modules/
 /venv/
 
-
-# macOS Systemdateien
-.DS_Store
-
-# Python Cache
+.venv/
 __pycache__/
 *.pyc
-.ipynb_checkpoints/
+*.pyo
+.DS_Store
+.claude
+.gemini

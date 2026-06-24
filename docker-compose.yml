@@ -1,19 +1,52 @@
-version: '3.8'
-
 services:
-  postgres_sandbox:
-    image: postgres:15-alpine
-    container_name: mobility_postgres_sandbox
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aiim_backend
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./database:/app/database
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/app_db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aiim_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+      # Vite dev-server proxies /api to the backend container (see frontend/vite.config.js)
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "5173:5173"
+
+  db:
+    image: postgres:16
+    container_name: aiim_postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: your_secure_password
-      POSTGRES_DB: mobility_db
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_db
     ports:
       - "5432:5432"
     volumes:
-      - ./output/seed_maja_persona.sql:/docker-entrypoint-initdb.d/seed_maja_persona.sql
-      - postgres_sandbox_data:/var/lib/postgresql/data
-    restart: always
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/seed:/seed:ro
 
 volumes:
-  postgres_sandbox_data:
+  postgres_data:
