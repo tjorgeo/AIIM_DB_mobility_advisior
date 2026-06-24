@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS user_onboardings (
     avoided_transport_modes TEXT[] NOT NULL DEFAULT '{}',
     mobility_constraints TEXT[] NOT NULL DEFAULT '{}',
 
+    -- transportation_modes: 'walking', 'bicycle', 'public_transport', 'regional_train', 'long_distance_train', 'car', 'e_scooter', 'ride_hailing', 'taxi', 'mixed', 'other'
+
     score_emission INTEGER,
     score_money INTEGER,
     score_flexibility INTEGER,
