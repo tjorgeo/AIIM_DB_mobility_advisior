@@ -1,5 +1,19 @@
 from datetime import datetime
 
+from schema_map import simplify_mode
+
+
+def _month_key(started_at) -> str | None:
+    """Return ``YYYY-MM`` for an ISO date/timestamp string (or None if unparseable)."""
+    if not started_at:
+        return None
+    try:
+        return datetime.fromisoformat(str(started_at)).strftime("%Y-%m")
+    except ValueError:
+        text = str(started_at)
+        return text[:7] if len(text) >= 7 and text[4] == "-" else None
+
+
 class ForecasterAgent:
     def __init__(self):
         pass
@@ -8,6 +22,7 @@ class ForecasterAgent:
         """
         Predicts traveler demand (trip count, mode, distance) for the next 6 months.
         Utilizes historical seasonality trends found in the 12-month travel logs.
+        Each record is a production trip leg (``started_at`` + ``transport_mode``).
         """
         if not travel_history:
             return {
@@ -16,30 +31,25 @@ class ForecasterAgent:
                 "confidence_score": 0.5,
                 "trend": "Insufficient data to establish trend"
             }
-            
+
         # Group historical trips by month and mode
         # Simple moving average + seasonality multipliers
         monthly_trips = {}
         for trip in travel_history:
-            date_str = trip["trip_date"]
-            mode = trip["mode"]
-            
-            # Extract month
-            try:
-                dt = datetime.strptime(date_str, "%Y-%m-%d")
-                month_key = dt.strftime("%Y-%m")
-            except:
+            month_key = _month_key(trip.get("started_at"))
+            if not month_key:
                 continue
-                
+            mode = simplify_mode(trip.get("transport_mode"))
+
             if month_key not in monthly_trips:
                 monthly_trips[month_key] = {}
             if mode not in monthly_trips[month_key]:
                 monthly_trips[month_key][mode] = 0
-                
+
             monthly_trips[month_key][mode] += 1
-            
+
         # Compute baseline average trips per month per mode
-        modes = list(set(trip["mode"] for trip in travel_history))
+        modes = list(set(simplify_mode(trip.get("transport_mode")) for trip in travel_history))
         mode_averages = {mode: 0.0 for mode in modes}
         
         num_months = len(monthly_trips) if monthly_trips else 12
@@ -104,8 +114,8 @@ class ForecasterAgent:
 if __name__ == "__main__":
     forecaster = ForecasterAgent()
     mock_history = [
-        {"trip_date": "2025-05-10", "mode": "train"},
-        {"trip_date": "2025-05-12", "mode": "train"},
-        {"trip_date": "2025-06-10", "mode": "train"}
+        {"started_at": "2025-05-10T08:00:00+02:00", "transport_mode": "regional_train"},
+        {"started_at": "2025-05-12T08:00:00+02:00", "transport_mode": "regional_train"},
+        {"started_at": "2025-06-10T08:00:00+02:00", "transport_mode": "public_transport"}
     ]
     print(forecaster.run(mock_history))

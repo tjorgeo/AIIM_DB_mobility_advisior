@@ -1,30 +1,35 @@
+from schema_map import simplify_mode
+
+
 class OptimizerAgent:
     def __init__(self):
         pass
 
     def run(self, travel_history: list, current_subscriptions: list, pricing_catalog: list, preferences: dict) -> dict:
         """
-        Runs mathematical simulations of the traveler's historical trips under all candidate subscription plans.
-        Outputs 2 distinct scenarios (Cost-Optimized and Balanced) with precise cost breakdowns and carbon metrics.
+        Runs mathematical simulations of the traveler's historical trips (production
+        ``trip_legs``) under all candidate subscription plans. Outputs 2 distinct
+        scenarios (Cost-Optimized and Balanced) with precise cost breakdowns and
+        carbon metrics.
         """
         # Determine if traveler has a 1st class preference
         is_1st_class = preferences.get("class_preference", "2nd") == "1st"
         co2_weight = preferences.get("co2_priority", 50)
-        
+
         # Calculate baseline cost of current travel history (what they actually spent)
-        baseline_out_of_pocket = sum(trip["cost_eur"] for trip in travel_history)
+        baseline_out_of_pocket = sum((trip.get("estimated_cost_eur") or 0.0) for trip in travel_history)
         baseline_sub_cost = 0.0
-        
+
         current_services = []
         for sub in current_subscriptions:
-            if sub["status"] == "active":
+            if sub["subscription_status"] == "active":
                 baseline_sub_cost += sub["monthly_cost_eur"] * 12
                 current_services.append(sub["service"])
-                
+
         baseline_total = baseline_out_of_pocket + baseline_sub_cost
-        
+
         # Calculate baseline CO2 emissions
-        baseline_co2 = sum(trip["co2_kg"] for trip in travel_history)
+        baseline_co2 = sum((trip.get("estimated_co2_emissions") or 0.0) for trip in travel_history)
 
         # Helper: simulate cost for a specific subscription combination
         def simulate_portfolio(subs_to_test):
@@ -41,10 +46,10 @@ class OptimizerAgent:
                     
             # Calculate ticket costs under this subscription set
             for trip in travel_history:
-                cost = trip["cost_eur"]
-                dist = trip["distance_km"]
-                mode = trip["mode"]
-                
+                cost = trip.get("estimated_cost_eur") or 0.0
+                dist = trip.get("estimated_distance_km") or 0.0
+                mode = simplify_mode(trip.get("transport_mode"))
+
                 # Check for train discounts
                 if mode == "train":
                     # If Bahncard 100 is in the portfolio, all train trips are free
@@ -127,6 +132,14 @@ class OptimizerAgent:
                 ["miles_sharing"],
                 ["deutschlandticket", "miles_sharing"]
             ]
+
+        # Restrict candidates to products that actually exist in the catalog so we
+        # never recommend (or price at zero) a plan the catalog doesn't carry.
+        # Pay-as-you-go ([]) is always available.
+        available = {item["id"] for item in pricing_catalog}
+        candidates = [c for c in candidates if all(s in available for s in c)]
+        if [] not in candidates:
+            candidates.insert(0, [])
 
         # Simulate all candidates
         results = []

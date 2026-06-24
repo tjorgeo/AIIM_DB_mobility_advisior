@@ -1,22 +1,18 @@
-import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-from database import init_db
-from seed_data import seed_database
+from database import ping_db
 from orchestrator import Orchestrator
 
-# Automate database creation and seeding on startup
+# Verify the database is reachable on startup. The production schema and the
+# dummy test user are provisioned by Postgres from database/init/*.sql, so the
+# backend only confirms connectivity rather than creating/seeding tables itself.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure tables exist and the demo personas / pricing catalog are synced.
-    # init_db() is idempotent (CREATE TABLE IF NOT EXISTS) and seed_database()
-    # clears + re-inserts, so this is safe to run on every startup.
-    print("Initializing Postgres schema and syncing pricing catalog + personas...")
-    init_db()
-    seed_database()
+    print("Verifying Postgres connectivity (schema provisioned by database/init)...")
+    ping_db()
     yield
     print("Shutting down DB MoveOptimizer Backend...")
 
@@ -67,26 +63,57 @@ def read_root():
 @app.get("/api/personas")
 def get_personas():
     """
-    Returns the list of seeded customer personas to let users switch profiles in the simulator.
+    Returns the users present in the production database (database/init schema),
+    each enriched with onboarding preferences and current subscriptions. Lets the
+    simulator confirm which mock users are accessible.
     """
     from database import get_connection
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, db_customer_id, name, preferences FROM users")
+    cursor.execute(
+        """
+        SELECT user_id, first_name, last_name, email,
+               home_city, home_postal_code, age, gender
+        FROM users
+        ORDER BY user_id
+        """
+    )
     rows = cursor.fetchall()
-    
+
     personas = []
     for row in rows:
-        r_dict = dict(row)
-        r_dict["preferences"] = json.loads(r_dict["preferences"])
-        
-        # Fetch current subscriptions for this persona
-        cursor.execute("SELECT service, monthly_cost_eur FROM subscriptions WHERE user_id = ?", (r_dict["id"],))
-        subs = [dict(s) for s in cursor.fetchall()]
-        r_dict["subscriptions"] = subs
-        
-        personas.append(r_dict)
-        
+        r = dict(row)
+        r["name"] = f"{r['first_name']} {r['last_name']}".strip()
+        uid = r["user_id"]
+
+        # Onboarding preferences (0-100 scores) for this user, if present.
+        cursor.execute(
+            """
+            SELECT occupation, score_emission, score_money, score_flexibility,
+                   preferred_transport_modes, mobility_budget_monthly_eur
+            FROM user_onboardings
+            WHERE user_id = ?
+            """,
+            (uid,),
+        )
+        onboarding = cursor.fetchone()
+        r["preferences"] = dict(onboarding) if onboarding else None
+
+        # Active subscriptions, joined to the catalog for human-readable names.
+        cursor.execute(
+            """
+            SELECT c.provider_name, c.provider_plan_name, c.monthly_cost_eur,
+                   s.subscription_status, s.is_primary_mobility_option
+            FROM user_subscriptions s
+            LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+            WHERE s.user_id = ?
+            """,
+            (uid,),
+        )
+        r["subscriptions"] = [dict(s) for s in cursor.fetchall()]
+
+        personas.append(r)
+
     conn.close()
     return personas
 

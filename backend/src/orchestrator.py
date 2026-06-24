@@ -48,31 +48,25 @@ class Orchestrator:
             },
         }
 
+        # Persist into the production recommendations table (one row per analysis run).
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
             """
-        INSERT INTO recommendations (id, user_id, created_at, scenarios, status, approval_timestamp)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (rec_id, user_id, created_at_str, json.dumps(scenarios_payload), "ready", None),
+        INSERT INTO recommendations (
+            recommendation_id, user_id,
+            analyst_output, forecaster_output, optimizer_scenarios,
+            analysis_status, created_at
         )
-        cursor.execute(
-            """
-        INSERT INTO audit_log (id, user_id, action, details, timestamp)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
             (
-                str(uuid.uuid4()),
+                rec_id,
                 user_id,
-                "generate_recommendation",
-                json.dumps(
-                    {
-                        "recommendation_id": rec_id,
-                        "best_scenario": optimizer_out["best_recommendation_id"],
-                        "memo_source": communicator_out.get("memo_source", "template"),
-                    }
-                ),
+                json.dumps(analyst_out),
+                json.dumps(forecaster_out),
+                json.dumps(scenarios_payload),
+                "ready",
                 created_at_str,
             ),
         )
@@ -86,7 +80,7 @@ class Orchestrator:
             "timestamp": created_at_str,
             "user_id": user_id,
             "customer_name": user["name"],
-            "db_customer_id": user["db_customer_id"],
+            "db_customer_id": user["user_id"],
             "preferences": user_preferences,
             "current_subscriptions": subscriptions,
             "summary": {
@@ -104,7 +98,7 @@ class Orchestrator:
                     "input": {
                         "travel_history_length": len(travel_history),
                         "subscriptions": [
-                            s["service"] for s in subscriptions if s["status"] == "active"
+                            s["service"] for s in subscriptions if s["subscription_status"] == "active"
                         ],
                     },
                     "output": analyst_out,
@@ -138,40 +132,28 @@ class Orchestrator:
         return pipeline_payload
 
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
-        """Updates recommendation status to approved and logs the transaction."""
+        """Marks a recommendation approved and records the selected scenario."""
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM recommendations WHERE id = ?", (rec_id,))
-        row = cursor.fetchone()
-        if not row:
+        cursor.execute(
+            "SELECT recommendation_id FROM recommendations WHERE recommendation_id = ?",
+            (rec_id,),
+        )
+        if not cursor.fetchone():
             conn.close()
             return False
 
-        rec = dict(row)
-        user_id = rec["user_id"]
         approval_time = datetime.now().isoformat()
-
         cursor.execute(
             """
         UPDATE recommendations
-        SET status = 'approved', approval_timestamp = ?
-        WHERE id = ?
+        SET analysis_status = 'approved',
+            selected_scenario_id = ?,
+            approved_at = ?
+        WHERE recommendation_id = ?
         """,
-            (approval_time, rec_id),
-        )
-        cursor.execute(
-            """
-        INSERT INTO audit_log (id, user_id, action, details, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-            (
-                str(uuid.uuid4()),
-                user_id,
-                "approve_recommendation",
-                json.dumps({"recommendation_id": rec_id, "approved_scenario": scenario_id}),
-                approval_time,
-            ),
+            (scenario_id, approval_time, rec_id),
         )
         conn.commit()
         conn.close()

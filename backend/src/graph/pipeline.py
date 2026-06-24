@@ -17,6 +17,7 @@ from typing import TypedDict
 from langgraph.graph import START, END, StateGraph
 
 from database import get_connection
+from schema_map import clean_row, normalize_service, preferences_from_onboarding
 from agents.analyst import AnalystAgent
 from agents.forecaster import ForecasterAgent
 from agents.optimizer import OptimizerAgent
@@ -28,7 +29,6 @@ class AnalyzeState(TypedDict, total=False):
     user_id: str
     user: dict
     user_preferences: dict
-    user_consent: dict
     subscriptions: list
     travel_history: list
     pricing_catalog: list
@@ -51,36 +51,90 @@ _communicator = CommunicatorAgent()
 # ---------------------------------------------------------------------------
 
 def load_context_node(state: AnalyzeState) -> dict:
+    """Read the production schema for one user and shape the context the agents
+    consume. Records keep their production column names; the agents translate the
+    transport-mode and subscription vocabularies via ``schema_map``."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM users WHERE id = ?", (state["user_id"],))
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (state["user_id"],))
     user_row = cursor.fetchone()
     if not user_row:
         conn.close()
         return {"error": f"User with ID {state['user_id']} not found in database."}
 
-    user = dict(user_row)
-    preferences = json.loads(user["preferences"])
-    consent = json.loads(user["consent_status"])
+    user = clean_row(user_row)
+    user["name"] = f"{user['first_name']} {user['last_name']}".strip()
 
-    cursor.execute("SELECT * FROM subscriptions WHERE user_id = ?", (state["user_id"],))
-    subscriptions = [dict(r) for r in cursor.fetchall()]
-
+    # Preferences live in user_onboardings (0-100 scores).
     cursor.execute(
-        "SELECT * FROM travel_history WHERE user_id = ? ORDER BY trip_date ASC",
+        "SELECT * FROM user_onboardings WHERE user_id = ?", (state["user_id"],)
+    )
+    onboarding_row = cursor.fetchone()
+    preferences = preferences_from_onboarding(onboarding_row)
+
+    # Subscriptions joined to the catalog, with a normalized service slug.
+    cursor.execute(
+        """
+        SELECT s.user_subscription_id, s.subscription_status,
+               s.is_primary_mobility_option, s.estimated_usage_frequency,
+               c.subscription_id, c.provider_name, c.provider_plan_name,
+               c.subscription_category, c.travel_class, c.monthly_cost_eur
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        WHERE s.user_id = ?
+        """,
         (state["user_id"],),
     )
-    travel_history = [dict(r) for r in cursor.fetchall()]
+    subscriptions = []
+    for row in cursor.fetchall():
+        sub = clean_row(row)
+        sub["service"] = normalize_service(
+            sub.get("provider_plan_name"),
+            sub.get("subscription_category"),
+            sub.get("travel_class"),
+        )
+        sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
+        subscriptions.append(sub)
 
-    cursor.execute("SELECT * FROM pricing_catalog")
-    pricing_catalog = [dict(r) for r in cursor.fetchall()]
+    # Travel history is leg-level (legs carry distance, cost, CO2 and mode),
+    # ordered chronologically for the forecaster's monthly grouping.
+    cursor.execute(
+        """
+        SELECT leg_id, trip_id, started_at, transport_mode, ticket_type, ticket_class,
+               estimated_distance_km, estimated_cost_eur, estimated_co2_emissions
+        FROM trip_legs
+        WHERE user_id = ?
+        ORDER BY started_at ASC
+        """,
+        (state["user_id"],),
+    )
+    travel_history = [clean_row(r) for r in cursor.fetchall()]
+
+    # The optimizer's candidate catalog comes from subscription_catalogs.
+    cursor.execute("SELECT * FROM subscription_catalogs")
+    pricing_catalog = []
+    for row in cursor.fetchall():
+        item = clean_row(row)
+        pricing_catalog.append(
+            {
+                "id": normalize_service(
+                    item.get("provider_plan_name"),
+                    item.get("subscription_category"),
+                    item.get("travel_class"),
+                ),
+                "name": item.get("provider_plan_name"),
+                "monthly_cost": item.get("monthly_cost_eur") or 0.0,
+                "annual_cost": item.get("annual_cost_eur"),
+                "coverage": item.get("subscription_category"),
+                "subscription_type": item.get("subscription_type"),
+            }
+        )
 
     conn.close()
     return {
         "user": user,
         "user_preferences": preferences,
-        "user_consent": consent,
         "subscriptions": subscriptions,
         "travel_history": travel_history,
         "pricing_catalog": pricing_catalog,

@@ -1,4 +1,4 @@
-import json
+from schema_map import simplify_mode
 
 class AnalystAgent:
     def __init__(self):
@@ -6,23 +6,24 @@ class AnalystAgent:
 
     def run(self, travel_history: list, current_subscriptions: list) -> dict:
         """
-        Ingests a customer's travel history and active subscriptions.
-        Returns a detailed audit of their mobility behavior and flags inefficiencies.
+        Ingests a customer's leg-level travel history (production ``trip_legs``)
+        and active subscriptions. Returns a detailed audit of their mobility
+        behavior and flags inefficiencies.
         """
         total_trips = len(travel_history)
         total_out_of_pocket = 0.0
         total_distance = 0.0
         total_co2 = 0.0
-        
+
         mode_breakdown = {}
-        
-        # Process travel history
+
+        # Process travel history (each record is a production trip leg)
         for trip in travel_history:
-            cost = trip["cost_eur"]
-            dist = trip["distance_km"]
-            mode = trip["mode"]
-            co2 = trip["co2_kg"]
-            
+            cost = trip.get("estimated_cost_eur") or 0.0
+            dist = trip.get("estimated_distance_km") or 0.0
+            mode = simplify_mode(trip.get("transport_mode"))
+            co2 = trip.get("estimated_co2_emissions") or 0.0
+
             total_out_of_pocket += cost
             total_distance += dist
             total_co2 += co2
@@ -45,7 +46,7 @@ class AnalystAgent:
         annual_sub_cost = 0.0
         active_subs = []
         for sub in current_subscriptions:
-            if sub["status"] == "active":
+            if sub["subscription_status"] == "active":
                 annual_sub_cost += sub["monthly_cost_eur"] * 12
                 active_subs.append(sub["service"])
                 
@@ -58,7 +59,7 @@ class AnalystAgent:
         # Inefficiency 1: Unused subscriptions
         # If paying for a subscription but usage is extremely low (e.g. less than 5 trips in a year or 0 trips)
         for sub in current_subscriptions:
-            if sub["status"] == "active":
+            if sub["subscription_status"] == "active":
                 service = sub["service"]
                 # Match service usage
                 if service == "deutschlandticket":
@@ -150,8 +151,8 @@ if __name__ == "__main__":
     # Test Analyst
     analyst = AnalystAgent()
     mock_history = [
-        {"cost_eur": 14.20, "distance_km": 60, "mode": "train", "co2_kg": 0.48},
-        {"cost_eur": 14.20, "distance_km": 60, "mode": "train", "co2_kg": 0.48}
+        {"estimated_cost_eur": 14.20, "estimated_distance_km": 60, "transport_mode": "regional_train", "estimated_co2_emissions": 0.48},
+        {"estimated_cost_eur": 14.20, "estimated_distance_km": 60, "transport_mode": "regional_train", "estimated_co2_emissions": 0.48}
     ]
     mock_subs = []
     print(analyst.run(mock_history, mock_subs))
