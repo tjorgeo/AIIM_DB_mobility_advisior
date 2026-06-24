@@ -270,11 +270,125 @@ All endpoints are defined in `src/main.py`.
 | Method & path | Purpose | Notes |
 | --- | --- | --- |
 | `GET /` | health/info | — |
+| `POST /api/login` | authenticate a user by username/email + shared password | body `{ "identifier": "…", "password": "…" }`; returns the session user object, else `401`. See §8a |
 | `GET /api/personas` | list DB users + onboarding prefs + subscriptions | reads the production schema directly |
 | `POST /api/analyze` | run the 4‑agent pipeline for a user | body `{ "user_id": "…" }`; persists a `recommendations` row |
 | `POST /api/recommendations/{id}/approve` | mark a recommendation approved | body `{ "scenario_id": "A" }`; sets `analysis_status='approved'`, `selected_scenario_id`, `approved_at` |
 | `POST /api/chat` | conversational advisor (ReAct + catalog tool) | **requires** an LLM key, else `503` |
 | `POST /api/onboarding` | conversational onboarding → writes a new user | **requires** an LLM key, else `503`; writes `users` + `user_onboardings` + `user_subscriptions` |
+
+---
+
+## 8a. Login & authentication
+
+> **Naming note.** Despite being referred to as the "OAuth login", this is **not
+> OAuth** — there is no external identity provider, no token grant flow and no
+> JWT. It is a deliberately minimal **shared-password credential login** against
+> the real database users, suitable for the sandbox/demo. The `users` table
+> already carries an `external_auth_id` column, which is the natural hook for a
+> real OAuth/OIDC integration later (see "Upgrading to real OAuth" below).
+
+### Why it exists
+
+The frontend used to log in as a single hardcoded persona (`dummy-user-001` in
+`frontend/src/data/personas.js`). After the seed data was replaced with 23 real
+users, that persona no longer existed, so every login posted a missing `user_id`
+to `/api/analyze` → `404` → "We couldn't load your plan". The login was
+restructured into a real **username/email + password** sign-in against the seeded
+users; the quick-start persona buttons and `personas.js` were removed.
+
+### The flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend (:5173)
+    participant BE as Backend (:8000)
+    participant DB as Postgres
+
+    U->>FE: enter username/email + password
+    FE->>BE: POST /api/login { identifier, password }
+    BE->>BE: password == DEMO_LOGIN_PASSWORD ?
+    alt wrong password
+        BE-->>FE: 401 "Incorrect password."
+    else password ok
+        BE->>DB: SELECT … WHERE username = ? OR email = ?<br/>ORDER BY (username = ?) DESC LIMIT 1
+        alt no match
+            BE-->>FE: 401 "No account matches that username or email."
+        else match
+            BE-->>FE: 200 { id, name, firstName, email, username, initials }
+        end
+    end
+    FE->>FE: store user object in localStorage (moveoptimizer.session)
+    FE->>BE: POST /api/analyze { user_id: user.id }
+```
+
+### Contract
+
+`POST /api/login` (defined in `src/main.py`):
+
+* **Request:** `{ "identifier": "<username or email>", "password": "<password>" }`
+* **Auth rule:** the `password` must equal `DEMO_LOGIN_PASSWORD` (a single shared
+  secret read from the environment, default `mobility`). It is **not** stored
+  per-user — the seed data has no password column.
+* **Lookup:** the identifier is matched against `username` **first**, then `email`
+  (`ORDER BY (username = ?) DESC`). Usernames are unique; emails may collide, so
+  username-first keeps logins deterministic.
+* **Success (200):** the compact session object the frontend stores and reuses —
+  `id` (= `users.user_id`, the key for every later `/api/analyze` call), `name`,
+  `firstName`, `email`, `username`, `initials`.
+* **Failure (401):** `"Incorrect password."` (bad password) or
+  `"No account matches that username or email."` (unknown identifier). The
+  frontend surfaces `detail` directly in the form's error banner.
+
+### Frontend wiring
+
+| Concern | Location |
+| --- | --- |
+| API call (resolves, not throws, on 401) | `frontend/src/api/client.js` → `login()` |
+| Session state + `localStorage` persistence | `frontend/src/context/AuthContext.jsx` |
+| Sign-in form (identifier + password) | `frontend/src/pages/Login.jsx` |
+
+The full user object is persisted to `localStorage` under
+`moveoptimizer.session`, so a page reload restores the session; `logout()` clears
+it. There is no server-side session — the backend treats every request as
+stateless and trusts the `user_id` the frontend sends.
+
+### Try it
+
+```bash
+# success (use a user that has travel data so the dashboard is non-empty)
+curl -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jank_frankfurt","password":"mobility"}'
+
+# email also works
+curl -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jan.klein@example.com","password":"mobility"}'
+
+# wrong password / unknown user -> 401
+curl -i -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jank_frankfurt","password":"nope"}'
+```
+
+### Security caveats (demo only)
+
+* One shared password for everyone; credentials are checked in plaintext.
+* `401` messages distinguish "wrong password" from "unknown user" (a minor user
+  enumeration leak) — acceptable for a sandbox, not for production.
+* No tokens/sessions: any client that knows a `user_id` can call `/api/analyze`
+  for it.
+
+### Upgrading to real OAuth
+
+To make this genuine OAuth/OIDC: add an identity provider (e.g. an OAuth2
+authorization-code flow), store the provider's subject in the existing
+`users.external_auth_id` column, exchange the provider token for a backend
+session/JWT, and replace the `DEMO_LOGIN_PASSWORD` check in `/api/login` with
+token verification. The frontend's `AuthContext` would store the issued token
+instead of the user object, and protected endpoints would validate it.
 
 ---
 
@@ -307,9 +421,11 @@ sequenceDiagram
     participant BE as Backend (:8000)
     participant DB as Postgres
 
-    U->>FE: pick "Test User" on login
-    Note over FE: persona id = "dummy-user-001"<br/>(frontend/src/data/personas.js)
-    FE->>BE: POST /api/analyze { user_id: "dummy-user-001" }
+    U->>FE: sign in (username/email + password)
+    FE->>BE: POST /api/login { identifier, password }
+    BE-->>FE: { id, name, … }  (= users.user_id)
+    Note over FE: user object stored in localStorage
+    FE->>BE: POST /api/analyze { user_id: id }
     BE->>DB: load context (users, legs, subscriptions, catalog)
     BE->>BE: run agent pipeline + persist recommendation
     BE-->>FE: { summary, scenarios, memos, raw_agent_payloads }
@@ -319,11 +435,10 @@ sequenceDiagram
     BE->>DB: UPDATE recommendations SET analysis_status='approved'
 ```
 
-* The frontend's login profiles are defined in
-  `frontend/src/data/personas.js`. **The persona `id` must equal a
-  `users.user_id` in the database** — otherwise `/api/analyze` returns 404 and the
-  dashboard shows "We couldn't load your plan". Currently it holds the single
-  `dummy-user-001`.
+* Login is handled by `POST /api/login` (see §8a). The returned `id` is the
+  `users.user_id` used for every subsequent `/api/analyze` call; the user object
+  is held in `AuthContext` and `localStorage`. The old hardcoded
+  `frontend/src/data/personas.js` has been removed.
 * In dev, the Vite server proxies `/api/*` to the backend (`vite.config.js`), so
   the browser only ever calls same‑origin `/api/...`.
 * CORS is wide‑open in `main.py` (`allow_origins=["*"]`) for development.
@@ -347,6 +462,7 @@ Services: frontend `:5173`, backend `:8000`, Postgres `:5432`.
 | Variable | Default | Used by |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://postgres:postgres@db:5432/app_db` (set in compose) | `database.py` |
+| `DEMO_LOGIN_PASSWORD` | `mobility` | `main.py` — shared password accepted by `POST /api/login` (§8a) |
 | `UNI_GPT_API_KEY` | _(empty)_ | `graph/llm.py` — enables memos/chat/onboarding |
 | `UNI_GPT_BASE_URL` | `https://chat.kiconnect.nrw/api/v1` | `graph/llm.py` |
 | `UNI_GPT_MODEL` | `OpenAI GPT OSS 120b KI:Inferenz.nrw` | `graph/llm.py` |
@@ -357,10 +473,13 @@ The API key is read from the repo‑root `.env` (mounted via compose `env_file`)
 
 ```bash
 curl localhost:8000/                                   # health
-curl localhost:8000/api/personas                       # -> dummy-user-001
+curl localhost:8000/api/personas                       # -> 23 seeded users
+curl -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jank_frankfurt","password":"mobility"}'   # -> session user object
 curl -X POST localhost:8000/api/analyze \
      -H 'Content-Type: application/json' \
-     -d '{"user_id":"dummy-user-001"}'                 # -> full pipeline payload
+     -d '{"user_id":"c3d4e5f6-cccc-dddd-eeee-ffff22223333"}'      # -> full pipeline payload
 ```
 
 ---
