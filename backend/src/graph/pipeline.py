@@ -145,7 +145,42 @@ def analyst_node(state: AnalyzeState) -> dict:
 def forecaster_node(state: AnalyzeState) -> dict:
     if state.get("error"):
         return {}
-    return {"forecaster_out": _forecaster.run(state["travel_history"])}
+
+    analyst_out = state["analyst_out"]
+    subscriptions = state["subscriptions"]
+
+    # Shape analyst_out into the analyst_summary the new forecaster expects.
+    # Assume 12 months of historical data for the per-month averages.
+    months = 12
+    dominant_patterns = [
+        {
+            "mode": mode,
+            "avg_trips_per_month": round(data["trips"] / months, 1),
+            "avg_distance_km": round(data["distance_km"] / max(data["trips"], 1), 1),
+        }
+        for mode, data in analyst_out.get("mode_breakdown", {}).items()
+        if data["trips"] > 0
+    ]
+    analyst_summary = {
+        "dominant_patterns": dominant_patterns,
+        "detected_seasonality": "Derived from 12 months of historical leg data.",
+        "current_contracts": [
+            s.get("provider_plan_name")
+            for s in subscriptions
+            if s.get("subscription_status") == "active"
+        ],
+        "detected_inefficiencies": [
+            i["details"] for i in analyst_out.get("inefficiencies", [])
+        ],
+    }
+
+    # calendar_events will be wired in when calendar integration is added.
+    out = _forecaster.run(
+        analyst_summary=analyst_summary,
+        calendar_events=[],
+        forecast_horizon_days=90,
+    )
+    return {"forecaster_out": out}
 
 
 def optimizer_node(state: AnalyzeState) -> dict:
@@ -254,12 +289,9 @@ def build_graph():
     workflow.add_node("communicator", communicator_node)
 
     workflow.add_edge(START, "load_context")
-    # fan-out: analyst, forecaster, optimizer run in parallel
+    # analyst runs first; forecaster needs analyst_out to build its summary
     workflow.add_edge("load_context", "analyst")
-    workflow.add_edge("load_context", "forecaster")
-    # workflow.add_edge("load_context", "optimizer")
-    # fan-in: communicator waits for all three
-    workflow.add_edge("analyst", "optimizer")
+    workflow.add_edge("analyst", "forecaster")
     workflow.add_edge("forecaster", "optimizer")
     workflow.add_edge("optimizer", "communicator")
     workflow.add_edge("communicator", END)

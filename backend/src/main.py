@@ -61,6 +61,12 @@ class LoginRequest(BaseModel):
     identifier: str
     password: str
 
+class ForecasterTestRequest(BaseModel):
+    analyst_summary: dict
+    calendar_events: list | None = None   # pre-structured CalendarEvent dicts
+    ics_text: str | None = None           # raw ICS — parsed and filtered by the LLM
+    forecast_horizon_days: int = 90
+
 # --- API ENDPOINTS ---
 
 @app.get("/")
@@ -238,6 +244,32 @@ def onboarding(req: OnboardingRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Onboarding error: {str(e)}")
+
+@app.post("/api/forecaster/test")
+def test_forecaster(req: ForecasterTestRequest):
+    """
+    Run the forecaster agent directly with supplied test data.
+    Useful for experimenting with different analyst summaries and calendar events
+    without going through the full analysis pipeline.
+
+    Pass any analyst_summary and calendar_events you like — see
+    agents/forecaster.py MOCK_ANALYST_SUMMARY / MOCK_CALENDAR_EVENTS for
+    the expected shape of each field.
+    """
+    from agents.forecaster import ForecasterAgent
+    try:
+        result = ForecasterAgent().run(
+            analyst_summary=req.analyst_summary,
+            calendar_events=req.calendar_events,
+            ics_text=req.ics_text,
+            forecast_horizon_days=req.forecast_horizon_days,
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Forecaster error: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn
