@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from register_endpoint import register 
 
 from database import ping_db
 from orchestrator import Orchestrator
@@ -71,6 +72,7 @@ def read_root():
         "version": "1.0.0"
     }
 
+app.post("/api/register")(register)   
 @app.post("/api/login")
 def login(req: LoginRequest):
     """
