@@ -97,8 +97,8 @@ def load_context_node(state: AnalyzeState) -> dict:
     # ordered chronologically for the forecaster's monthly grouping.
     cursor.execute(
         """
-        SELECT leg_id, trip_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, estimated_co2_emissions
+        SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
+               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
         FROM trip_legs
         WHERE user_id = ?
         ORDER BY started_at ASC
@@ -146,33 +146,8 @@ def forecaster_node(state: AnalyzeState) -> dict:
     if state.get("error"):
         return {}
 
-    analyst_out = state["analyst_out"]
-    subscriptions = state["subscriptions"]
-
-    # Shape analyst_out into the analyst_summary the new forecaster expects.
-    # Assume 12 months of historical data for the per-month averages.
-    months = 12
-    dominant_patterns = [
-        {
-            "mode": mode,
-            "avg_trips_per_month": round(data["trips"] / months, 1),
-            "avg_distance_km": round(data["distance_km"] / max(data["trips"], 1), 1),
-        }
-        for mode, data in analyst_out.get("mode_breakdown", {}).items()
-        if data["trips"] > 0
-    ]
-    analyst_summary = {
-        "dominant_patterns": dominant_patterns,
-        "detected_seasonality": "Derived from 12 months of historical leg data.",
-        "current_contracts": [
-            s.get("provider_plan_name")
-            for s in subscriptions
-            if s.get("subscription_status") == "active"
-        ],
-        "detected_inefficiencies": [
-            i["details"] for i in analyst_out.get("inefficiencies", [])
-        ],
-    }
+    # The analyst already produces a forecaster_summary shaped to AnalystSummary.
+    analyst_summary = state["analyst_out"]["forecaster_summary"]
 
     # calendar_events will be wired in when calendar integration is added.
     out = _forecaster.run(

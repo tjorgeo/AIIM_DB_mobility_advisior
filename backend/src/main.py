@@ -245,6 +245,74 @@ def onboarding(req: OnboardingRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Onboarding error: {str(e)}")
 
+@app.get("/api/analyst/{user_id}")
+def test_analyst(user_id: str):
+    """
+    Run the analyst agent for a specific user and return the full output.
+    Useful for inspecting usage statistics, dominant patterns, seasonality,
+    subscription coverage, and detected inefficiencies without going through
+    the full pipeline.
+
+    Try one of the six personas with travel data:
+      - 38bb9fdb-7d90-55a0-98d8-f9935f1aec70  (Mara Vogel — flat-pass commuter, well covered)
+      - be6f3d9a-713a-5a56-bd77-5b27feea6827  (Tobias Hahn — BahnCard 50, frequent business traveler)
+      - d90794d2-efac-5b8d-b1cd-01244a890cb2  (Nina Schröder — pure pay-as-you-go, no subscriptions)
+      - 671fbc5b-99f1-505f-aaaa-1c682f552803  (Lukas Weber — over-subscribed, barely uses any of it)
+      - b31247a7-eb90-533a-bff7-1f0d37d28adc  (Petra Sommer — thin data, joined ~6 weeks ago)
+      - 99cb2bd6-228b-566d-a250-16290da30521  (Sandra Hoffmann — family, car-sharing + flat pass)
+    """
+    from database import get_connection
+    from schema_map import clean_row
+    from agents.analyst import AnalystAgent
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
+
+    cursor.execute(
+        """
+        SELECT s.user_subscription_id, s.subscription_status,
+               s.is_primary_mobility_option, s.estimated_usage_frequency,
+               c.subscription_id, c.provider_name, c.provider_plan_name,
+               c.subscription_category, c.monthly_cost_eur, c.annual_cost_eur
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        WHERE s.user_id = ?
+        """,
+        (user_id,),
+    )
+    subscriptions = []
+    for row in cursor.fetchall():
+        sub = clean_row(row)
+        sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
+        subscriptions.append(sub)
+
+    cursor.execute(
+        """
+        SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
+               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
+        FROM trip_legs
+        WHERE user_id = ?
+        ORDER BY started_at ASC
+        """,
+        (user_id,),
+    )
+    travel_history = [clean_row(r) for r in cursor.fetchall()]
+    conn.close()
+
+    try:
+        result = AnalystAgent().run(travel_history, subscriptions)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analyst error: {str(e)}")
+
+
 @app.post("/api/forecaster/test")
 def test_forecaster(req: ForecasterTestRequest):
     """

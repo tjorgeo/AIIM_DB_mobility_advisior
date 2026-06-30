@@ -1,0 +1,7 @@
+user_id,email,username,external_auth_id,first_name,last_name,date_of_birth,age,gender,life_stage,home_city,home_postal_code,home_country_code
+38bb9fdb-7d90-55a0-98d8-f9935f1aec70,mara.vogel@example.com,maravogel29,,Mara,Vogel,1996-04-12,29,female,single,Berlin,10115,DE
+be6f3d9a-713a-5a56-bd77-5b27feea6827,tobias.hahn@example.com,tobiashahn41,,Tobias,Hahn,1985-02-03,41,male,single_or_couple_without_children,Frankfurt,60313,DE
+d90794d2-efac-5b8d-b1cd-01244a890cb2,nina.schroeder@example.com,ninaschroeder33,,Nina,Schröder,1992-07-19,33,female,single,Cologne,50667,DE
+671fbc5b-99f1-505f-aaaa-1c682f552803,lukas.weber@example.com,lukasweber38,,Lukas,Weber,1988-11-30,38,male,single_or_couple_without_children,Munich,80331,DE
+b31247a7-eb90-533a-bff7-1f0d37d28adc,petra.sommer@example.com,petrasommer52,,Petra,Sommer,1974-05-09,52,female,single,Düsseldorf,40213,DE
+99cb2bd6-228b-566d-a250-16290da30521,sandra.hoffmann@example.com,sandrahoffmann41,,Sandra,Hoffmann,1985-09-21,41,female,family_with_children,Stuttgart,70173,DE
