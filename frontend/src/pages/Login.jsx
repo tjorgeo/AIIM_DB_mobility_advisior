@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { ArrowRight, Wallet, Leaf, Route, AlertCircle, X, Check, Ban } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { DEMO_PASSWORD } from '../data/personas'
 import Logo from '../components/Logo'
 
 const FEATURES = [
