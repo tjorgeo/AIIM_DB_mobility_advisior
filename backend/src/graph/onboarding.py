@@ -1,9 +1,9 @@
 """Conversational onboarding agent for POST /api/onboarding (Phase 4).
 
 A LangGraph workflow that interviews a new user and, once it emits the final
-profile JSON, persists a row into the Postgres `users` table (this project's
-schema). Adapted from Maike's onboarding agent; the prompt is kept, the persist
-step is rewritten for our schema.
+profile JSON, persists the user into the production schema: a row in `users`,
+their preferences/employment/mobility-access in `user_onboardings`, and any
+recognised current subscriptions in `user_subscriptions`.
 
 Note (provisional): the frontend currently logs in via fixed demo personas, so
 onboarded users are not yet surfaced in the UI — this endpoint makes the agent
@@ -28,10 +28,10 @@ You are the DB MoveOptimizer Onboarding Assistant.
 
 Run a friendly, structured interview to build the user's mobility profile, in 6 steps,
 asking ONE step at a time and waiting for the answer before moving on:
-1. Basic profile: age, home city/postal code, occupation.
-2. Preferences (scale 0-10): cost savings, CO2 savings, flexibility.
-3. Current mobility subscriptions (BahnCard 25/50/100, Deutschlandticket, car/bike sharing, ...).
-4. (Only if they hold a Deutschlandticket) days per month they use it.
+1. Identity: first name, last name, age, gender (female/male/diverse), home city and postal code.
+2. Work: occupation and employment status.
+3. Preferences (scale 0-10): cost savings, CO2 savings, flexibility.
+4. Current mobility subscriptions (BahnCard 25/50/100, Deutschlandticket, car/bike sharing, ...).
 5. Owned vehicles: private car (and usage: commute/intercity/both), bicycle.
 6. Expected travel changes in the next 6-12 months.
 
@@ -40,9 +40,14 @@ Respond in the user's language. Never invent answers; use null for anything skip
 When step 6 is done, send a short closing message, then output the completed profile
 as a ```json code block with exactly these fields:
 {
+  "first_name": null,
+  "last_name": null,
   "age": null,
-  "home_location": null,
+  "gender": null,
+  "home_city": null,
+  "home_postal_code": null,
   "occupation": null,
+  "employment_status": null,
   "preferences": { "cost_savings": null, "co2_savings": null, "flexibility": null },
   "future_travel_plans": null,
   "current_subscriptions": [],
@@ -52,22 +57,6 @@ as a ```json code block with exactly these fields:
   "deutschlandticket_days_per_month": null
 }
 """
-
-# Onboarding free-text subscription name -> tjorge pricing_catalog product id.
-SUBSCRIPTION_NAME_MAP = {
-    "deutschlandticket": "deutschlandticket",
-    "deutschland ticket": "deutschlandticket",
-    "49-euro-ticket": "deutschlandticket",
-    "bahncard 25": "bahncard_25_2nd",
-    "bc25": "bahncard_25_2nd",
-    "bahncard 50": "bahncard_50_2nd",
-    "bc50": "bahncard_50_2nd",
-    "bahncard 100": "bahncard_100_2nd",
-    "bc100": "bahncard_100_2nd",
-    "miles": "miles_sharing",
-    "car sharing": "miles_sharing",
-    "car-sharing": "miles_sharing",
-}
 
 
 class OnboardingState(TypedDict, total=False):
@@ -105,51 +94,114 @@ def _pref_to_priority(value, default=50):
         return default
 
 
+_VALID_GENDERS = {"female", "male", "diverse", "not_specified"}
+
+
+def _coerce_age(value, default=30):
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _dob_from_age(age: int) -> str:
+    """Approximate a date_of_birth (Jan 1) from an age — users.date_of_birth is NOT NULL."""
+    return f"{datetime.now().year - age:04d}-01-01"
+
+
+def _access(owned) -> str:
+    """Map a yes/no ownership answer to the schema's access enum."""
+    return "own" if owned in (True, "true", "yes", 1) else "none"
+
+
 def save_profile(profile: dict, user_id: Optional[str] = None) -> str:
-    """Persist an onboarding profile to the users table. Returns the user_id."""
+    """Persist an onboarding profile into the production schema (users +
+    user_onboardings + user_subscriptions). Returns the user_id."""
     uid = user_id or str(uuid.uuid4())
-    db_customer_id = "DB-" + uid[:8].upper()
     prefs = profile.get("preferences") or {}
-    preferences = {
-        "cost_priority": _pref_to_priority(prefs.get("cost_savings")),
-        "co2_priority": _pref_to_priority(prefs.get("co2_savings")),
-        "convenience_priority": _pref_to_priority(prefs.get("flexibility")),
-        "class_preference": "2nd",
-    }
-    consent = {"email_opted_in": False, "calendar_shared": False, "data_sharing_approved": True}
-    name = profile.get("occupation") or "New User"
+
+    age = _coerce_age(profile.get("age"))
+    gender = profile.get("gender")
+    gender = gender if gender in _VALID_GENDERS else "not_specified"
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    # 1. users — required fields filled from the interview, with safe NOT NULL fallbacks.
     cursor.execute(
         """
-        INSERT INTO users (id, db_customer_id, name, created_at, preferences, consent_status)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT (id) DO UPDATE
-          SET preferences = EXCLUDED.preferences,
-              consent_status = EXCLUDED.consent_status
+        INSERT INTO users (
+            user_id, first_name, last_name, date_of_birth, age, gender,
+            home_city, home_postal_code, home_country_code
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DE')
+        ON CONFLICT (user_id) DO UPDATE
+          SET first_name = EXCLUDED.first_name,
+              last_name = EXCLUDED.last_name,
+              age = EXCLUDED.age,
+              gender = EXCLUDED.gender,
+              home_city = EXCLUDED.home_city,
+              home_postal_code = EXCLUDED.home_postal_code
         """,
         (
             uid,
-            db_customer_id,
-            name,
-            datetime.now().isoformat(),
-            json.dumps(preferences),
-            json.dumps(consent),
+            profile.get("first_name") or "New",
+            profile.get("last_name") or "User",
+            _dob_from_age(age),
+            age,
+            gender,
+            profile.get("home_city") or "Unknown",
+            profile.get("home_postal_code") or "00000",
         ),
     )
 
+    # 2. user_onboardings — preferences (0-100), employment and mobility access.
+    cursor.execute(
+        """
+        INSERT INTO user_onboardings (
+            onboarding_id, user_id,
+            employment_status, occupation,
+            has_driving_license, car_access, bike_access,
+            score_emission, score_money, score_flexibility,
+            travel_statement, activity_statement
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (onboarding_id) DO UPDATE
+          SET score_emission = EXCLUDED.score_emission,
+              score_money = EXCLUDED.score_money,
+              score_flexibility = EXCLUDED.score_flexibility
+        """,
+        (
+            f"onb-{uid[:8]}",
+            uid,
+            profile.get("employment_status"),
+            profile.get("occupation"),
+            bool(profile.get("owns_car")) if profile.get("owns_car") is not None else None,
+            _access(profile.get("owns_car")),
+            _access(profile.get("owns_bike")),
+            _pref_to_priority(prefs.get("co2_savings")),
+            _pref_to_priority(prefs.get("cost_savings")),
+            _pref_to_priority(prefs.get("flexibility")),
+            profile.get("future_travel_plans") or "Not specified during onboarding.",
+            "Not specified during onboarding.",
+        ),
+    )
+
+    # 3. user_subscriptions — only for products present in the catalog (FK).
     for raw in profile.get("current_subscriptions") or []:
-        service = SUBSCRIPTION_NAME_MAP.get(str(raw).lower().strip())
-        if not service:
-            continue
-        cursor.execute("SELECT monthly_cost FROM pricing_catalog WHERE id = ?", (service,))
-        row = cursor.fetchone()
-        monthly = float(row["monthly_cost"]) if row else 0.0
         cursor.execute(
-            """INSERT INTO subscriptions (id, user_id, service, status, monthly_cost_eur, renewal_date)
-               VALUES (?, ?, ?, 'active', ?, NULL)""",
-            (str(uuid.uuid4()), uid, service, monthly),
+            "SELECT subscription_id FROM subscription_catalogs WHERE provider_plan_name ILIKE %s LIMIT 1",
+            (f"%{raw}%",),
+        )
+        match = cursor.fetchone()
+        if not match:
+            continue
+        cursor.execute(
+            """INSERT INTO user_subscriptions (
+                   user_subscription_id, user_id, subscription_id,
+                   subscription_status, estimated_usage_frequency
+               ) VALUES (?, ?, ?, 'active', 'unknown')""",
+            (str(uuid.uuid4()), uid, match["subscription_id"]),
         )
 
     conn.commit()

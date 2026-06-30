@@ -10,7 +10,6 @@ const FEATURES = [
   { icon: Leaf, text: 'Cut spend and CO₂ in a single, clear recommendation.' },
 ]
 
-// Alle Transportmittel zentral definiert für einfaches Mapping
 const TRANSPORT_MODES = [
   { id: 'walking', label: '🚶 Zu Fuß / Walking' },
   { id: 'bicycle', label: '🚲 Eigenes Fahrrad / Bicycle' },
@@ -29,7 +28,7 @@ const TRANSPORT_MODES = [
 
 export default function Login() {
   const { login, loginAs, personas } = useAuth()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [currentView, setCurrentView] = useState('welcome')
@@ -39,13 +38,13 @@ export default function Login() {
   const [services, setServices] = useState([])
   const [hasLicense, setHasLicense] = useState(null)
   const [carAccess, setCarAccess] = useState('')
-  const [frequentModes, setFrequentModes] = useState([]) // Neu: Häufige Transportmittel
-  const [avoidModes, setAvoidModes] = useState([])       // Neu: Zu meidende Transportmittel
+  const [frequentModes, setFrequentModes] = useState([]) 
+  const [avoidModes, setAvoidModes] = useState([])       
   const [priorities, setPriorities] = useState([])
   const [activeCategory, setActiveCategory] = useState('')
   const [birthYear, setBirthYear] = useState('') 
+  const [submitting, setSubmitting] = useState(false)
 
-  // Toggles für die Auswahlen
   const handleServiceToggle = (serviceId) => {
     setServices(prev => 
       prev.includes(serviceId) ? prev.filter(s => s !== serviceId) : [...prev, serviceId]
@@ -56,7 +55,6 @@ export default function Login() {
     setFrequentModes(prev =>
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
     )
-    // Falls man ein Verkehrsmittel als häufig wählt, kann es nicht gleichzeitig gemieden werden
     setAvoidModes(prev => prev.filter(m => m !== id))
   }
 
@@ -64,7 +62,6 @@ export default function Login() {
     setAvoidModes(prev =>
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
     )
-    // Falls man ein Verkehrsmittel meidet, fliegt es aus den häufigen raus
     setFrequentModes(prev => prev.filter(m => m !== id))
   }
 
@@ -79,9 +76,11 @@ export default function Login() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    const res = login(email, password)
+    setSubmitting(true)
+    const res = await login(identifier, password)
+    setSubmitting(false)
     if (!res.ok) setError(res.error)
   }
 
@@ -90,7 +89,7 @@ export default function Login() {
     card: '#16161a',
     accentCyan: '#00f2fe',
     accentPurple: '#a855f7',
-    accentRed: '#f43f5e',   /* Edles Warn-Rot für den "Meiden"-Screen */
+    accentRed: '#f43f5e',   
     textMuted: '#747C92',
     border: '#26262b'
   }
@@ -116,9 +115,12 @@ export default function Login() {
   return (
     <div style={{ backgroundColor: colors.bg, color: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
       
-      {/* VIEW 1: CLEAN FINTECH ONBOARDING (WELCOME) */}
+      {/* =========================================================
+          VIEW 1: CLEAN FINTECH ONBOARDING (WELCOME)
+          ========================================================= */}
       {currentView === 'welcome' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1.5rem 2.5rem 1.5rem', textAlign: 'center', boxSizing: 'border-box', height: '100vh', overflow: 'hidden' }}>
+          {/* Logo container */}
           <div style={{ marginTop: '0.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.1rem' }}>
             <div style={{ transform: 'scale(1.2)', transformOrigin: 'center' }}>
               <Logo showText={false} />
@@ -128,6 +130,7 @@ export default function Login() {
             </span>
           </div>
 
+          {/* Headline & Features */}
           <div style={{ width: '100%', maxWidth: '380px', marginTop: '1.5rem' }}>
             <h1 style={{ fontSize: '2.2rem', fontWeight: '800', color: '#ffffff', marginBottom: '1.5rem', letterSpacing: '-0.04em', lineHeight: '1.2' }}>
               Smarter mobility,<br /><span style={{ color: colors.accentCyan }}>less spend.</span>
@@ -145,6 +148,7 @@ export default function Login() {
 
           <div style={{ flex: 1 }} />
 
+          {/* Action Buttons & AGB */}
           <div style={{ width: '100%', maxWidth: '380px', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
             <button onClick={() => setCurrentView('onboarding')} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.15)' }}>
               Register
@@ -160,7 +164,9 @@ export default function Login() {
         </div>
       )}
 
-      {/* VIEW 2: FRAGEN-STEPS (ONBOARDING) */}
+      {/* =========================================================
+          VIEW 2: FRAGEN-STEPS (ONBOARDING)
+          ========================================================= */}
       {currentView === 'onboarding' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '2rem 1.5rem 2.5rem 1.5rem', height: '100vh', boxSizing: 'border-box', overflow: 'hidden' }}>
           <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -217,7 +223,7 @@ export default function Login() {
                         </div>
                       </div>
                       <div style={{ flex: 1 }} />
-                      <button onClick={() => setOnboardingStep(2)} disabled={!carAccess} style={{ width: '100%', padding: '1.1rem', backgroundColor: carAccess ? colors.accentCyan : colors.card, color: carAccess ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: carAccess ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
+                      <button onClick={() => setOnboardingStep(2)} disabled={!carAccess} style={{ width: '100%', padding: '1.1rem', backgroundColor: carAccess ? colors.accentCyan : colors.card, color: carAccess ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
                     </div>
                   )}
                 </div>
@@ -252,7 +258,7 @@ export default function Login() {
                 </div>
               )}
 
-              {/* NEUER STEP 3: HÄUFIGSTE TRANSPORTMITTEL (BRANDING CYAN) */}
+              {/* STEP 3: HÄUFIGSTE TRANSPORTMITTEL */}
               {onboardingStep === 3 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
@@ -261,7 +267,6 @@ export default function Login() {
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', maxHeight: '52vh', overflowY: 'auto', paddingRight: '2px' }}>
                       {TRANSPORT_MODES.map((mode) => {
-                        // Verhindert Auto-Vorschläge, wenn der User keinen Führerschein besitzt
                         if ((mode.id === 'car' || mode.id === 'car_sharing') && hasLicense === false) return null;
                         const isSelected = frequentModes.includes(mode.id);
 
@@ -290,7 +295,7 @@ export default function Login() {
                 </div>
               )}
 
-              {/* NEUER STEP 4: VERKEHRSMITTEL MEIDEN (BRANDING RED) */}
+              {/* STEP 4: VERKEHRSMITTEL MEIDEN */}
               {onboardingStep === 4 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
@@ -327,7 +332,7 @@ export default function Login() {
                 </div>
               )}
 
-              {/* STEP 5 (ZUVOR STEP 3): PRIORITÄTEN */}
+              {/* STEP 5: PRIORITÄTEN */}
               {onboardingStep === 5 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
@@ -352,7 +357,7 @@ export default function Login() {
                 </div>
               )}
 
-              {/* STEP 6 (ZUVOR STEP 4): GEBURTSJAHR */}
+              {/* STEP 6: GEBURTSJAHR */}
               {onboardingStep === 6 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
@@ -371,7 +376,7 @@ export default function Login() {
                 </div>
               )}
 
-              {/* STEP 7 (ZUVOR STEP 5): CREATE ACCOUNT */}
+              {/* STEP 7: CREATE ACCOUNT */}
               {onboardingStep === 7 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
@@ -393,11 +398,13 @@ export default function Login() {
         </div>
       )}
 
-      {/* VIEW 3: STANDARD SIGN IN & DEMO PROFILES */}
+      {/* =========================================================
+          VIEW 3: STANDARD SIGN IN & DEMO PROFILES
+          ========================================================= */}
       {currentView === 'login' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '2rem 1.5rem' }}>
           <div style={{ width: '100%', maxWidth: '400px' }}>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'center' }}>Welcome back</h2>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '#0.5rem', textAlign: 'center' }}>Welcome back</h2>
             <p style={{ color: colors.textMuted, marginBottom: '2.5rem', textAlign: 'center', fontSize: '0.95rem' }}>Sign in to see your personalized mobility plan.</p>
 
             <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -416,7 +423,9 @@ export default function Login() {
                 </div>
               )}
 
-              <button style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '0.5rem', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.2)' }} type="submit">Sign in</button>
+              <button style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '0.5rem', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.2)' }} type="submit" disabled={submitting}>
+                {submitting ? 'Signing in…' : 'Sign in'}
+              </button>
             </form>
 
             <div style={{ display: 'flex', alignItems: 'center', color: '#52667a', fontSize: '0.8rem', textTransform: 'uppercase', margin: '2rem 0' }}>
@@ -426,7 +435,7 @@ export default function Login() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '2rem' }}>
-              {personas.map((p) => (
+              {personas && personas.map((p) => (
                 <button key={p.id} type="button" onClick={() => loginAs(p.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', width: '100%', padding: '0.85rem', backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '14px', color: '#fff', cursor: 'pointer' }}>
                   <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: colors.border, color: colors.accentCyan, fontWeight: '700' }}>{p.initials}</span>
                   <span style={{ flex: 1, textAlign: 'left' }}><span style={{ fontWeight: '600' }}>{p.name}</span><br /><span style={{ fontSize: '0.8rem', color: colors.textMuted }}>{p.tagline}</span></span>

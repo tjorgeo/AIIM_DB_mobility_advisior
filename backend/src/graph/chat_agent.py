@@ -14,6 +14,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 
 from database import get_connection
+from schema_map import preferences_from_onboarding
 from graph.llm import get_llm
 from graph.tools import lookup_subscriptions
 
@@ -22,32 +23,46 @@ def _load_user_context(user_id: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT name, db_customer_id, preferences FROM users WHERE id = ?", (user_id,))
+    cursor.execute(
+        "SELECT user_id, first_name, last_name, home_city FROM users WHERE user_id = ?",
+        (user_id,),
+    )
     user = cursor.fetchone()
     if not user:
         conn.close()
         return "No profile found for this user."
 
     cursor.execute(
-        "SELECT service, monthly_cost_eur FROM subscriptions WHERE user_id = ? AND status = 'active'",
-        (user_id,),
+        "SELECT * FROM user_onboardings WHERE user_id = ?", (user_id,)
     )
-    subs = [dict(s) for s in cursor.fetchall()]
+    preferences = preferences_from_onboarding(cursor.fetchone())
 
     cursor.execute(
-        "SELECT scenarios FROM recommendations WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+        """
+        SELECT c.provider_plan_name
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        WHERE s.user_id = ? AND s.subscription_status = 'active'
+        """,
+        (user_id,),
+    )
+    services = [r["provider_plan_name"] for r in cursor.fetchall() if r["provider_plan_name"]]
+
+    cursor.execute(
+        "SELECT optimizer_scenarios FROM recommendations WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
         (user_id,),
     )
     rec_row = cursor.fetchone()
     conn.close()
 
+    name = f"{user['first_name']} {user['last_name']}".strip()
     lines = [
-        f"Customer: {user['name']} (DB id {user['db_customer_id']})",
-        f"Preferences: {user['preferences']}",
-        f"Active subscriptions: {', '.join(s['service'] for s in subs) or 'none'}",
+        f"Customer: {name} (id {user['user_id']}, home city {user['home_city']})",
+        f"Preferences (0-100): {preferences}",
+        f"Active subscriptions: {', '.join(services) or 'none'}",
     ]
-    if rec_row:
-        data = json.loads(rec_row["scenarios"])
+    if rec_row and rec_row["optimizer_scenarios"]:
+        data = json.loads(rec_row["optimizer_scenarios"])
         best = data.get("best_recommendation_id")
         scen = next((s for s in data.get("scenarios", []) if s["id"] == best), None)
         if scen:

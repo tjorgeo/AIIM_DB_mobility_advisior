@@ -1,247 +1,162 @@
+import itertools
+
+from schema_map import category_covers_mode
+
+
+def _plan_annual(plan: dict) -> float:
+    """Annual cost of a catalog plan — prefer an explicit annual price, else 12x
+    the monthly price."""
+    annual = plan.get("annual_cost")
+    if annual is not None:
+        return float(annual)
+    return float(plan.get("monthly_cost") or 0.0) * 12
+
+
 class OptimizerAgent:
     def __init__(self):
         pass
 
     def run(self, travel_history: list, current_subscriptions: list, pricing_catalog: list, preferences: dict) -> dict:
         """
-        Runs mathematical simulations of the traveler's historical trips under all candidate subscription plans.
-        Outputs 2 distinct scenarios (Cost-Optimized and Balanced) with precise cost breakdowns and carbon metrics.
+        Catalog-driven, flat-rate portfolio optimisation over the production
+        ``subscription_catalogs``. Every catalog plan is a candidate; a plan
+        covers a leg when its ``category`` covers the leg's ``transport_mode``
+        (``category_covers_mode``). A covered leg costs nothing; an uncovered leg
+        keeps its intrinsic ``estimated_cost_eur``. There are no hardcoded product
+        ids — the recommendation space is whatever the catalog contains.
+
+        Cost model: every total (including the baseline) is produced by the same
+        ``simulate()``; the baseline is simply the simulation of the user's
+        *current* subscriptions, so adding or removing a plan is symmetric.
         """
-        # Determine if traveler has a 1st class preference
-        is_1st_class = preferences.get("class_preference", "2nd") == "1st"
-        co2_weight = preferences.get("co2_priority", 50)
-        
-        # Calculate baseline cost of current travel history (what they actually spent)
-        baseline_out_of_pocket = sum(trip["cost_eur"] for trip in travel_history)
-        baseline_sub_cost = 0.0
-        
-        current_services = []
-        for sub in current_subscriptions:
-            if sub["status"] == "active":
-                baseline_sub_cost += sub["monthly_cost_eur"] * 12
-                current_services.append(sub["service"])
-                
-        baseline_total = baseline_out_of_pocket + baseline_sub_cost
-        
-        # Calculate baseline CO2 emissions
-        baseline_co2 = sum(trip["co2_kg"] for trip in travel_history)
+        baseline_co2 = sum((leg.get("estimated_co2_emissions") or 0.0) for leg in travel_history)
 
-        # Helper: simulate cost for a specific subscription combination
-        def simulate_portfolio(subs_to_test):
-            ticket_cost = 0.0
-            sub_annual_cost = 0.0
-            co2_impact = baseline_co2
-            
-            # Subscriptions costs
-            for s_id in subs_to_test:
-                # Find in catalog
-                catalog_item = next((item for item in pricing_catalog if item["id"] == s_id), None)
-                if catalog_item:
-                    sub_annual_cost += catalog_item["monthly_cost"] * 12
-                    
-            # Calculate ticket costs under this subscription set
-            for trip in travel_history:
-                cost = trip["cost_eur"]
-                dist = trip["distance_km"]
-                mode = trip["mode"]
-                
-                # Check for train discounts
-                if mode == "train":
-                    # If Bahncard 100 is in the portfolio, all train trips are free
-                    if "bahncard_100_2nd" in subs_to_test or "bahncard_100_1st" in subs_to_test:
-                        trip_cost = 0.0
-                    # If Deutschlandticket is in the portfolio and it is a regional trip
-                    elif "deutschlandticket" in subs_to_test and dist < 100.0:
-                        trip_cost = 0.0
-                    else:
-                        # Apply Bahncard discounts
-                        # We use the highest available discount in the test set
-                        discount = 0.0
-                        if is_1st_class:
-                            if "bahncard_50_1st" in subs_to_test:
-                                discount = 0.50
-                            elif "bahncard_25_1st" in subs_to_test:
-                                discount = 0.25
-                        else:
-                            if "bahncard_50_2nd" in subs_to_test:
-                                discount = 0.50
-                            elif "bahncard_25_2nd" in subs_to_test:
-                                discount = 0.25
-                                
-                        # Apply discount to base ticket cost
-                        # Note: since the historical cost already has discounts if they had BC,
-                        # we want to reconstruct the base cost and then apply the test discount.
-                        # For simplicity, if they currently have a Bahncard, the trip cost in history is already discounted.
-                        # Let's approximate: if they have a current BC25, base_cost = history_cost / 0.75.
-                        current_bc_discount = 0.0
-                        if "bahncard_25_2nd" in current_services or "bahncard_25_1st" in current_services:
-                            current_bc_discount = 0.25
-                        elif "bahncard_50_2nd" in current_services or "bahncard_50_1st" in current_services:
-                            current_bc_discount = 0.50
-                            
-                        base_cost = cost / (1.0 - current_bc_discount) if current_bc_discount < 1.0 else cost
-                        trip_cost = base_cost * (1.0 - discount)
-                        
-                    ticket_cost += trip_cost
-                    
-                # Check for sharing discounts
-                elif mode == "car":
-                    # If Miles sharing is in portfolio, apply 15% discount
-                    if "miles_sharing" in subs_to_test:
-                        # If they already had it in history, it is already discounted
-                        current_miles_discount = 0.15 if "miles_sharing" in current_services else 0.0
-                        base_cost = cost / (1.0 - current_miles_discount) if current_miles_discount < 1.0 else cost
-                        trip_cost = base_cost * 0.85
-                    else:
-                        # Reconstruct base if they had it but we're testing without it
-                        current_miles_discount = 0.15 if "miles_sharing" in current_services else 0.0
-                        trip_cost = cost / (1.0 - current_miles_discount) if current_miles_discount < 1.0 else cost
-                        
-                    ticket_cost += trip_cost
-                else:
-                    ticket_cost += cost
-                    
-            return round(ticket_cost + sub_annual_cost, 2), round(sub_annual_cost, 2), round(co2_impact, 2)
+        def simulate(portfolio):
+            """Return (total, sub_annual, legs_cost) for a set of catalog plans."""
+            sub_annual = sum(_plan_annual(p) for p in portfolio)
+            legs_cost = 0.0
+            for leg in travel_history:
+                mode = leg.get("transport_mode")
+                covered = any(category_covers_mode(p.get("category"), mode) for p in portfolio)
+                if not covered:
+                    legs_cost += leg.get("estimated_cost_eur") or 0.0
+            return round(legs_cost + sub_annual, 2), round(sub_annual, 2), round(legs_cost, 2)
 
-        # Build candidate portfolios to simulate
-        candidates = []
-        if is_1st_class:
-            candidates = [
-                [],  # Pay as you go
-                ["bahncard_25_1st"],
-                ["bahncard_50_1st"],
-                ["bahncard_100_1st"],
-                ["deutschlandticket"],  # DT is only 2nd class, but good for local transit
-                ["deutschlandticket", "bahncard_25_1st"],
-                ["deutschlandticket", "bahncard_50_1st"]
-            ]
-        else:
-            candidates = [
-                [],  # Pay as you go
-                ["deutschlandticket"],
-                ["bahncard_25_2nd"],
-                ["bahncard_50_2nd"],
-                ["bahncard_100_2nd"],
-                ["deutschlandticket", "bahncard_25_2nd"],
-                ["deutschlandticket", "bahncard_50_2nd"],
-                ["miles_sharing"],
-                ["deutschlandticket", "miles_sharing"]
-            ]
+        def covered_count(portfolio):
+            n = 0
+            for leg in travel_history:
+                mode = leg.get("transport_mode")
+                if any(category_covers_mode(p.get("category"), mode) for p in portfolio):
+                    n += 1
+            return n
 
-        # Simulate all candidates
-        results = []
-        for cand in candidates:
-            total_cost, sub_cost, co2_impact = simulate_portfolio(cand)
-            results.append({
-                "portfolio": cand,
-                "total_cost": total_cost,
-                "sub_cost": sub_cost,
-                "co2_impact_kg": co2_impact
-            })
-            
-        # Sort portfolios by total cost
-        results.sort(key=lambda x: x["total_cost"])
-        
-        # Scenario A: The absolute cheapest portfolio
-        cheapest = results[0]
-        # Make sure cheapest is actually cheaper than current. If not, keeping current is the cheapest!
-        
-        # Determine recommended actions for Scenario A
-        cheapest_subs = cheapest["portfolio"]
-        actions_a = []
-        
-        # Compare cheapest subs with current subs to decide actions
-        for sub_id in cheapest_subs:
-            if sub_id not in current_services:
-                catalog_item = next((item for item in pricing_catalog if item["id"] == sub_id), None)
-                name = catalog_item["name"] if catalog_item else sub_id
-                actions_a.append({"action": "add", "item": name, "service_id": sub_id})
-                
-        for current_sub in current_services:
-            if current_sub not in cheapest_subs:
-                catalog_item = next((item for item in pricing_catalog if item["id"] == current_sub), None)
-                name = catalog_item["name"] if catalog_item else current_sub
-                actions_a.append({"action": "cancel", "item": name, "service_id": current_sub})
-                
-        annual_savings_a = round(baseline_total - cheapest["total_cost"], 2)
-
-        # Scenario B: Balanced Portfolio
-        # Prioritizes a slightly different mix if it offers better coverage, sustainability, or flexibility
-        # For instance, if cheapest is Deutschlandticket, Scenario B might include Deutschlandticket + Bahncard 25
-        # for spontaneity on express long-distance trains. Or keeping Miles sharing if they occasionally use it.
-        # We pick the 2nd cheapest or a high-coverage portfolio that costs under 10% more than the cheapest
-        balanced = None
-        for res in results[1:]:
-            if len(res["portfolio"]) > len(cheapest_subs) and res["total_cost"] < cheapest["total_cost"] * 1.15:
-                balanced = res
-                break
-                
-        if not balanced:
-            # If no better high-coverage one is within 15% range, pick the second cheapest overall
-            balanced = results[1] if len(results) > 1 else cheapest
-            
-        balanced_subs = balanced["portfolio"]
-        actions_b = []
-        
-        for sub_id in balanced_subs:
-            if sub_id not in current_services:
-                catalog_item = next((item for item in pricing_catalog if item["id"] == sub_id), None)
-                name = catalog_item["name"] if catalog_item else sub_id
-                actions_b.append({"action": "add", "item": name, "service_id": sub_id})
-                
-        for current_sub in current_services:
-            if current_sub not in balanced_subs:
-                catalog_item = next((item for item in pricing_catalog if item["id"] == current_sub), None)
-                name = catalog_item["name"] if catalog_item else current_sub
-                actions_b.append({"action": "cancel", "item": name, "service_id": current_sub})
-                
-        annual_savings_b = round(baseline_total - balanced["total_cost"], 2)
-
-        # Calculate CO2 offsets (Deutsche Bahn trains use 100% green energy, so they have 0 emissions in calculation,
-        # or we simulate that moving people from car to train reduces CO2)
-        # For this prototype: if they use car-sharing and we recommend a train ticket, we can simulate a 10% CO2 reduction
-        # through transit shift in the balanced model.
-        co2_reduction_a = 0.0
-        co2_reduction_b = 0.0
-        
-        if "deutschlandticket" in cheapest_subs or "bahncard_100_2nd" in cheapest_subs:
-            co2_reduction_a = round(baseline_co2 * 0.12, 1)
-        if "deutschlandticket" in balanced_subs or "bahncard_100_2nd" in balanced_subs:
-            co2_reduction_b = round(baseline_co2 * 0.20, 1) # Balanced has higher eco shift
-
-        scenarios = [
+        # --- current portfolio (active subscriptions, shaped like catalog plans) ---
+        current_plans = [
             {
-                "id": "A",
-                "label": "Cost-Optimized Portfolio",
-                "portfolio": cheapest_subs,
-                "annual_cost": round(cheapest["total_cost"], 2),
-                "annual_savings": annual_savings_a,
-                "co2_impact_kg": round(cheapest["co2_impact_kg"] - co2_reduction_a, 2),
-                "co2_savings_kg": co2_reduction_a,
-                "changes": actions_a,
-                "explanation": f"This plan minimizes your financial outlays to the absolute limit. By making {len(actions_a)} contract adjustments, you can retain €{annual_savings_a} in savings yearly."
-            },
-            {
-                "id": "B",
-                "label": "Balanced Mobility Portfolio",
-                "portfolio": balanced_subs,
-                "annual_cost": round(balanced["total_cost"], 2),
-                "annual_savings": annual_savings_b,
-                "co2_impact_kg": round(balanced["co2_impact_kg"] - co2_reduction_b, 2),
-                "co2_savings_kg": co2_reduction_b,
-                "changes": actions_b,
-                "explanation": "This plan blends significant cost reductions with high regional/long-distance coverage, supporting spontaneity and reducing carbon emissions by shifting short trips to rail."
+                "id": s.get("subscription_id"),
+                "name": s.get("provider_plan_name"),
+                "category": s.get("subscription_category"),
+                "monthly_cost": s.get("monthly_cost_eur"),
+                "annual_cost": s.get("annual_cost_eur"),
             }
+            for s in current_subscriptions
+            if s.get("subscription_status") == "active"
         ]
+        current_ids = {p["id"] for p in current_plans}
 
-        # Structure final recommendation result
-        result = {
+        baseline_total, baseline_sub, baseline_oop = simulate(current_plans)
+
+        # --- candidate portfolios: pick at most one plan per category ---
+        by_category = {}
+        for plan in pricing_catalog:
+            by_category.setdefault(plan.get("category"), []).append(plan)
+
+        option_lists = [[None] + plans for plans in by_category.values()]
+        seen = set()
+        candidates = []
+        for combo in itertools.product(*option_lists) if option_lists else [()]:
+            portfolio = [p for p in combo if p]
+            key = frozenset(p["id"] for p in portfolio)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(portfolio)
+
+        # --- simulate every candidate ---
+        results = []
+        for portfolio in candidates:
+            total, sub_annual, legs_cost = simulate(portfolio)
+            results.append(
+                {
+                    "portfolio": portfolio,
+                    "ids": frozenset(p["id"] for p in portfolio),
+                    "total": total,
+                    "sub_cost": sub_annual,
+                    "covered": covered_count(portfolio),
+                }
+            )
+        results.sort(key=lambda r: (r["total"], -r["covered"]))
+
+        cheapest = results[0]
+
+        # Balanced: best coverage within 15% of the cheapest total, else 2nd cheapest.
+        balanced = None
+        threshold = cheapest["total"] * 1.15
+        for r in results:
+            if r["ids"] == cheapest["ids"]:
+                continue
+            if r["total"] <= threshold and r["covered"] > cheapest["covered"]:
+                if balanced is None or r["covered"] > balanced["covered"]:
+                    balanced = r
+        if balanced is None:
+            balanced = results[1] if len(results) > 1 else cheapest
+
+        def changes_for(portfolio):
+            portfolio_ids = {p["id"] for p in portfolio}
+            changes = []
+            for p in portfolio:
+                if p["id"] not in current_ids:
+                    changes.append({"action": "add", "item": p["name"], "service_id": p["id"]})
+            for s in current_plans:
+                if s["id"] not in portfolio_ids:
+                    changes.append({"action": "cancel", "item": s["name"], "service_id": s["id"]})
+            return changes
+
+        def scenario(scen_id, label, res, explanation):
+            savings = round(baseline_total - res["total"], 2)
+            return {
+                "id": scen_id,
+                "label": label,
+                "portfolio": [p["name"] for p in res["portfolio"]],
+                "annual_cost": res["total"],
+                "annual_savings": savings,
+                "co2_impact_kg": round(baseline_co2, 2),
+                "co2_savings_kg": 0.0,  # flat plans don't shift emissions in this model
+                "changes": changes_for(res["portfolio"]),
+                "explanation": explanation,
+            }
+
+        savings_a = round(baseline_total - cheapest["total"], 2)
+        savings_b = round(baseline_total - balanced["total"], 2)
+
+        scenario_a = scenario(
+            "A",
+            "Cost-Optimized Portfolio",
+            cheapest,
+            f"The lowest-cost mix for how you travel — an estimated €{savings_a} less per year than your current setup.",
+        )
+        scenario_b = scenario(
+            "B",
+            "Balanced Mobility Portfolio",
+            balanced,
+            "Broader coverage across your travel modes while staying close to the cheapest option.",
+        )
+
+        return {
             "baseline_annual_cost": round(baseline_total, 2),
-            "baseline_out_of_pocket": round(baseline_out_of_pocket, 2),
-            "baseline_sub_cost": round(baseline_sub_cost, 2),
+            "baseline_out_of_pocket": round(baseline_oop, 2),
+            "baseline_sub_cost": round(baseline_sub, 2),
             "baseline_co2_kg": round(baseline_co2, 2),
-            "scenarios": scenarios,
-            "best_recommendation_id": "A" if annual_savings_a >= annual_savings_b else "B"
+            "scenarios": [scenario_a, scenario_b],
+            "best_recommendation_id": "A" if savings_a >= savings_b else "B",
         }
-        
-        return result
