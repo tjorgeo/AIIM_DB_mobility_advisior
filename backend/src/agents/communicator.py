@@ -41,7 +41,7 @@ class CommunicatorAgent:
         text_en = (
             f"Dear {persona_name},\n\n"
             f"I have completed a thorough strategic audit of your mobility portfolio for DB MoveOptimizer. "
-            f"Based on your past 12 months of travel behavior, we detected an inefficiency overhead of €{analysis_result['savings_potential_estimate']}/year, "
+            f"Based on your past 12 months of travel behavior, we detected an inefficiency overhead of €{analysis_result['savings_potential_estimate_eur']}/year, "
             f"including under-utilized subscriptions and mismatched fare tiers.\n\n"
             f"### Recommended Strategy: {scenario['label']} (Scenario {scenario['id']})\n"
             f"* **Annual Net Cost:** €{scenario['annual_cost']} (representing **€{annual_savings} in savings** compared to your baseline of €{optimizer_result['baseline_annual_cost']}).\n"
@@ -59,7 +59,7 @@ class CommunicatorAgent:
         text_de = (
             f"Sehr geehrte(r) {persona_name},\n\n"
             f"ich habe eine detaillierte strategische Analyse Ihres Mobilitätsportfolios für den DB MoveOptimizer durchgeführt. "
-            f"Auf Basis Ihres Reiseverhaltens der letzten 12 Monate haben wir ein Einsparpotenzial von €{analysis_result['savings_potential_estimate']}/Jahr identifiziert, "
+            f"Auf Basis Ihres Reiseverhaltens der letzten 12 Monate haben wir ein Einsparpotenzial von €{analysis_result['savings_potential_estimate_eur']}/Jahr identifiziert, "
             f"hauptsächlich verursacht durch ungenutzte Abonnements und ungeeignete Tarifklassen.\n\n"
             f"### Empfohlene Strategie: {scenario['label']} (Szenario {scenario['id']})\n"
             f"* **Jährliche Gesamtkosten:** €{scenario['annual_cost']} (das bedeutet eine **Ersparnis von €{annual_savings}** im Vergleich zu Ihren aktuellen Kosten von €{optimizer_result['baseline_annual_cost']}).\n"

@@ -4,7 +4,7 @@ import { number } from '../lib/format'
 
 const MODE_META = {
   train: { Icon: TrainFront, en: 'Train', de: 'Bahn', cls: 'mode--train' },
-  bus: { Icon: Bus, en: 'Bus', de: 'Bus', cls: 'mode--bus' },
+  public_transport: { Icon: Bus, en: 'Public transport', de: 'ÖPNV', cls: 'mode--bus' },
   car: { Icon: Car, en: 'Car-sharing', de: 'Carsharing', cls: 'mode--car' },
   scooter: { Icon: Bike, en: 'Scooter', de: 'Roller', cls: 'mode--scooter' },
 }

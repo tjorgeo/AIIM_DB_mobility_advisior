@@ -7,7 +7,7 @@ when the math is unambiguous (e.g. a subscription cost more than it saved).
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from schema_map import group_mode, category_covers_mode
 
@@ -58,12 +58,19 @@ class AnalystAgent:
         """
 
         # ------------------------------------------------------------------ #
-        # 1. Data window                                                       #
+        # 1. Data window — capped to the last 12 months                      #
         # ------------------------------------------------------------------ #
-        dates = [dt for leg in travel_history if (dt := _parse_dt(leg.get("started_at")))]
+        all_dates = [dt for leg in travel_history if (dt := _parse_dt(leg.get("started_at")))]
 
-        if dates:
-            date_min, date_max = min(dates), max(dates)
+        if all_dates:
+            date_max = max(all_dates)
+            window_start = date_max - timedelta(days=365)
+            travel_history = [
+                leg for leg in travel_history
+                if (dt := _parse_dt(leg.get("started_at"))) and dt >= window_start
+            ]
+            dates = [dt for leg in travel_history if (dt := _parse_dt(leg.get("started_at")))]
+            date_min = min(dates)
             data_window_days = max((date_max - date_min).days, 1)
             analysis_period_start = date_min.date().isoformat()
             analysis_period_end = date_max.date().isoformat()
@@ -172,32 +179,26 @@ class AnalystAgent:
         total_trips = len(travel_history)
 
         # ------------------------------------------------------------------ #
-        # 4. Mode breakdown (annualized, backward-compatible keys kept)        #
+        # 4. Mode breakdown                                                    #
+        #                                                                      #
+        # All "_total" fields are sums over the last 12-month window.         #
+        # "_per_month" fields are the average monthly rate over that window.  #
         # ------------------------------------------------------------------ #
         mode_breakdown: dict[str, dict] = {}
         for mode, st in disp_mode_stats.items():
             n = st["trips"]
             trips_pm = round(n / months_of_data, 2)
-            dist_pm = round(st["distance"] / months_of_data, 2)
-            co2_pm = round(st["co2"] / months_of_data, 2)
             avg_dist_per_trip = round(st["distance"] / max(n, 1), 2)
             mode_breakdown[mode] = {
-                # New keys
-                "trips_total": n,
-                "trips_per_month": trips_pm,
-                "trips_per_year": round(trips_pm * 12, 1),
-                "distance_km_total": round(st["distance"], 2),
-                "distance_km_per_month": dist_pm,
-                "avg_distance_km_per_trip": avg_dist_per_trip,
-                "co2_kg_total": round(st["co2"], 2),
-                "co2_kg_per_month": co2_pm,
-                "intrinsic_cost_eur_total": round(st["intrinsic"], 2),
-                "effective_cost_eur_total": round(st["effective"], 2),
-                # Backward-compatible aliases (used by pipeline.py and communicator)
                 "trips": n,
-                "cost": round(st["effective"], 2),
+                "trips_per_month": trips_pm,
                 "distance_km": round(st["distance"], 2),
+                "distance_km_per_month": round(st["distance"] / months_of_data, 2),
+                "avg_distance_km_per_trip": avg_dist_per_trip,
                 "co2_kg": round(st["co2"], 2),
+                "co2_kg_per_month": round(st["co2"] / months_of_data, 2),
+                "intrinsic_cost_eur": round(st["intrinsic"], 2),
+                "effective_cost_eur": round(st["effective"], 2),
             }
 
         # ------------------------------------------------------------------ #
@@ -211,7 +212,7 @@ class AnalystAgent:
                     "avg_distance_km": st["avg_distance_km_per_trip"],
                 }
                 for mode, st in mode_breakdown.items()
-                if st["trips_total"] > 0
+                if st["trips"] > 0
             ],
             key=lambda x: -x["avg_trips_per_month"],
         )
@@ -230,21 +231,12 @@ class AnalystAgent:
         # BahnCard (paid a reduced price) both produce a correct                #
         # realized_savings_eur = reference_cost - amount_paid, annualized.      #
         # ------------------------------------------------------------------ #
-        def _covered_stats(category: str) -> dict:
-            trips, intrinsic, distance = 0, 0.0, 0.0
-            for raw_mode, st in raw_mode_stats.items():
-                if category_covers_mode(category, raw_mode):
-                    trips += st["trips"]
-                    intrinsic += st["intrinsic"]
-                    distance += st["distance"]
-            annualized_value = round(intrinsic / months_of_data * 12, 2)
-            return {
-                "trips_total": trips,
-                "trips_annualized": round(trips / months_of_data * 12, 1),
-                "intrinsic_total_eur": round(intrinsic, 2),
-                "intrinsic_annualized_eur": annualized_value,
-                "distance_km_total": round(distance, 2),
-            }
+        def _uncovered_annual_eur(category: str) -> float:
+            intrinsic = sum(
+                st["intrinsic"] for raw_mode, st in raw_mode_stats.items()
+                if category_covers_mode(category, raw_mode)
+            )
+            return round(intrinsic / months_of_data * 12, 2)
 
         subscription_coverage = []
         for sub_id, sub in active_subs_by_id.items():
@@ -263,9 +255,8 @@ class AnalystAgent:
                 "covered_value_eur": covered_value,
                 "realized_savings_eur": realized_savings,
                 "net_savings_eur": net_savings,
-                "trips_total": st["trips"],
-                "trips_annualized": round(st["trips"] / months_of_data * 12, 1),
-                "distance_km_total": round(st["distance"], 2),
+                "trips": st["trips"],
+                "distance_km": round(st["distance"], 2),
             })
 
         # ------------------------------------------------------------------ #
@@ -274,9 +265,9 @@ class AnalystAgent:
         uncovered_spend_by_category: dict[str, float] = {}
         for cat in _ALL_CATEGORIES:
             if cat not in active_categories:
-                cs = _covered_stats(cat)
-                if cs["intrinsic_annualized_eur"] > 0:
-                    uncovered_spend_by_category[cat] = cs["intrinsic_annualized_eur"]
+                annual_eur = _uncovered_annual_eur(cat)
+                if annual_eur > 0:
+                    uncovered_spend_by_category[cat] = annual_eur
 
         # ------------------------------------------------------------------ #
         # 9. Inefficiencies — only when math is unambiguous                   #
@@ -321,10 +312,10 @@ class AnalystAgent:
             "analysis_period_start": analysis_period_start,
             "analysis_period_end": analysis_period_end,
             "data_warning": data_warning,
-            # Aggregates
+            # Aggregates (sums over the last-12-month window)
             "total_trips": total_trips,
             "total_distance_km": round(total_distance, 2),
-            "co2_total_kg": round(total_co2, 2),
+            "total_co2_kg": round(total_co2, 2),
             "total_intrinsic_spend_eur": round(total_intrinsic, 2),
             "total_effective_spend_eur": round(total_effective, 2),
             "subscription_costs_annual_eur": round(annual_sub_cost, 2),
@@ -339,11 +330,6 @@ class AnalystAgent:
             # Inefficiencies
             "inefficiencies": inefficiencies,
             "savings_potential_estimate_eur": round(savings_potential, 2),
-            # Backward-compatible aliases (communicator / pipeline use these keys)
-            "total_out_of_pocket": round(total_effective, 2),
-            "current_annual_spend": current_annual_spend,
-            "subscription_costs_annual": round(annual_sub_cost, 2),
-            "savings_potential_estimate": round(savings_potential, 2),
             # Forecaster-ready summary (used by forecaster_node in pipeline.py)
             "forecaster_summary": forecaster_summary,
         }
