@@ -130,6 +130,15 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
     )
     # monthly_total[(year, month)] = trip count (for seasonality)
     monthly_total: dict[tuple, int] = defaultdict(int)
+    # monthly_mode_stats[(year, month)][raw_mode] = per-mode stats for that month.
+    # Keyed on the raw production transport_mode (not group_mode()'s display bucket)
+    # so regional_train and long_distance_train stay distinct in the monthly view,
+    # for monthly_mode_breakdown below.
+    monthly_mode_stats: dict[tuple, dict[str, dict]] = defaultdict(
+        lambda: defaultdict(
+            lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
+        )
+    )
 
     for leg in travel_history:
         # reference_cost_eur is the pay-as-you-go price for this leg regardless
@@ -174,6 +183,12 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         dt = _parse_dt(leg.get("started_at"))
         if dt:
             monthly_total[(dt.year, dt.month)] += 1
+            mst = monthly_mode_stats[(dt.year, dt.month)][raw_mode]
+            mst["trips"] += 1
+            mst["intrinsic"] += intrinsic
+            mst["effective"] += effective
+            mst["distance"] += dist
+            mst["co2"] += co2
 
     total_trips = len(travel_history)
 
@@ -201,17 +216,42 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         }
 
     # ------------------------------------------------------------------ #
+    # 4b. Monthly mode breakdown — same per-mode fields as mode_breakdown,#
+    #     but split by calendar month over the 12-month window, keyed on #
+    #     the raw production transport_mode (regional_train and          #
+    #     long_distance_train stay distinct here, unlike mode_breakdown).#
+    #     Only modes actually used in a given month appear under it.     #
+    # ------------------------------------------------------------------ #
+    monthly_mode_breakdown: dict[str, dict] = {}
+    for (year, month), stats_by_mode in sorted(monthly_mode_stats.items()):
+        month_key = f"{year:04d}-{month:02d}"
+        monthly_mode_breakdown[month_key] = {
+            mode: {
+                "trips": st["trips"],
+                "distance_km": round(st["distance"], 2),
+                "co2_kg": round(st["co2"], 2),
+                "intrinsic_cost_eur": round(st["intrinsic"], 2),
+                "effective_cost_eur": round(st["effective"], 2),
+            }
+            for mode, st in sorted(stats_by_mode.items())
+        }
+
+    # ------------------------------------------------------------------ #
     # 5. Dominant patterns (sorted by trips/month desc)                   #
+    #    Keyed on the raw production transport_mode (not group_mode()'s   #
+    #    display bucket) so e.g. regional_train and long_distance_train   #
+    #    are reported as separate patterns instead of merged into "train".#
+    #    mode_breakdown above stays grouped — the frontend's TravelModes  #
+    #    component reads it and expects those display buckets.           #
     # ------------------------------------------------------------------ #
     dominant_patterns = sorted(
         [
             {
                 "mode": mode,
-                "avg_trips_per_month": st["trips_per_month"],
-                "avg_distance_km": st["avg_distance_km_per_trip"],
+                "avg_trips_per_month": round(st["trips"] / months_of_data, 2),
+                "avg_distance_km": round(st["distance"] / max(st["trips"], 1), 2),
             }
-            for mode, st in mode_breakdown.items()
-            if st["trips"] > 0
+            for mode, st in raw_mode_stats.items()
         ],
         key=lambda x: -x["avg_trips_per_month"],
     )
@@ -300,6 +340,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         "detected_seasonality": detected_seasonality,
         "current_contracts": current_contracts,
         "detected_inefficiencies": [i["details"] for i in inefficiencies],
+        "monthly_mode_breakdown": monthly_mode_breakdown,
     }
 
     current_annual_spend = round(total_effective + annual_sub_cost, 2)
@@ -321,6 +362,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         "current_annual_spend_eur": current_annual_spend,
         # Breakdowns
         "mode_breakdown": mode_breakdown,
+        "monthly_mode_breakdown": monthly_mode_breakdown,
         "subscription_coverage": subscription_coverage,
         "uncovered_spend_by_category": uncovered_spend_by_category,
         # Patterns

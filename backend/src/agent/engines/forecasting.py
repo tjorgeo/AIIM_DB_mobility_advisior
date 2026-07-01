@@ -14,7 +14,7 @@ so /analyze remains reproducible when no key is set.
 
 import json
 import re
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -29,11 +29,27 @@ class DominantPattern(BaseModel):
     avg_distance_km: float
 
 
+class MonthlyModeStat(BaseModel):
+    trips: int
+    distance_km: float
+    co2_kg: float
+    intrinsic_cost_eur: float
+    effective_cost_eur: float
+
+
 class AnalystSummary(BaseModel):
     dominant_patterns: List[DominantPattern]
     detected_seasonality: str
     current_contracts: List[str]
     detected_inefficiencies: List[str]
+    # month ("YYYY-MM") -> raw transport_mode -> stats for that month. Same raw
+    # transport_mode granularity as dominant_patterns (regional_train and
+    # long_distance_train stay distinct), but split by month instead of
+    # aggregated over the whole window. Used both for LLM-side trend reasoning
+    # (see _RULES) and by the deterministic fallback's recency weighting
+    # (see _recent_mode_average), which falls back to the flat dominant_patterns
+    # average for any mode with no monthly data.
+    monthly_mode_breakdown: Dict[str, Dict[str, MonthlyModeStat]] = {}
 
 
 class CalendarEvent(BaseModel):
@@ -116,6 +132,14 @@ Rules:
 4. The basis field must briefly explain the reasoning for each mode's prediction.
 5. Set life_event_detected: true and recommend_re_evaluation_in_days only when a
    life_event with high/medium confidence is present.
+6. dominant_patterns and monthly_mode_breakdown both use the same raw transport-mode
+   granularity (e.g. regional_train and long_distance_train are reported separately,
+   never merged into one "train" figure). monthly_mode_breakdown additionally splits
+   that same data by calendar month (month -> mode -> trips/distance/CO2/cost), so use
+   it to check whether recent months diverge from the flat dominant_patterns average —
+   a growing or shrinking trend, or a mode that only appears in recent months — and
+   reflect that in the basis field and rationale rather than relying solely on the
+   flat average.
 
 Respond with STRICT JSON matching the schema below — no markdown fences, no prose outside the JSON.
 """
@@ -180,35 +204,91 @@ def _extract_json(text: str):
         return None
 
 
+_RECENT_MONTHS_WINDOW = 3  # how many of a mode's most recent months to weight toward
+
+
+def _recent_mode_average(mode: str, monthly_mode_breakdown: dict, window: int = _RECENT_MONTHS_WINDOW):
+    """Average trips/month and avg distance/trip for ``mode`` over its most recent
+    ``window`` calendar months present in ``monthly_mode_breakdown`` (month keys are
+    sortable "YYYY-MM" strings). Months without any recorded trips for this mode are
+    absent from the dict entirely (not zero-filled), so this naturally skips gaps.
+
+    Returns ``(avg_trips_per_month, avg_distance_km_per_trip, months_used)``, or
+    ``None`` if the mode never appears in ``monthly_mode_breakdown`` at all.
+    """
+    months_with_mode = sorted(
+        month for month, modes in monthly_mode_breakdown.items() if mode in modes
+    )
+    if not months_with_mode:
+        return None
+    recent_months = months_with_mode[-window:]
+    total_trips = sum(monthly_mode_breakdown[m][mode]["trips"] for m in recent_months)
+    total_distance = sum(monthly_mode_breakdown[m][mode]["distance_km"] for m in recent_months)
+    avg_trips_per_month = total_trips / len(recent_months)
+    avg_distance_per_trip = total_distance / max(total_trips, 1)
+    return avg_trips_per_month, avg_distance_per_trip, len(recent_months)
+
+
 def _deterministic_fallback(analyst_summary: dict, forecast_horizon_days: int) -> dict:
-    """Simple extrapolation from historical averages — no LLM required."""
+    """Extrapolation from historical averages — no LLM required.
+
+    For each mode, prefers its recent-month average (last _RECENT_MONTHS_WINDOW
+    months present in monthly_mode_breakdown) over the flat whole-window average in
+    dominant_patterns, so a mode that's trending up/down, or has newly started or
+    stopped, shows up instead of being smoothed into a single flat rate. Falls back
+    to the flat dominant_patterns average — the original behaviour — when a mode
+    has no monthly data at all (e.g. an older caller that only supplies
+    dominant_patterns), and lowers confidence when fewer than the full window of
+    recent months is available.
+    """
     months = forecast_horizon_days / 30
-    predicted = [
-        PredictedDemand(
-            mode=p["mode"],
-            estimated_trips=int(p["avg_trips_per_month"] * months),
-            estimated_km=round(p["avg_distance_km"] * p["avg_trips_per_month"] * months, 1),
-            confidence="medium",
-            basis="Historical monthly average extrapolated over the forecast period.",
+    monthly_mode_breakdown = analyst_summary.get("monthly_mode_breakdown", {})
+
+    predicted = []
+    for p in analyst_summary.get("dominant_patterns", []):
+        mode = p["mode"]
+        recent = _recent_mode_average(mode, monthly_mode_breakdown)
+
+        if recent is None:
+            avg_trips_per_month = p["avg_trips_per_month"]
+            avg_distance_per_trip = p["avg_distance_km"]
+            confidence = "medium"
+            basis = "Historical monthly average extrapolated over the forecast period."
+        else:
+            avg_trips_per_month, avg_distance_per_trip, months_used = recent
+            confidence = "medium" if months_used >= _RECENT_MONTHS_WINDOW else "low"
+            basis = (
+                f"Average of the last {months_used} month(s) with recorded {mode} trips, "
+                "extrapolated over the forecast period."
+            )
+
+        predicted.append(
+            PredictedDemand(
+                mode=mode,
+                estimated_trips=int(avg_trips_per_month * months),
+                estimated_km=round(avg_distance_per_trip * avg_trips_per_month * months, 1),
+                confidence=confidence,
+                basis=basis,
+            )
         )
-        for p in analyst_summary.get("dominant_patterns", [])
-    ]
+
     return ForecastOutput(
         forecast_horizon_days=forecast_horizon_days,
         scenarios=[
             Scenario(
                 label="baseline",
                 description=(
-                    "Forecast derived from historical averages "
-                    "(LLM not configured — deterministic fallback)."
+                    "Forecast derived from historical averages, weighted toward recent "
+                    "months where available (LLM not configured — deterministic fallback)."
                 ),
                 predicted_demand=predicted,
             )
         ],
         uncertainty_flags=UncertaintyFlags(life_event_detected=False),
         rationale=(
-            "Deterministic fallback: LLM not available. "
-            "Based on historical monthly averages from the analyst summary."
+            "Deterministic fallback: LLM not available. Each mode uses its most recent "
+            f"{_RECENT_MONTHS_WINDOW} month(s) of data when available, otherwise the full "
+            "historical average from the analyst summary."
         ),
     ).model_dump()
 
@@ -287,6 +367,17 @@ MOCK_ANALYST_SUMMARY = {
     "detected_inefficiencies": [
         "E-scooter trips without subscription coverage (€45/year out-of-pocket)"
     ],
+    "monthly_mode_breakdown": {
+        "2026-05": {
+            "public_transport": {"trips": 40, "distance_km": 340.0, "co2_kg": 12.0, "intrinsic_cost_eur": 120.0, "effective_cost_eur": 49.0},
+            "bike_sharing": {"trips": 8, "distance_km": 25.6, "co2_kg": 0.0, "intrinsic_cost_eur": 16.0, "effective_cost_eur": 16.0},
+        },
+        "2026-06": {
+            "public_transport": {"trips": 50, "distance_km": 425.0, "co2_kg": 15.0, "intrinsic_cost_eur": 150.0, "effective_cost_eur": 49.0},
+            "bike_sharing": {"trips": 16, "distance_km": 51.2, "co2_kg": 0.0, "intrinsic_cost_eur": 32.0, "effective_cost_eur": 32.0},
+            "e_scooter": {"trips": 6, "distance_km": 16.8, "co2_kg": 0.3, "intrinsic_cost_eur": 9.0, "effective_cost_eur": 9.0},
+        },
+    },
 }
 
 MOCK_CALENDAR_EVENTS = [

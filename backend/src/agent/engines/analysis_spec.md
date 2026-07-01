@@ -64,15 +64,18 @@ Per transport mode (using `group_mode()` for display grouping):
 - annualized versions of all of the above
 
 ### 2. Dominant patterns
-Rank modes by annualized trip count. The top modes become `dominant_patterns` — the primary output field consumed by the Forecaster.
+Rank modes by annualized trip count. The top modes become `dominant_patterns` — the primary output field consumed by the Forecaster. Unlike mode breakdown above, this is keyed on the **raw** production `transport_mode`, not `group_mode()`'s display bucket — so e.g. `regional_train` and `long_distance_train` are reported as separate patterns instead of being merged into one "train" figure.
 
 ```python
 DominantPattern(
-    mode: str,
+    mode: str,                   # raw transport_mode, not the grouped display bucket
     avg_trips_per_month: float,
     avg_distance_km: float       # average distance per trip in this mode
 )
 ```
+
+### 2b. Monthly mode breakdown
+Same raw-mode granularity as `dominant_patterns` above, but split by calendar month instead of aggregated over the whole window: `monthly_mode_breakdown["YYYY-MM"][raw_mode] = {trips, distance_km, co2_kg, intrinsic_cost_eur, effective_cost_eur}`. Only months/modes actually present in the data appear. Consumed by the Forecaster's LLM prompt for trend detection; the deterministic (no-LLM) fallback does not read it.
 
 ### 3. Seasonality detection
 Bucket trips by calendar month. Compare each month's trip volume against the overall monthly average. Flag the mode where the seasonal variance is highest and describe the direction (e.g. "higher bike usage in spring/summer, more public transport in winter"). This is a statistical comparison — no LLM involved.
