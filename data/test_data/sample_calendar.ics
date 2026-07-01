@@ -1,0 +1,47 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//DB MoveOptimizer//Test Calendar//EN
+CALSCALE:GREGORIAN
+
+BEGIN:VEVENT
+SUMMARY:Geschäftsreise Berlin – Strategiemeeting HQ
+DTSTART:20260715T090000Z
+DTEND:20260715T180000Z
+LOCATION:Berlin, Potsdamer Platz 1, 10785 Berlin
+DESCRIPTION:Quarterly strategy review with the Berlin leadership team. Train booked: ICE Frankfurt → Berlin Hbf 07:02.
+END:VEVENT
+
+BEGIN:VEVENT
+SUMMARY:Team-Lunch Kantine
+DTSTART:20260718T120000Z
+DTEND:20260718T130000Z
+LOCATION:Frankfurt, Büro
+DESCRIPTION:Gemeinsames Mittagessen mit dem Team in der Kantine.
+END:VEVENT
+
+BEGIN:VEVENT
+SUMMARY:Vielleicht Hamburg besuchen?
+DTSTART:20260722T100000Z
+DTEND:20260722T180000Z
+LOCATION:
+DESCRIPTION:Eventuell mal nach Hamburg fahren, wenn die Zeit es erlaubt. Noch nicht sicher.
+END:VEVENT
+
+BEGIN:VEVENT
+SUMMARY:Umzug nach München
+DTSTART:20260801T080000Z
+DTEND:20260801T200000Z
+LOCATION:München, Schwabing, 80805 München
+DESCRIPTION:Umzugstag. Spedition kommt morgens. Neue Wohnung ab September verfügbar. Pendeln nach Frankfurt entfällt.
+END:VEVENT
+
+BEGIN:VEVENT
+RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR
+SUMMARY:Fitnessstudio
+DTSTART:20260706T063000Z
+DTEND:20260706T073000Z
+LOCATION:Frankfurt, FitnessFabrik
+DESCRIPTION:Regelmäßiges Training.
+END:VEVENT
+
+END:VCALENDAR
