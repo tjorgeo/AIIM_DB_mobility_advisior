@@ -1,179 +1,394 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Sparkles, RotateCcw, CheckCircle, AlertCircle, ArrowDown } from 'lucide-react'
+import React, { useState } from 'react'
+import { 
+  Wallet, Leaf, Route, Globe, LogOut, TrendingUp, 
+  Check, ChevronDown, ArrowUpRight, BarChart3, AlertCircle 
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { analyze, approve as apiApprove } from '../api/client'
-import { euro } from '../lib/format'
-import AppShell from '../components/AppShell.jsx'
-import StatCards from '../components/StatCards.jsx'
-import RecommendationCard from '../components/RecommendationCard.jsx'
-import TravelModes from '../components/TravelModes.jsx'
-import Insights from '../components/Insights.jsx'
-import SkeletonDashboard from '../components/SkeletonDashboard.jsx'
-import ChatWidget from '../components/chat/ChatWidget.jsx'
-
-function recOf(result) {
-  const s = result?.summary?.scenarios || []
-  return s.find((x) => x.id === result.summary.recommended_scenario) || s[0] || null
-}
+import Logo from '../components/Logo'
 
 export default function Dashboard() {
-  const { currentUser, logout } = useAuth()
-  const [lang, setLang] = useState('en')
-  const [status, setStatus] = useState('loading') // loading | ready | error
-  const [result, setResult] = useState(null)
-  const [approvedScenarioId, setApprovedScenarioId] = useState(null)
-  const [toast, setToast] = useState('')
+  const { logout, currentUser } = useAuth()
+  const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
 
-  const resultRef = useRef(null)
-  const inflightRef = useRef(null)
-  const plansRef = useRef(null)
-  const t = (en, de) => (lang === 'de' ? de : en)
+  // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
+  const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
+  const initials = (currentUser?.initials
+    || (currentUser?.name || '')
+        .split(' ')
+        .filter(Boolean)
+        .map((s) => s[0])
+        .slice(0, 2)
+        .join('')
+    || (currentUser?.firstName?.[0] || 'U')).toUpperCase()
 
-  const runAnalysis = useCallback(() => {
-    setStatus('loading')
-    setApprovedScenarioId(null)
-    setToast('')
-    const p = (async () => {
-      try {
-        const data = await analyze(currentUser.id)
-        resultRef.current = data
-        setResult(data)
-        setStatus('ready')
-        return data
-      } catch {
-        setStatus('error')
-        return null
-      } finally {
-        inflightRef.current = null
-      }
-    })()
-    inflightRef.current = p
-    return p
-  }, [currentUser.id])
-
-  // Auto-run the analysis when the dashboard mounts.
-  useEffect(() => { runAnalysis() }, [runAnalysis])
-
-  const handleApprove = useCallback(async (scenarioId) => {
-    const r = resultRef.current
-    if (!r) return false
-    try {
-      const res = await apiApprove(r.session_id, scenarioId)
-      if (res.status === 'success') {
-        setApprovedScenarioId(scenarioId)
-        setToast(t('Your new plan is saved ✓', 'Dein neuer Tarif ist gespeichert ✓'))
-        return true
-      }
-      return false
-    } catch {
-      return false
+  // Wörterbuch für die schlichte DE/EN-Umschaltung
+  const t = {
+    DE: {
+      optimized: 'Du bist optimiert',
+      optimizedSub: 'Dein aktueller Plan passt perfekt zu deinem Reiseverhalten — kein verlorenes Sparpotenzial.',
+      seePlan: 'Meinen Plan ansehen',
+      annualSpend: 'JÄHRLICHE AUSGABEN',
+      distance: 'DISTANZ',
+      co2: 'CO₂-FUSABDRUCK (12 MONATE)',
+      acrossTransit: 'Über alle Verkehrsmittel',
+      estimatedEmissions: 'Geschätzte Emissionen',
+      howYouTravel: 'Wie du reist',
+      mostlyWalk: 'Hauptsächlich zu Fuß',
+      recommended: 'Für dich empfohlen',
+      basedMonths: 'Basiert auf deinen letzten 12 Monaten',
+      portfolioTitle: 'Kostenoptimiertes Portfolio',
+      currentPlan: 'Dein aktueller Tarif',
+      whatChanges: 'WAS SICH ÄNDERT',
+      noChanges: 'Keine Änderungen — behalte deinen Tarif bei',
+      savingOpp: 'Sparpotenziale',
+      perfectMix: 'Du nutzt bereits den perfekten Abo-Mix.',
+      logout: 'Abmelden',
+      subAndTickets: 'Abos + Tickets'
+    },
+    EN: {
+      optimized: "You're optimized",
+      optimizedSub: 'Your current plan already fits how you travel — no savings left on the table.',
+      seePlan: 'See my plan',
+      annualSpend: 'ANNUAL SPEND',
+      distance: 'DISTANCE',
+      co2: 'CO₂ FOOTPRINT (12 MO)',
+      acrossTransit: 'Across all transit',
+      estimatedEmissions: 'Estimated emissions',
+      howYouTravel: 'How you travel',
+      mostlyWalk: 'Mostly by walk',
+      recommended: 'Recommended for you',
+      basedMonths: 'Based on your last 12 months',
+      portfolioTitle: 'Cost-Optimized Portfolio',
+      currentPlan: 'Your current plan',
+      whatChanges: 'WHAT CHANGES',
+      noChanges: 'No changes — keep your current plan',
+      savingOpp: 'Savings opportunities',
+      perfectMix: 'You are already using the perfect subscription mix.',
+      logout: 'Sign out',
+      subAndTickets: 'Subscriptions + tickets'
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang])
+  }[lang]
 
-  // Chat wiring — stable references that always read the latest data.
-  const getContext = useCallback(() => ({
-    status,
-    result: resultRef.current,
-    recommendation: resultRef.current ? recOf(resultRef.current) : null,
-  }), [status])
+  // Farbpalette exakt passend zur Onboarding/Login-Seite
+  const colors = {
+    bg: '#000000',
+    card: '#16161a',
+    accentCyan: '#00f2fe',
+    accentPurple: '#a855f7',
+    textMuted: '#747C92',
+    border: '#26262b',
+    successGreen: '#22c55e'
+  }
 
-  const actionsRef = useRef({})
-  actionsRef.current.optimize = () => resultRef.current || inflightRef.current || runAnalysis()
-  actionsRef.current.approve = handleApprove
-
-  const analyst = result?.raw_agent_payloads?.analyst?.output
-  const rec = result ? recOf(result) : null
-  const savings = rec?.annual_savings || 0
-  const memo = lang === 'de' ? result?.summary?.memos?.german : result?.summary?.memos?.english
-  const dataReady = status === 'ready' && analyst && result?.summary
+  // Daten aus den Screenshots extrahiert
+  const travelStats = [
+    { name: lang === 'DE' ? 'Zu Fuß' : 'walk', trips: '247', pct: 56, color: '#00f2fe' },
+    { name: lang === 'DE' ? 'Bus' : 'Bus', trips: '84', pct: 19, color: '#a855f7' },
+    { name: lang === 'DE' ? 'Fahrrad' : 'bike', trips: '64', pct: 14, color: '#3b82f6' },
+    { name: lang === 'DE' ? 'E-Scooter' : 'Scooter', trips: '41', pct: 9, color: '#22c55e' },
+    { name: lang === 'DE' ? 'Zug' : 'Train', trips: '6', pct: 1, color: '#eab308' },
+  ]
 
   return (
-    <>
-      <AppShell
-        user={currentUser}
-        lang={lang}
-        onToggleLang={() => setLang((l) => (l === 'en' ? 'de' : 'en'))}
-        onSwitchProfile={logout}
-        onLogout={logout}
-      />
+    <div style={{
+      backgroundColor: colors.bg,
+      color: '#ffffff',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      boxSizing: 'border-box'
+    }}>
+      
+      {/* =========================================================
+          HEADER: CLEAN LOGO, LANG-TOGGLE & AVATAR
+          ========================================================= */}
+      <header style={{
+        padding: '1.25rem 1.5rem',
+        borderBottom: `1px solid ${colors.border}`,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        position: 'sticky',
+        top: 0,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        backdropFilter: 'blur(12px)',
+        zIndex: 100
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Logo showText={false} />
+          <span style={{ fontSize: '1.2rem', fontWeight: '300', color: '#ffffff', letterSpacing: '-0.02em' }}>
+            move<span style={{ fontWeight: '700', color: colors.accentCyan }}>optimizer</span>
+          </span>
+        </div>
 
-      <main className="content-wrap dash">
-        {status === 'loading' && <SkeletonDashboard />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Sprachumschalter */}
+          <button 
+            onClick={() => setLang(lang === 'DE' ? 'EN' : 'DE')}
+            style={{
+              backgroundColor: colors.card,
+              border: `1px solid ${colors.border}`,
+              color: '#ffffff',
+              padding: '0.4rem 0.75rem',
+              borderRadius: '20px',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              cursor: 'pointer'
+            }}
+          >
+            <Globe size={13} style={{ color: colors.accentCyan }} />
+            {lang}
+          </button>
 
-        {status === 'error' && (
-          <div className="card state">
-            <span className="state__icon"><AlertCircle size={26} /></span>
-            <h3>{t('We couldn’t load your plan', 'Plan konnte nicht geladen werden')}</h3>
-            <p>{t('Please make sure you’re connected and try again.', 'Bitte prüfe deine Verbindung und versuche es erneut.')}</p>
-            <button className="btn btn--primary" onClick={runAnalysis}>
-              <RotateCcw size={16} /> {t('Try again', 'Erneut versuchen')}
-            </button>
+          {/* User Avatar (Abmelden per Klick) */}
+          <div 
+            onClick={logout}
+            title={`${displayName} — ${t.logout}`}
+            style={{
+              width: '35px',
+              height: '35px',
+              borderRadius: '50%',
+              backgroundColor: colors.accentPurple,
+              color: '#000000',
+              fontWeight: '700',
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              position: 'relative'
+            }}
+          >
+            {initials}
           </div>
-        )}
+        </div>
+      </header>
 
-        {dataReady && (
-          <div className="dash__stack">
-            {toast && (
-              <div className="toast"><CheckCircle size={16} /> {toast}</div>
-            )}
+      {/* =========================================================
+          MAIN SINGLE PAGE CONTENT (SWIPE DOWN ENGINE)
+          ========================================================= */}
+      <main style={{
+        flex: 1,
+        width: '100%',
+        maxWidth: '480px',
+        margin: '0 auto',
+        padding: '1.5rem 1.25rem 3rem 1.25rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.25rem',
+        boxSizing: 'border-box'
+      }}>
 
-            {/* Hero summary */}
-            <section className={`hero${savings > 0 ? '' : ' hero--flat'}`}>
-              <span className="hero__eyebrow"><Sparkles size={13} /> <span>{t('Personalized for you', 'Für dich personalisiert')}</span></span>
-              {savings > 0 ? (
-                <>
-                  <div className="hero__amount">{euro(savings, { lang })} <span>/ {t('year', 'Jahr')}</span></div>
-                  <p className="hero__sub">
-                    {t(
-                      `That's how much you could save by switching to “${rec.label}”. Here's your personalized breakdown.`,
-                      `So viel kannst du sparen, wenn du zu „${rec.label}“ wechselst. Hier ist deine persönliche Auswertung.`,
-                    )}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="hero__amount">{t('You’re optimized', 'Optimal aufgestellt')}</div>
-                  <p className="hero__sub">
-                    {t(
-                      'Your current plan already fits how you travel — no savings left on the table.',
-                      'Dein Tarif passt bereits zu deinem Reiseverhalten — kein Sparpotenzial offen.',
-                    )}
-                  </p>
-                </>
-              )}
-              <div className="hero__actions">
-                <button className="btn btn--primary" onClick={() => plansRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-                  {t('See my plan', 'Plan ansehen')} <ArrowDown size={16} />
-                </button>
-                <button className="btn btn--ghost" onClick={runAnalysis}>
-                  <RotateCcw size={15} /> {t('Re-run', 'Neu berechnen')}
-                </button>
-              </div>
-            </section>
+        {/* 1. HERO HERO CARD: OPTIMIZED STATUS */}
+        <div style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '24px',
+          padding: '1.5rem',
+          textAlign: 'left',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '120px',
+            height: '120px',
+            background: `radial-gradient(circle, rgba(0, 242, 254, 0.08) 0%, transparent 70%)`,
+            pointerEvents: 'none'
+          }} />
 
-            <StatCards analyst={analyst} lang={lang} />
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            backgroundColor: 'rgba(0, 242, 254, 0.08)',
+            color: colors.accentCyan,
+            padding: '0.35rem 0.75rem',
+            borderRadius: '20px',
+            fontSize: '0.75rem',
+            fontWeight: '700',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            marginBottom: '1rem'
+          }}>
+            <TrendingUp size={12} /> PERSONALIZED
+          </div>
 
-            <div className="dash__cols">
-              <div ref={plansRef} style={{ scrollMarginTop: 88 }}>
-                <RecommendationCard
-                  summary={result.summary}
-                  lang={lang}
-                  approvedScenarioId={approvedScenarioId}
-                  onApprove={handleApprove}
-                />
-              </div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: '800', letterSpacing: '-0.03em', marginBottom: '0.5rem', lineHeight: '1.2' }}>
+            {t.optimized}
+          </h2>
+          <p style={{ color: colors.textMuted, fontSize: '0.9rem', lineHeight: '1.4', marginBottom: '1.25rem' }}>
+            {t.optimizedSub}
+          </p>
+          
+          <button style={{
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: colors.accentCyan,
+            fontSize: '0.9rem',
+            fontWeight: '700',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            cursor: 'pointer'
+          }}>
+            {t.seePlan} <span style={{ fontSize: '1.1rem' }}>↓</span>
+          </button>
+        </div>
 
-              <div className="dash__stack">
-                <TravelModes analyst={analyst} lang={lang} />
-                <Insights inefficiencies={analyst.inefficiencies} lang={lang} />
-              </div>
+        {/* 2. CORE CORE STATS (GRID CONFIGURATION) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* ANNUAL SPEND */}
+          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.annualSpend}</span>
+              <span style={{ color: colors.accentCyan }}><Wallet size={14} /></span>
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>€183.35</div>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.subAndTickets}</span>
+          </div>
+
+          {/* DISTANCE */}
+          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.distance}</span>
+              <span style={{ color: colors.accentPurple }}><Route size={14} /></span>
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>1,319 km</div>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.acrossTransit}</span>
+          </div>
+        </div>
+
+        {/* CO₂ CARD */}
+        <div style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '20px',
+          padding: '1.1rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.35rem' }}>
+              {t.co2}
+            </span>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em' }}>46 kg</div>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.estimatedEmissions}</span>
+          </div>
+          <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: 'rgba(34, 197, 94, 0.08)', display: 'flex', alignItems: 'center', justifyInContent: 'center', color: colors.successGreen }}>
+            <Leaf size={20} style={{ margin: 'auto' }} />
+          </div>
+        </div>
+
+        {/* 3. PORTFOLIO RECOMMENDATION CARD */}
+        <div style={{
+          backgroundColor: colors.card,
+          border: `2px solid ${colors.accentCyan}`,
+          borderRadius: '24px',
+          padding: '1.25rem',
+          position: 'relative'
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: '-12px',
+            left: '20px',
+            backgroundColor: colors.accentCyan,
+            color: '#000000',
+            fontSize: '0.65rem',
+            fontWeight: '800',
+            padding: '0.2rem 0.6rem',
+            borderRadius: '6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            BEST FOR YOU
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginTop: '0.25rem', marginBottom: '1rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.portfolioTitle}</h3>
+              <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.recommended}</span>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>€183.35<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
             </div>
           </div>
-        )}
-      </main>
 
-      <ChatWidget user={currentUser} lang={lang} getContext={getContext} actions={actionsRef.current} advisorMemo={memo} />
-    </>
+          <div style={{ backgroundColor: '#1c1c22', borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#ffffff', fontWeight: '500', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>⭐ {t.currentPlan}</span>
+            <Check size={16} style={{ color: colors.accentCyan }} />
+          </div>
+
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.85rem' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
+              {t.whatChanges}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.textMuted }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accentCyan }} />
+              {t.noChanges}
+            </div>
+          </div>
+        </div>
+
+        {/* 4. "HOW YOU TRAVEL" DISTRIBUTION */}
+        <div style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '24px',
+          padding: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
+              <span style={{ fontSize: '0.78rem', color: colors.textMuted }}>{t.mostlyWalk}</span>
+            </div>
+            <BarChart3 size={18} style={{ color: colors.accentPurple }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {travelStats.map((item, index) => (
+              <div key={index}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.35rem', fontWeight: '500' }}>
+                  <span style={{ color: '#ffffff' }}>{item.name}</span>
+                  <span style={{ color: colors.textMuted }}>
+                    <span style={{ color: '#ffffff', fontWeight: '600' }}>{item.trips}</span> trips • {item.pct}%
+                  </span>
+                </div>
+                {/* Progress bar im Trade Republic Stil */}
+                <div style={{ width: '100%', height: '6px', backgroundColor: '#26262b', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${item.pct}%`, height: '100%', backgroundColor: item.color, borderRadius: '3px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 5. SAVINGS OPPORTUNITIES HEADER */}
+        <div style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '20px',
+          padding: '1.2rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem'
+        }}>
+          <div style={{ color: colors.accentCyan }}><ArrowUpRight size={20} /></div>
+          <div style={{ textAlign: 'left' }}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.1rem' }}>{t.savingOpp}</h4>
+            <p style={{ fontSize: '0.8rem', color: colors.textMuted, margin: 0 }}>{t.perfectMix}</p>
+          </div>
+        </div>
+
+      </main>
+    </div>
   )
 }
