@@ -13,7 +13,7 @@ so /analyze remains reproducible when no key is set.
 """
 
 import json
-import re
+from datetime import datetime, timezone
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
@@ -140,6 +140,11 @@ Rules:
    a growing or shrinking trend, or a mode that only appears in recent months — and
    reflect that in the basis field and rationale rather than relying solely on the
    flat average.
+7. The payload's top-level as_of_date is today's date. Treat the {horizon}-day forecast
+   window as starting from as_of_date — not from the last month in
+   monthly_mode_breakdown or the earliest calendar entry — and use it to judge how
+   recent monthly_mode_breakdown's months are and how near-term or far-out each
+   calendar entry is.
 
 Respond with STRICT JSON matching the schema below — no markdown fences, no prose outside the JSON.
 """
@@ -194,12 +199,16 @@ def _parse_ics(ics_text: str) -> list[dict]:
 
 
 def _extract_json(text: str):
-    """Pull the first JSON object out of an LLM reply (handles ```json fences)."""
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
+    """Pull the first complete JSON object out of an LLM reply (tolerates prose or
+    ```json fences before/after it). Uses raw_decode from the first ``{`` so it stops
+    at that object's actual matching closing brace, instead of a greedy regex that
+    would span to the *last* ``}`` in the whole text if any stray braces follow."""
+    start = text.find("{")
+    if start == -1:
         return None
     try:
-        return json.loads(match.group(0))
+        obj, _ = json.JSONDecoder().raw_decode(text, start)
+        return obj
     except json.JSONDecodeError:
         return None
 
@@ -229,7 +238,13 @@ def _recent_mode_average(mode: str, monthly_mode_breakdown: dict, window: int = 
     return avg_trips_per_month, avg_distance_per_trip, len(recent_months)
 
 
-def _deterministic_fallback(analyst_summary: dict, forecast_horizon_days: int) -> dict:
+def _deterministic_fallback(
+    analyst_summary: dict,
+    forecast_horizon_days: int,
+    calendar_events: list | None = None,
+    ics_text: str | None = None,
+    raw_calendar_entries: list | None = None,
+) -> dict:
     """Extrapolation from historical averages — no LLM required.
 
     For each mode, prefers its recent-month average (last _RECENT_MONTHS_WINDOW
@@ -240,9 +255,16 @@ def _deterministic_fallback(analyst_summary: dict, forecast_horizon_days: int) -
     has no monthly data at all (e.g. an older caller that only supplies
     dominant_patterns), and lowers confidence when fewer than the full window of
     recent months is available.
+
+    Calendar data (any of the three params) is deliberately NOT used to adjust the
+    numbers here — detecting life events or trip-specific demand from calendar text
+    requires semantic reasoning only the LLM path does. Rather than silently
+    dropping it, if any calendar data was supplied this is called out explicitly in
+    the rationale, so the gap is visible instead of silent.
     """
     months = forecast_horizon_days / 30
     monthly_mode_breakdown = analyst_summary.get("monthly_mode_breakdown", {})
+    calendar_supplied = bool(calendar_events or ics_text or raw_calendar_entries)
 
     predicted = []
     for p in analyst_summary.get("dominant_patterns", []):
@@ -272,6 +294,18 @@ def _deterministic_fallback(analyst_summary: dict, forecast_horizon_days: int) -
             )
         )
 
+    rationale = (
+        "Deterministic fallback: LLM not available. Each mode uses its most recent "
+        f"{_RECENT_MONTHS_WINDOW} month(s) of data when available, otherwise the full "
+        "historical average from the analyst summary."
+    )
+    if calendar_supplied:
+        rationale += (
+            " Upcoming calendar entries were supplied but not analyzed — detecting life "
+            "events or trip-specific demand from calendar data requires an LLM; re-run "
+            "once one is configured to factor these in."
+        )
+
     return ForecastOutput(
         forecast_horizon_days=forecast_horizon_days,
         scenarios=[
@@ -285,11 +319,7 @@ def _deterministic_fallback(analyst_summary: dict, forecast_horizon_days: int) -
             )
         ],
         uncertainty_flags=UncertaintyFlags(life_event_detected=False),
-        rationale=(
-            "Deterministic fallback: LLM not available. Each mode uses its most recent "
-            f"{_RECENT_MONTHS_WINDOW} month(s) of data when available, otherwise the full "
-            "historical average from the analyst summary."
-        ),
+        rationale=rationale,
     ).model_dump()
 
 
@@ -297,15 +327,30 @@ def forecast(
     analyst_summary: dict,
     calendar_events: list | None = None,
     ics_text: str | None = None,
+    raw_calendar_entries: list[dict] | None = None,
     forecast_horizon_days: int = 90,
 ) -> dict:
     """
     Produce a 90-day demand forecast from an analyst summary plus calendar data.
 
-    Accepts either pre-structured ``calendar_events`` (list of CalendarEvent dicts)
-    or a raw ``ics_text`` string. When ``ics_text`` is provided it takes precedence:
-    the ICS is parsed deterministically and the raw entries are passed to the LLM,
-    which filters for transport-relevance and classifies life events before forecasting.
+    Three calendar inputs, checked in this precedence order:
+    - ``ics_text``: a raw .ics string; parsed deterministically via ``_parse_ics``
+      into raw entries (summary/date/location/description).
+    - ``raw_calendar_entries``: already-parsed raw entries in that same shape —
+      e.g. read directly from the ``user_calendars`` table by ``context.py`` —
+      skips ICS parsing entirely.
+    - ``calendar_events``: pre-structured, pre-classified ``CalendarEvent`` dicts
+      (date/destination/transport_hint/confidence).
+
+    Whichever raw-entry source is used (``ics_text`` or ``raw_calendar_entries``),
+    the LLM itself filters for transport-relevance and classifies life events
+    before forecasting (see ``_SYSTEM_PROMPT_RAW_ICS``). ``calendar_events`` is for
+    callers that have already done that classification themselves.
+
+    The LLM payload also carries an ``as_of_date`` (today, computed here — not
+    supplied by the caller) so the model has an explicit anchor for "the next N
+    days" instead of inferring "today" from the gap between the last historical
+    month in ``monthly_mode_breakdown`` and the first calendar entry.
 
     Falls back to a deterministic baseline when no API key is configured or the LLM
     response cannot be parsed.
@@ -318,13 +363,29 @@ def forecast(
         _has_llm = False
 
     if not _has_llm:
-        return _deterministic_fallback(analyst_summary, forecast_horizon_days)
+        return _deterministic_fallback(
+            analyst_summary, forecast_horizon_days,
+            calendar_events=calendar_events, ics_text=ics_text,
+            raw_calendar_entries=raw_calendar_entries,
+        )
 
     # Build prompt + payload depending on calendar input type
     if ics_text:
         raw_events = _parse_ics(ics_text)
+    elif raw_calendar_entries:
+        raw_events = raw_calendar_entries
+    else:
+        raw_events = None
+
+    # Today's date, so the model has an explicit anchor for "the next N days" instead
+    # of inferring it from the gap between the last historical month and the first
+    # calendar entry (see _RULES rule 7).
+    as_of_date = datetime.now(timezone.utc).date().isoformat()
+
+    if raw_events is not None:
         system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(horizon=forecast_horizon_days)
         payload = {
+            "as_of_date": as_of_date,
             "analyst_summary": analyst_summary,
             "raw_calendar_entries": raw_events,
             "forecast_horizon_days": forecast_horizon_days,
@@ -332,6 +393,7 @@ def forecast(
     else:
         system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(horizon=forecast_horizon_days)
         payload = {
+            "as_of_date": as_of_date,
             "analyst_summary": analyst_summary,
             "calendar_events": calendar_events or [],
             "forecast_horizon_days": forecast_horizon_days,
@@ -349,7 +411,11 @@ def forecast(
     except Exception as exc:
         print(f"[forecast] LLM call failed ({exc}); using deterministic fallback.")
 
-    return _deterministic_fallback(analyst_summary, forecast_horizon_days)
+    return _deterministic_fallback(
+        analyst_summary, forecast_horizon_days,
+        calendar_events=calendar_events, ics_text=ics_text,
+        raw_calendar_entries=raw_calendar_entries,
+    )
 
 
 # ---------------------------------------------------------------------------

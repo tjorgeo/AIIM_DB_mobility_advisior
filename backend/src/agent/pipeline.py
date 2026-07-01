@@ -42,11 +42,11 @@ def run_analysis(user_id: str) -> dict:
     analyst_out["preferences"] = preferences  # referenced by the memo
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
-    # seasonality). Demand-only + deterministic fallback, so numbers stay guarded.
-    # calendar_events will be wired in when calendar integration is added.
+    # seasonality) plus the user's upcoming calendar entries (see context.py).
+    # Demand-only + deterministic fallback, so numbers stay guarded.
     forecaster_out = forecast(
         analyst_out["forecaster_summary"],
-        calendar_events=[],
+        raw_calendar_entries=ctx["raw_calendar_entries"],
         forecast_horizon_days=90,
     )
 

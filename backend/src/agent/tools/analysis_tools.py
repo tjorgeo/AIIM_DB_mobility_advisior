@@ -39,9 +39,14 @@ def make_analysis_tools(ctx: dict) -> list:
     @tool
     def forecast_demand() -> str:
         """Forecast the customer's trip demand for the next 90 days by mode, from their
-        historical patterns and seasonality. Returns the exact forecast JSON."""
+        historical patterns, seasonality and upcoming calendar entries. Returns the
+        exact forecast JSON."""
         return json.dumps(
-            forecast(_analysis()["forecaster_summary"], calendar_events=[], forecast_horizon_days=90),
+            forecast(
+                _analysis()["forecaster_summary"],
+                raw_calendar_entries=ctx["raw_calendar_entries"],
+                forecast_horizon_days=90,
+            ),
             ensure_ascii=False,
         )
 

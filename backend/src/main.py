@@ -59,8 +59,9 @@ class LoginRequest(BaseModel):
 
 class ForecasterTestRequest(BaseModel):
     analyst_summary: dict
-    calendar_events: list | None = None   # pre-structured CalendarEvent dicts
-    ics_text: str | None = None           # raw ICS — parsed and filtered by the LLM
+    calendar_events: list | None = None          # pre-structured CalendarEvent dicts
+    ics_text: str | None = None                  # raw ICS — parsed and filtered by the LLM
+    raw_calendar_entries: list | None = None     # pre-parsed raw entries (skips ICS parsing)
     forecast_horizon_days: int = 90
 
 # --- API ENDPOINTS ---
@@ -309,6 +310,7 @@ def test_forecaster(req: ForecasterTestRequest):
             req.analyst_summary,
             calendar_events=req.calendar_events,
             ics_text=req.ics_text,
+            raw_calendar_entries=req.raw_calendar_entries,
             forecast_horizon_days=req.forecast_horizon_days,
         )
         return result

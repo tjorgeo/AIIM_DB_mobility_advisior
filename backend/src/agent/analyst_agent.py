@@ -14,7 +14,6 @@ misbehaving agent can never corrupt the figures the dashboard reads.
 """
 
 import json
-import re
 from pathlib import Path
 
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -34,12 +33,16 @@ _RECURSION_LIMIT = 20
 
 
 def _extract_json(text: str):
-    """Pull the first JSON object out of an LLM reply (handles ```json fences)."""
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
+    """Pull the first complete JSON object out of an LLM reply (tolerates prose or
+    ```json fences before/after it). Uses raw_decode from the first ``{`` so it stops
+    at that object's actual matching closing brace, instead of a greedy regex that
+    would span to the *last* ``}`` in the whole text if any stray braces follow."""
+    start = text.find("{")
+    if start == -1:
         return None
     try:
-        return json.loads(match.group(0))
+        obj, _ = json.JSONDecoder().raw_decode(text, start)
+        return obj
     except json.JSONDecodeError:
         return None
 
