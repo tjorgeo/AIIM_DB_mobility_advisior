@@ -3,21 +3,21 @@ import uuid
 from datetime import datetime
 
 from database import get_connection
-from graph.pipeline import graph
+from agent.pipeline import run_analysis as run_pipeline
 
 
 class Orchestrator:
-    """API/session layer over the agentic LangGraph pipeline.
+    """API/session layer over the deterministic analyze pipeline.
 
-    The pipeline (graph) does the agent reasoning; this class owns DB context
-    persistence (recommendations + audit) and shapes the exact response payload
-    the frontend consumes. That separation is the backend merge: agentic engine
-    inside, stable session/contract API outside.
+    The pipeline computes the agent outputs (numbers deterministic, memo via the
+    Analyst agent); this class owns DB context persistence (recommendations + audit)
+    and shapes the exact response payload the frontend consumes. That separation is
+    the backend merge: agentic engine inside, stable session/contract API outside.
     """
 
     def run_analysis(self, user_id: str) -> dict:
-        # --- RUN AGENTIC PIPELINE (load_context → analyst∥forecaster∥optimizer → communicator) ---
-        state = graph.invoke({"user_id": user_id})
+        # --- RUN PIPELINE (load_context → analyze → forecast → optimize → communicate) ---
+        state = run_pipeline(user_id)
 
         if state.get("error"):
             raise ValueError(state["error"])

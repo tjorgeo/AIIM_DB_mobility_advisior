@@ -1,4 +1,4 @@
-"""Agent tools. The chat agent calls these to read live data.
+"""Catalogue tool. The agents call this to read live subscription products.
 
 `lookup_subscriptions` reads the production `subscription_catalogs` table and
 exposes each product keyed by its catalog id (the optimizer keys on the same id).
@@ -9,7 +9,7 @@ import json
 from langchain_core.tools import tool
 
 from database import get_connection
-from schema_map import clean_row
+from agent.schema_map import clean_row
 
 
 @tool

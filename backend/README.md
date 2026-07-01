@@ -48,8 +48,8 @@ Everything runs via `docker-compose.yml` at the repo root (start with `./run.sh`
 | Concern | Choice |
 | --- | --- |
 | Web framework | FastAPI + Uvicorn (`src/main.py`) |
-| Agent orchestration | LangGraph (`src/graph/pipeline.py`) |
-| LLM access | LangChain + `langchain-openai`, pointed at University GPT (`src/graph/llm.py`) |
+| Agent orchestration | Deterministic pipeline + ReAct agents (`src/agent/pipeline.py`, `src/agent/analyst_agent.py`) |
+| LLM access | LangChain + `langchain-openai`, pointed at University GPT (`src/agent/llm.py`) |
 | Database driver | `psycopg2` (`src/database.py`) |
 | Database | PostgreSQL 16 (Docker service `db`, database `app_db`) |
 | Runtime | Python 3.12 (`backend/dockerfile`) |
@@ -68,19 +68,26 @@ backend/
     ├── main.py           # FastAPI app + all HTTP endpoints
     ├── orchestrator.py   # Session/persistence layer over the agent pipeline
     ├── database.py       # Postgres connection helper (get_connection / ping_db)
-    ├── schema_map.py     # Adapters: production schema  ->  agent vocabulary
-    ├── agents/           # Deterministic agents (the authoritative numbers)
-    │   ├── analyst.py        # audits travel history + subscriptions
-    │   ├── forecaster.py     # projects 6-month demand
-    │   ├── optimizer.py      # simulates subscription portfolios
-    │   └── communicator.py   # drafts the EN/DE memo (template baseline)
-    └── graph/            # LangGraph + LLM layer
-        ├── pipeline.py       # the analyze graph (load_context -> agents)
-        ├── onboarding.py     # conversational onboarding -> writes new users
-        ├── chat_agent.py     # conversational advisor (ReAct + tool use)
-        ├── tools.py          # lookup_subscriptions tool (reads catalog)
-        └── llm.py            # University GPT client + llm_available()
+    └── agent/            # Unified agent package (replaces the old agents/ + graph/)
+        ├── llm.py            # University GPT client + llm_available()
+        ├── schema_map.py     # Adapters: production schema  ->  agent vocabulary
+        ├── context.py        # load_context(user_id): DB read shaping the agent context
+        ├── pipeline.py       # deterministic /analyze driver (numbers guaranteed)
+        ├── analyst_agent.py  # Analyst: analyze->forecast->optimize workflow + RAG, writes memo
+        ├── communicator_agent.py  # customer chat advisor (ReAct + tool use)
+        ├── engines/          # Deterministic compute — the authoritative numbers
+        │   ├── analysis.py       # audits travel history + subscriptions
+        │   ├── forecasting.py    # 90-day demand forecast (LLM + deterministic fallback)
+        │   ├── optimization.py   # simulates subscription portfolios
+        │   └── memo.py           # drafts the EN/DE memo (template baseline)
+        ├── tools/            # tools the agents call
+        │   ├── analysis_tools.py # analyze_history / forecast_demand / optimize_portfolio
+        │   ├── catalog.py        # lookup_subscriptions tool (reads catalog)
+        │   └── knowledge.py      # OKF tariff RAG: list_tariff_docs / read_tariff_doc
+        └── prompts/          # Analyst + Communicator system prompts
 ```
+Note: onboarding was removed. The tariff knowledge base (OKF `index.md` + docs) lives in
+`data/Markdownfiles Abos/`.
 
 ---
 
@@ -394,7 +401,7 @@ instead of the user object, and protected endpoints would validate it.
 
 ## 8. The LLM layer (optional, graceful)
 
-`graph/llm.py` is the single point that knows how to reach **University GPT**
+`agent/llm.py` is the single point that knows how to reach **University GPT**
 (an OpenAI‑compatible endpoint) and whether it is configured:
 
 * `llm_available()` is `True` only when `UNI_GPT_API_KEY` is set.
@@ -463,9 +470,9 @@ Services: frontend `:5173`, backend `:8000`, Postgres `:5432`.
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://postgres:postgres@db:5432/app_db` (set in compose) | `database.py` |
 | `DEMO_LOGIN_PASSWORD` | `mobility` | `main.py` — shared password accepted by `POST /api/login` (§8a) |
-| `UNI_GPT_API_KEY` | _(empty)_ | `graph/llm.py` — enables memos/chat/onboarding |
-| `UNI_GPT_BASE_URL` | `https://chat.kiconnect.nrw/api/v1` | `graph/llm.py` |
-| `UNI_GPT_MODEL` | `OpenAI GPT OSS 120b KI:Inferenz.nrw` | `graph/llm.py` |
+| `UNI_GPT_API_KEY` | _(empty)_ | `agent/llm.py` — enables memos/chat/onboarding |
+| `UNI_GPT_BASE_URL` | `https://chat.kiconnect.nrw/api/v1` | `agent/llm.py` |
+| `UNI_GPT_MODEL` | `OpenAI GPT OSS 120b KI:Inferenz.nrw` | `agent/llm.py` |
 
 The API key is read from the repo‑root `.env` (mounted via compose `env_file`).
 

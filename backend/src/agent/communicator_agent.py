@@ -1,22 +1,31 @@
-"""Conversational mobility advisor for POST /api/chat (Phase 4).
+"""The Communicator agent — customer-facing chat for POST /api/chat.
 
-A genuinely agentic ReAct loop: the LLM can call `lookup_subscriptions` to read
-the live catalogue before answering. Grounded in the caller's persona and their
-most recent recommendation so it can explain/defend the plan the dashboard shows.
+A ReAct loop grounded in the caller's persona and their most recent recommendation
+(produced by the Analyst), so it can explain and defend the plan the dashboard shows.
+It can read the live catalogue and the OKF tariff knowledge base to answer pricing and
+tariff-condition questions accurately.
 
-Only invoked when an API key is configured (main.py guards with llm_available()),
-so the frontend's scripted fallback covers the no-key case.
+Only invoked when an API key is configured (main.py guards with llm_available()), so the
+frontend's scripted fallback covers the no-key case.
 """
 
 import json
+from pathlib import Path
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 
 from database import get_connection
-from schema_map import preferences_from_onboarding
-from graph.llm import get_llm
-from graph.tools import lookup_subscriptions
+from agent.schema_map import preferences_from_onboarding
+from agent.llm import get_llm
+from agent.tools.catalog import lookup_subscriptions
+from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
+
+_PROMPT_PATH = Path(__file__).with_name("prompts") / "communicator_system.md"
+_SYSTEM_TEMPLATE = _PROMPT_PATH.read_text(encoding="utf-8")
+
+_RECURSION_LIMIT = 12
+_TOOLS = [lookup_subscriptions, list_tariff_docs, read_tariff_doc]
 
 
 def _load_user_context(user_id: str) -> str:
@@ -32,9 +41,7 @@ def _load_user_context(user_id: str) -> str:
         conn.close()
         return "No profile found for this user."
 
-    cursor.execute(
-        "SELECT * FROM user_onboardings WHERE user_id = ?", (user_id,)
-    )
+    cursor.execute("SELECT * FROM user_onboardings WHERE user_id = ?", (user_id,))
     preferences = preferences_from_onboarding(cursor.fetchone())
 
     cursor.execute(
@@ -73,17 +80,6 @@ def _load_user_context(user_id: str) -> str:
     return "\n".join(lines)
 
 
-def _system_prompt(context: str) -> str:
-    return (
-        "You are the DB MoveOptimizer assistant — a friendly, concise mobility advisor "
-        "for Deutsche Bahn customers. Help the user understand and act on their personalised "
-        "subscription recommendation. Use the lookup_subscriptions tool when you need exact "
-        "product pricing or coverage. Answer in the user's language (German or English). "
-        "Keep replies short and practical.\n\n"
-        f"=== CURRENT USER CONTEXT ===\n{context}"
-    )
-
-
 def _to_lc_messages(messages: list):
     out = []
     for m in messages:
@@ -98,7 +94,10 @@ def _to_lc_messages(messages: list):
 
 def run_chat(user_id: str, messages: list) -> str:
     context = _load_user_context(user_id)
-    agent = create_react_agent(get_llm(), [lookup_subscriptions])
-    lc_messages = [SystemMessage(content=_system_prompt(context))] + _to_lc_messages(messages)
-    result = agent.invoke({"messages": lc_messages})
+    system_prompt = _SYSTEM_TEMPLATE.replace("{context}", context)
+    agent = create_react_agent(get_llm(), _TOOLS)
+    lc_messages = [SystemMessage(content=system_prompt)] + _to_lc_messages(messages)
+    result = agent.invoke(
+        {"messages": lc_messages}, config={"recursion_limit": _RECURSION_LIMIT}
+    )
     return result["messages"][-1].content
