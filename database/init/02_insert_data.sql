@@ -88,3 +88,16 @@ WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 INSERT INTO trip_legs
 SELECT * FROM tmp_trip_legs
 ON CONFLICT (leg_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- user_calendars
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_user_calendars (LIKE user_calendars);
+
+COPY tmp_user_calendars
+FROM '/seed/user_calendars_v1.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+INSERT INTO user_calendars
+SELECT * FROM tmp_user_calendars
+ON CONFLICT (calendar_id) DO NOTHING;
