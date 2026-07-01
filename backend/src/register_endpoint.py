@@ -21,6 +21,7 @@ from typing import Optional, List, Dict, Any
 
 # vorhandener Helper im Backend
 from database import get_connection
+from auth_utils import hash_password
 
 
 # --- Request-Schemas (locker gehalten; Frontend liefert null für Skips) ---
@@ -76,6 +77,71 @@ class RegisterRequest(BaseModel):
     credentials: RegisterCredentials = RegisterCredentials()
 
 
+# --- Seed-Persona-Verknüpfung (Demo) ---
+
+def _copy_user_table(cur, table: str, src_user: str, overrides: Dict[str, str]) -> None:
+    """Kopiert alle Zeilen einer user-bezogenen Tabelle von src_user, wobei einzelne
+    Spalten per SQL-Ausdruck überschrieben werden (z. B. user_id/PK-Remap). Die
+    Spaltenliste kommt dynamisch aus information_schema, damit es schema-robust bleibt."""
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = %s ORDER BY ordinal_position",
+        (table,),
+    )
+    cols = [r["column_name"] for r in cur.fetchall()]
+    if not cols:
+        return
+    select_exprs = [overrides.get(c, c) for c in cols]
+    cur.execute(
+        f"INSERT INTO {table} ({', '.join(cols)}) "
+        f"SELECT {', '.join(select_exprs)} FROM {table} WHERE user_id = %s",
+        (src_user,),
+    )
+
+
+def _link_random_persona(new_user_id: str) -> Optional[str]:
+    """Kopiert die Trips (user_trips + trip_legs) einer zufälligen Seed-Persona auf
+    den neuen User, damit die Analyse-Pipeline etwas zu rechnen hat. Seed-Personas
+    erkennt man daran, dass sie kein Passwort haben (password_hash IS NULL) und Trips
+    besitzen. Läuft in eigener Transaktion -> Fehler hier gefährden die Registrierung
+    nicht. Gibt die Quell-user_id zurück (oder None)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT tl.user_id
+            FROM trip_legs tl
+            JOIN users u ON u.user_id = tl.user_id
+            WHERE u.password_hash IS NULL
+            GROUP BY tl.user_id
+            ORDER BY random()
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        src = row["user_id"]
+        suffix = new_user_id  # bereits eindeutig
+
+        # Reihenfolge wichtig: erst user_trips (Parent), dann trip_legs (FK auf trip_id).
+        _copy_user_table(cur, "user_trips", src, {
+            "trip_id": f"trip_id || '_' || '{suffix}'",
+            "user_id": f"'{new_user_id}'",
+        })
+        _copy_user_table(cur, "trip_legs", src, {
+            "leg_id": f"leg_id || '_' || '{suffix}'",
+            "trip_id": f"trip_id || '_' || '{suffix}'",
+            "user_id": f"'{new_user_id}'",
+            "user_subscription_id": "NULL",  # Abo-Referenz der Quell-Persona nicht übernehmen
+        })
+        conn.commit()
+        return src
+    finally:
+        conn.close()
+
+
 # --- Handler ---
 
 def register(req: RegisterRequest):
@@ -95,6 +161,7 @@ def register(req: RegisterRequest):
 
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     onboarding_id = f"onb_{uuid.uuid4().hex[:12]}"
+    password_hash = hash_password(req.credentials.password) if req.credentials.password else None
 
     conn = get_connection()
     try:
@@ -104,11 +171,11 @@ def register(req: RegisterRequest):
             """
             INSERT INTO users
               (user_id, email, username, first_name, last_name, date_of_birth,
-               age, gender, home_city, home_postal_code, home_country_code)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               age, gender, home_city, home_postal_code, home_country_code, password_hash)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (user_id, u.email, u.email, u.first_name, u.last_name, date_of_birth,
-             age, u.gender, home_city, home_postal_code, u.home_country_code or "DE"),
+             age, u.gender, home_city, home_postal_code, u.home_country_code or "DE", password_hash),
         )
 
         cur.execute(
@@ -168,4 +235,27 @@ def register(req: RegisterRequest):
     finally:
         conn.close()
 
-    return {"status": "success", "user_id": user_id}
+    # Neuen User mit einer zufälligen Seed-Persona "verbinden" (Trips kopieren), damit
+    # die Analyse im Dashboard Daten hat. Best-effort: eigene Transaktion, Fehler hier
+    # brechen die bereits erfolgreiche Registrierung nicht ab.
+    linked_from = None
+    try:
+        linked_from = _link_random_persona(user_id)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+    return {
+        "status": "success",
+        "user_id": user_id,
+        # Gleiche kompakte Form wie /api/login, damit das Frontend die Session
+        # direkt setzen kann (Auto-Login nach der Registrierung).
+        "user": {
+            "id": user_id,
+            "name": f"{u.first_name} {u.last_name}".strip(),
+            "firstName": u.first_name,
+            "username": u.email,
+            "email": u.email,
+        },
+        "linked_persona": linked_from,
+    }

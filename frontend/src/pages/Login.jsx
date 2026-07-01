@@ -69,7 +69,7 @@ const COUNTRY_OPTIONS = [
 ]
 
 export default function Login() {
-  const { login, loginAs, personas } = useAuth()
+  const { login, loginAs, personas, setSession } = useAuth()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -123,6 +123,10 @@ export default function Login() {
   // Baut das vollständige Profil und schickt es ans Backend (POST /api/register)
   const handleFinish = async () => {
     setError('')
+    if (!firstName.trim() || !lastName.trim() || !regEmail.trim() || !regPassword) {
+      setError('Bitte Vor-/Nachname, E-Mail und Passwort ausfüllen.')
+      return
+    }
     const remoteShare =
       workArrangement === 'remote' ? 1
       : workArrangement === 'onsite' ? 0
@@ -177,7 +181,12 @@ export default function Login() {
       const res = await submitOnboarding(profile)
       setSubmitting(false)
       if (res.ok) {
-        setCurrentView('login')
+        // Direkt eingeloggt ins Dashboard, wenn das Backend das User-Objekt liefert.
+        if (res.data?.user) {
+          setSession(res.data.user)
+        } else {
+          setCurrentView('login')
+        }
       } else {
         setError(res.error || 'Speichern fehlgeschlagen. Bitte erneut versuchen.')
       }
