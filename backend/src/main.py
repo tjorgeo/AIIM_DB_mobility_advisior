@@ -273,7 +273,7 @@ def test_analyst(user_id: str):
     cursor.execute(
         """
         SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, estimated_co2_emissions
+               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
         FROM trip_legs
         WHERE user_id = ?
         ORDER BY started_at ASC

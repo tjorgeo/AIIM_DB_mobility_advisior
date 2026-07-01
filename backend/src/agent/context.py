@@ -51,15 +51,13 @@ def load_context(user_id: str) -> dict:
 
     # Travel history is leg-level (legs carry distance, cost, CO2 and mode),
     # ordered chronologically for the forecaster's monthly grouping.
-    # NOTE: trip_legs has no reference_cost_eur column in this schema, so it is not
-    # selected here. The analysis engine already treats it as optional
-    # (falls back to estimated_cost_eur), so its absence degrades gracefully. If a
-    # true pay-as-you-go reference price is added to the schema and seeded, add the
-    # column back here to get accurate discount-card (e.g. BahnCard) realized savings.
+    # reference_cost_eur is the pay-as-you-go price for a leg regardless of any
+    # subscription held; the analysis engine uses it to compute discount-card
+    # (e.g. BahnCard) realized savings, falling back to estimated_cost_eur when NULL.
     cursor.execute(
         """
         SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, estimated_co2_emissions
+               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
         FROM trip_legs
         WHERE user_id = ?
         ORDER BY started_at ASC

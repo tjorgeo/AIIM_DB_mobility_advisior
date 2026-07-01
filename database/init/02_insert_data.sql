@@ -6,57 +6,85 @@
 -- The CSV files are mounted into the Postgres container at /seed.
 -- This script is executed automatically only when the database volume is created
 -- for the first time.
+--
+-- Pattern: COPY into a temp table, then INSERT ... ON CONFLICT DO NOTHING
+-- so the script is safe to re-run without duplicating rows or failing on
+-- existing primary keys.
 
-COPY users
-FROM '/seed/user_profiles_v2.csv'
-WITH (
-    FORMAT csv,
-    HEADER true,
-    DELIMITER ',',
-    QUOTE '"',
-    NULL ''
-);
+-- ----------------------------------------------------------------------------
+-- users
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_users (LIKE users);
 
-COPY user_onboardings
-FROM '/seed/user_onboardings_v2.csv'
-WITH (
-    FORMAT csv,
-    HEADER true,
-    DELIMITER ',',
-    QUOTE '"',
-    NULL ''
-);
+COPY tmp_users
+FROM '/seed/user_profiles_v3.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
--- subscription_catalogs
+INSERT INTO users
+SELECT * FROM tmp_users
+ON CONFLICT (user_id) DO NOTHING;
 
-/*
-COPY user_subscriptions
-FROM '/seed/user_subscriptions_v2.csv'
-WITH (
-    FORMAT csv,
-    HEADER true,
-    DELIMITER ',',
-    QUOTE '"',
-    NULL ''
-);
-*/
+-- ----------------------------------------------------------------------------
+-- user_onboardings
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings);
 
-COPY user_trips
-FROM '/seed/user_trips_v3.csv'
-WITH (
-    FORMAT csv,
-    HEADER true,
-    DELIMITER ',',
-    QUOTE '"',
-    NULL ''
-);
+COPY tmp_user_onboardings
+FROM '/seed/user_onboardings_v3.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
-COPY trip_legs
-FROM '/seed/trip_legs_v4.csv'
-WITH (
-    FORMAT csv,
-    HEADER true,
-    DELIMITER ',',
-    QUOTE '"',
-    NULL ''
-);
+INSERT INTO user_onboardings
+SELECT * FROM tmp_user_onboardings
+ON CONFLICT (onboarding_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- subscription_catalogs (must load before user_subscriptions — FK dependency)
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_subscription_catalogs (LIKE subscription_catalogs);
+
+COPY tmp_subscription_catalogs
+FROM '/seed/subscription_catalogs_v1.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+INSERT INTO subscription_catalogs
+SELECT * FROM tmp_subscription_catalogs
+ON CONFLICT (subscription_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- user_subscriptions
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_user_subscriptions (LIKE user_subscriptions);
+
+COPY tmp_user_subscriptions
+FROM '/seed/user_subscriptions_v4.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+INSERT INTO user_subscriptions
+SELECT * FROM tmp_user_subscriptions
+ON CONFLICT (user_subscription_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- user_trips
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_user_trips (LIKE user_trips);
+
+COPY tmp_user_trips
+FROM '/seed/user_trips_v4.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+INSERT INTO user_trips
+SELECT * FROM tmp_user_trips
+ON CONFLICT (trip_id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- trip_legs
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE tmp_trip_legs (LIKE trip_legs);
+
+COPY tmp_trip_legs
+FROM '/seed/trip_legs_v7.csv'
+WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+INSERT INTO trip_legs
+SELECT * FROM tmp_trip_legs
+ON CONFLICT (leg_id) DO NOTHING;

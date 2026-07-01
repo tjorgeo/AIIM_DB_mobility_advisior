@@ -9,7 +9,7 @@ export default function StatCards({ analyst, lang }) {
     {
       icon: Wallet, tone: '',
       label: t('Annual spend', 'Jahresausgaben'),
-      value: euro(analyst.current_annual_spend, { lang }),
+      value: euro(analyst.current_annual_spend_eur, { lang }),
       sub: t('Subscriptions + tickets', 'Abos + Tickets'),
     },
     {
@@ -27,7 +27,7 @@ export default function StatCards({ analyst, lang }) {
     {
       icon: Leaf, tone: 'green',
       label: t('CO₂ footprint', 'CO₂-Bilanz'),
-      value: co2(analyst.co2_total_kg, lang),
+      value: co2(analyst.total_co2_kg, lang),
       sub: t('Estimated emissions', 'Geschätzte Emissionen'),
     },
   ]
