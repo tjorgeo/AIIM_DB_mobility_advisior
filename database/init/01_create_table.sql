@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT,
     username TEXT,
     external_auth_id TEXT,
+    password_hash TEXT,
 
     -- Person Information
     first_name TEXT NOT NULL,
