@@ -369,3 +369,110 @@ CREATE TABLE IF NOT EXISTS recommendations (
     user_feedback           TEXT,
     created_at              TEXT
 );
+
+CREATE TABLE IF NOT EXISTS user_calendars (
+
+    calendar_id TEXT PRIMARY KEY,
+
+    user_id TEXT NOT NULL
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    -- iCalendar component type
+    component_type TEXT NOT NULL DEFAULT 'VEVENT'
+        CHECK (
+            component_type IN (
+                'VEVENT',
+                'VTODO',
+                'VJOURNAL',
+                'VFREEBUSY',
+                'VTIMEZONE',
+                'OTHER'
+            )
+        ),
+
+    -- Required / core iCalendar properties
+    uid TEXT NOT NULL,                       -- UID
+    dtstamp TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- DTSTAMP
+
+    dtstart TIMESTAMPTZ NOT NULL,           -- DTSTART
+    dtend TIMESTAMPTZ,                      -- DTEND
+    duration TEXT,                          -- DURATION, e.g. PT1H, P1D
+
+    -- Descriptive properties
+    summary TEXT,                           -- SUMMARY
+    description TEXT,                       -- DESCRIPTION
+    location TEXT,                          -- LOCATION
+    url TEXT,                               -- URL
+
+    -- Classification / status properties
+    class TEXT                              -- CLASS
+        CHECK (
+            class IS NULL
+            OR class IN ('PUBLIC', 'PRIVATE', 'CONFIDENTIAL')
+        ),
+
+    status TEXT                             -- STATUS
+        CHECK (
+            status IS NULL
+            OR status IN ('TENTATIVE', 'CONFIRMED', 'CANCELLED')
+        ),
+
+    transp TEXT                             -- TRANSP
+        CHECK (
+            transp IS NULL
+            OR transp IN ('OPAQUE', 'TRANSPARENT')
+        ),
+
+    priority INTEGER                        -- PRIORITY
+        CHECK (
+            priority IS NULL
+            OR priority BETWEEN 0 AND 9
+        ),
+
+    -- Change tracking
+    created TIMESTAMPTZ,                    -- CREATED
+    last_modified TIMESTAMPTZ,              -- LAST-MODIFIED
+    sequence INTEGER NOT NULL DEFAULT 0     -- SEQUENCE
+        CHECK (sequence >= 0),
+
+    -- Recurrence properties
+    rrule TEXT,                             -- RRULE
+    rdate JSONB,                            -- RDATE
+    exdate JSONB,                           -- EXDATE
+    recurrence_id TIMESTAMPTZ,              -- RECURRENCE-ID
+
+    -- Organizer / attendees
+    organizer TEXT,                         -- ORGANIZER
+    attendee JSONB,                         -- ATTENDEE
+
+    -- Additional iCalendar properties
+    categories TEXT[],                      -- CATEGORIES
+    comment TEXT,                           -- COMMENT
+    contact TEXT,                           -- CONTACT
+    related_to TEXT,                        -- RELATED-TO
+    resources TEXT[],                       -- RESOURCES
+    request_status TEXT,                    -- REQUEST-STATUS
+
+    -- Geographic information
+    geo POINT,                              -- GEO
+
+    -- Attachments
+    attach JSONB,                           -- ATTACH
+
+    -- VALARM components
+    valarm JSONB,                           -- VALARM
+
+    -- iCalendar parameters, e.g. TZID, VALUE=DATE, CN, ROLE, PARTSTAT
+    parameters JSONB,
+
+    -- Non-standard / vendor-specific properties, e.g. X-MICROSOFT-..., X-APPLE-...
+    x_properties JSONB,
+
+    -- Full raw VEVENT block if exact reconstruction is required
+    raw_icalendar TEXT,
+
+    -- Database audit
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
