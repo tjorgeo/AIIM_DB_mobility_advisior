@@ -1,14 +1,16 @@
 """LLM-powered 90-day mobility demand forecaster.
 
-Accepts a structured analyst summary of past travel behaviour plus a list of
-preprocessed calendar events. The LLM reasons over uncertainty (e.g. a possible
-relocation) and produces one or more scenarios. When no API key is configured
-the agent degrades gracefully to a deterministic baseline extrapolated from the
-historical monthly averages supplied in the analyst summary.
+Accepts a month-by-month usage breakdown from the analyst (last 12 months,
+one entry per calendar month, each with per-mode trip counts and average trip
+distances) plus optional calendar events. The LLM reasons over trends,
+seasonality, and calendar signals to produce one or more demand scenarios.
+When no API key is configured the agent degrades gracefully to a deterministic
+baseline extrapolated from the historical monthly averages.
 """
 
 import json
 import re
+from collections import defaultdict
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel
@@ -17,19 +19,6 @@ from pydantic import BaseModel
 # ---------------------------------------------------------------------------
 # Input schema
 # ---------------------------------------------------------------------------
-
-class DominantPattern(BaseModel):
-    mode: str
-    avg_trips_per_month: float
-    avg_distance_km: float
-
-
-class AnalystSummary(BaseModel):
-    dominant_patterns: List[DominantPattern]
-    detected_seasonality: str
-    current_contracts: List[str]
-    detected_inefficiencies: List[str]
-
 
 class CalendarEvent(BaseModel):
     date: str
@@ -182,21 +171,21 @@ def _extract_json(text: str):
 class ForecasterAgent:
     def run(
         self,
-        analyst_summary: dict,
+        monthly_mode_breakdown: list,
         calendar_events: list | None = None,
         ics_text: str | None = None,
         forecast_horizon_days: int = 90,
     ) -> dict:
         """
-        Produce a 90-day demand forecast from an analyst summary plus calendar data.
+        Produce a 90-day demand forecast from the analyst's monthly mode breakdown.
 
-        Accepts either pre-structured ``calendar_events`` (list of CalendarEvent dicts)
-        or a raw ``ics_text`` string. When ``ics_text`` is provided it takes precedence:
-        the ICS is parsed deterministically and the raw entries are passed to the LLM,
-        which filters for transport-relevance and classifies life events before forecasting.
+        ``monthly_mode_breakdown`` is a list of monthly entries (chronological),
+        each with the shape::
 
-        Falls back to a deterministic baseline when no API key is configured or the
-        LLM response cannot be parsed.
+            {"month": "2025-07", "modes": {"train": {"trips": 18, "avg_distance_km": 210.3}, ...}}
+
+        Accepts either pre-structured ``calendar_events`` or a raw ``ics_text`` string.
+        Falls back to a deterministic baseline when no LLM is configured.
         """
         try:
             from graph.llm import llm_available, get_llm
@@ -206,21 +195,20 @@ class ForecasterAgent:
             _has_llm = False
 
         if not _has_llm:
-            return self._deterministic_fallback(analyst_summary, forecast_horizon_days)
+            return self._deterministic_fallback(monthly_mode_breakdown, forecast_horizon_days)
 
-        # Build prompt + payload depending on calendar input type
         if ics_text:
             raw_events = _parse_ics(ics_text)
             system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(horizon=forecast_horizon_days)
             payload = {
-                "analyst_summary": analyst_summary,
+                "monthly_mode_breakdown": monthly_mode_breakdown,
                 "raw_calendar_entries": raw_events,
                 "forecast_horizon_days": forecast_horizon_days,
             }
         else:
             system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(horizon=forecast_horizon_days)
             payload = {
-                "analyst_summary": analyst_summary,
+                "monthly_mode_breakdown": monthly_mode_breakdown,
                 "calendar_events": calendar_events or [],
                 "forecast_horizon_days": forecast_horizon_days,
             }
@@ -237,25 +225,36 @@ class ForecasterAgent:
         except Exception as exc:
             print(f"[ForecasterAgent] LLM call failed ({exc}); using deterministic fallback.")
 
-        return self._deterministic_fallback(analyst_summary, forecast_horizon_days)
+        return self._deterministic_fallback(monthly_mode_breakdown, forecast_horizon_days)
 
     def _deterministic_fallback(
-        self, analyst_summary: dict, forecast_horizon_days: int
+        self, monthly_mode_breakdown: list, forecast_horizon_days: int
     ) -> dict:
-        """Simple extrapolation from historical averages — no LLM required."""
-        months = forecast_horizon_days / 30
-        predicted = [
-            PredictedDemand(
-                mode=p["mode"],
-                estimated_trips=int(p["avg_trips_per_month"] * months),
-                estimated_km=round(
-                    p["avg_distance_km"] * p["avg_trips_per_month"] * months, 1
-                ),
+        """Extrapolate per-mode averages across all observed months."""
+        months_forecast = forecast_horizon_days / 30
+        n_months = len(monthly_mode_breakdown) or 1
+
+        # Accumulate totals across all months
+        mode_trips: dict[str, int] = defaultdict(int)
+        mode_distance: dict[str, float] = defaultdict(float)
+        for entry in monthly_mode_breakdown:
+            for mode, stats in entry.get("modes", {}).items():
+                mode_trips[mode] += stats["trips"]
+                mode_distance[mode] += stats["avg_distance_km"] * stats["trips"]
+
+        predicted = []
+        for mode in sorted(mode_trips, key=lambda m: -mode_trips[m]):
+            total = mode_trips[mode]
+            avg_trips_per_month = total / n_months
+            avg_dist = (mode_distance[mode] / total) if total else 0.0
+            predicted.append(PredictedDemand(
+                mode=mode,
+                estimated_trips=int(round(avg_trips_per_month * months_forecast)),
+                estimated_km=round(avg_dist * avg_trips_per_month * months_forecast, 1),
                 confidence="medium",
                 basis="Historical monthly average extrapolated over the forecast period.",
-            )
-            for p in analyst_summary.get("dominant_patterns", [])
-        ]
+            ))
+
         return ForecastOutput(
             forecast_horizon_days=forecast_horizon_days,
             scenarios=[
@@ -271,7 +270,7 @@ class ForecasterAgent:
             uncertainty_flags=UncertaintyFlags(life_event_detected=False),
             rationale=(
                 "Deterministic fallback: LLM not available. "
-                "Based on historical monthly averages from the analyst summary."
+                "Based on historical monthly averages from the analyst."
             ),
         ).model_dump()
 
@@ -280,18 +279,20 @@ class ForecasterAgent:
 # Mock data
 # ---------------------------------------------------------------------------
 
-MOCK_ANALYST_SUMMARY = {
-    "dominant_patterns": [
-        {"mode": "public_transport", "avg_trips_per_month": 45, "avg_distance_km": 8.5},
-        {"mode": "bike_sharing", "avg_trips_per_month": 12, "avg_distance_km": 3.2},
-        {"mode": "e_scooter", "avg_trips_per_month": 6, "avg_distance_km": 2.8},
-    ],
-    "detected_seasonality": "Higher bike usage in spring/summer, more public transport in winter",
-    "current_contracts": ["Deutschlandticket (€49/mo)", "CallABike subscription"],
-    "detected_inefficiencies": [
-        "E-scooter trips without subscription coverage (€45/year out-of-pocket)"
-    ],
-}
+MOCK_MONTHLY_MODE_BREAKDOWN = [
+    {"month": "2025-07", "modes": {"public_transport": {"trips": 42, "avg_distance_km": 8.2}, "bike_sharing": {"trips": 10, "avg_distance_km": 3.1}}},
+    {"month": "2025-08", "modes": {"public_transport": {"trips": 35, "avg_distance_km": 8.5}, "bike_sharing": {"trips": 14, "avg_distance_km": 3.4}}},
+    {"month": "2025-09", "modes": {"public_transport": {"trips": 44, "avg_distance_km": 8.1}, "bike_sharing": {"trips": 11, "avg_distance_km": 3.0}}},
+    {"month": "2025-10", "modes": {"public_transport": {"trips": 48, "avg_distance_km": 7.9}, "bike_sharing": {"trips": 8, "avg_distance_km": 2.9}}},
+    {"month": "2025-11", "modes": {"public_transport": {"trips": 46, "avg_distance_km": 8.0}}},
+    {"month": "2025-12", "modes": {"public_transport": {"trips": 38, "avg_distance_km": 8.3}}},
+    {"month": "2026-01", "modes": {"public_transport": {"trips": 45, "avg_distance_km": 8.1}}},
+    {"month": "2026-02", "modes": {"public_transport": {"trips": 44, "avg_distance_km": 8.2}}},
+    {"month": "2026-03", "modes": {"public_transport": {"trips": 47, "avg_distance_km": 8.0}, "bike_sharing": {"trips": 6, "avg_distance_km": 3.0}}},
+    {"month": "2026-04", "modes": {"public_transport": {"trips": 46, "avg_distance_km": 8.1}, "bike_sharing": {"trips": 9, "avg_distance_km": 3.2}}},
+    {"month": "2026-05", "modes": {"public_transport": {"trips": 45, "avg_distance_km": 8.2}, "bike_sharing": {"trips": 12, "avg_distance_km": 3.3}}},
+    {"month": "2026-06", "modes": {"public_transport": {"trips": 40, "avg_distance_km": 8.4}, "bike_sharing": {"trips": 13, "avg_distance_km": 3.5}}},
+]
 
 MOCK_CALENDAR_EVENTS = [
     {
@@ -323,5 +324,5 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     agent = ForecasterAgent()
-    result = agent.run(MOCK_ANALYST_SUMMARY, MOCK_CALENDAR_EVENTS, forecast_horizon_days=90)
+    result = agent.run(MOCK_MONTHLY_MODE_BREAKDOWN, MOCK_CALENDAR_EVENTS, forecast_horizon_days=90)
     print(json.dumps(result, indent=2, ensure_ascii=False))

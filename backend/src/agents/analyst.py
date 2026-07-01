@@ -131,6 +131,10 @@ class AnalystAgent:
         )
         # monthly_total[(year, month)] = trip count (for seasonality)
         monthly_total: dict[tuple, int] = defaultdict(int)
+        # monthly_mode_stats[(year, month)][disp_mode] = {trips, distance}
+        monthly_mode_stats: dict[tuple, dict] = defaultdict(
+            lambda: defaultdict(lambda: {"trips": 0, "distance": 0.0})
+        )
 
         for leg in travel_history:
             # reference_cost_eur is the pay-as-you-go price for this leg regardless
@@ -175,6 +179,8 @@ class AnalystAgent:
             dt = _parse_dt(leg.get("started_at"))
             if dt:
                 monthly_total[(dt.year, dt.month)] += 1
+                monthly_mode_stats[(dt.year, dt.month)][disp]["trips"] += 1
+                monthly_mode_stats[(dt.year, dt.month)][disp]["distance"] += dist
 
         total_trips = len(travel_history)
 
@@ -282,8 +288,6 @@ class AnalystAgent:
                     "type": "overpaid_subscription",
                     "service": cov["provider_plan_name"],
                     "annual_waste_eur": round(waste, 2),
-                    # kept for backward compat (communicator reads "annual_waste")
-                    "annual_waste": round(waste, 2),
                     "details": (
                         f"{cov['provider_plan_name']} costs €{cov['annual_cost_eur']:.2f}/year "
                         f"but only saved €{cov['realized_savings_eur']:.2f}/year versus paying "
@@ -302,6 +306,23 @@ class AnalystAgent:
             "current_contracts": current_contracts,
             "detected_inefficiencies": [i["details"] for i in inefficiencies],
         }
+
+        # ------------------------------------------------------------------ #
+        # 10. Monthly mode breakdown (consumed by ForecasterAgent)            #
+        # ------------------------------------------------------------------ #
+        monthly_mode_breakdown = [
+            {
+                "month": f"{year}-{month:02d}",
+                "modes": {
+                    mode: {
+                        "trips": s["trips"],
+                        "avg_distance_km": round(s["distance"] / s["trips"], 2) if s["trips"] else 0.0,
+                    }
+                    for mode, s in sorted(modes.items())
+                },
+            }
+            for (year, month), modes in sorted(monthly_mode_stats.items())
+        ]
 
         current_annual_spend = round(total_effective + annual_sub_cost, 2)
 
@@ -330,8 +351,8 @@ class AnalystAgent:
             # Inefficiencies
             "inefficiencies": inefficiencies,
             "savings_potential_estimate_eur": round(savings_potential, 2),
-            # Forecaster-ready summary (used by forecaster_node in pipeline.py)
-            "forecaster_summary": forecaster_summary,
+            # Monthly breakdown for the forecaster
+            "monthly_mode_breakdown": monthly_mode_breakdown,
         }
 
     def _detect_seasonality(self, monthly_total: dict[tuple, int]) -> str:

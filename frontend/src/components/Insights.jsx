@@ -23,9 +23,9 @@ export default function Insights({ inefficiencies, lang }) {
               <div>
                 <div className="insight__title">
                   {it.service}
-                  {it.annual_waste > 0 && (
+                  {it.annual_waste_eur > 0 && (
                     <span className="pill pill--save">
-                      {t('Up to', 'Bis zu')} {euro(it.annual_waste, { lang })}/{t('yr', 'Jahr')}
+                      {t('Up to', 'Bis zu')} {euro(it.annual_waste_eur, { lang })}/{t('yr', 'Jahr')}
                     </span>
                   )}
                 </div>

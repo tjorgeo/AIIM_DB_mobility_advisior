@@ -146,12 +146,8 @@ def forecaster_node(state: AnalyzeState) -> dict:
     if state.get("error"):
         return {}
 
-    # The analyst already produces a forecaster_summary shaped to AnalystSummary.
-    analyst_summary = state["analyst_out"]["forecaster_summary"]
-
-    # calendar_events will be wired in when calendar integration is added.
     out = _forecaster.run(
-        analyst_summary=analyst_summary,
+        monthly_mode_breakdown=state["analyst_out"]["monthly_mode_breakdown"],
         calendar_events=[],
         forecast_horizon_days=90,
     )
