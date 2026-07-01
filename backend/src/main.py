@@ -57,6 +57,12 @@ class LoginRequest(BaseModel):
     identifier: str
     password: str
 
+class ForecasterTestRequest(BaseModel):
+    analyst_summary: dict
+    calendar_events: list | None = None   # pre-structured CalendarEvent dicts
+    ics_text: str | None = None           # raw ICS — parsed and filtered by the LLM
+    forecast_horizon_days: int = 90
+
 # --- API ENDPOINTS ---
 
 @app.get("/")
@@ -267,7 +273,7 @@ def test_analyst(user_id: str):
     cursor.execute(
         """
         SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
+               estimated_distance_km, estimated_cost_eur, estimated_co2_emissions
         FROM trip_legs
         WHERE user_id = ?
         ORDER BY started_at ASC

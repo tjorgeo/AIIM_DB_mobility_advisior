@@ -7,3 +7,5 @@ langgraph>=0.2.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
 python-dotenv>=1.0.0
+# Forecaster ICS parsing (agent/engines/forecasting.py::_parse_ics)
+icalendar>=5.0
