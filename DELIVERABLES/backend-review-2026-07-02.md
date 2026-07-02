@@ -39,14 +39,15 @@ returns — just slowly.
 
 ## 2. Colleague's suggestions
 
-### pytest suite for the deterministic engines — ENDORSED, highest leverage
-There are **no Python tests** in the repo and no `pytest` dependency. `analyze_portfolio`,
-`forecast` (deterministic fallback), `optimize`, and `template_memos` are pure functions —
-cheap to test. This is exactly the class of defect that bit us this session (a missing
-function only surfacing on a live curl), and it would also have caught the **broken
-`/api/chat`** below. Recommend: `backend/tests/` with unit tests for the engines +
-reproducibility assertions, plus a trivial "import app / all routes importable" smoke test
-that would catch `run_chat`-style breakages instantly. Add `pytest` to requirements.
+### pytest suite for the deterministic engines — ENDORSED, and now DONE ✅
+Endorsement stands (this was the highest-leverage suggestion). **Built this session:**
+`backend/tests/` now holds a 37-test suite (`pytest.ini` with `pythonpath = src`,
+`requirements-dev.txt`, and a dockerfile line baking dev deps into the image). It covers the
+four pure engines (`analyze_portfolio`, deterministic `forecast`, `optimize`,
+`template_memos`) + `schema_map`, with reproducibility assertions, plus an import/route smoke
+test (`test_imports.py`) that asserts each handler's lazy-imported symbol still exists and the
+key routes are registered. That smoke test was verified to catch the exact `run_chat`
+regression below (rename it → the test fails). Run with `docker compose exec backend pytest -q`.
 
 ### dockerfile `COPY scr/` typo — NO LONGER RELEVANT
 [backend/dockerfile](backend/dockerfile) now reads `COPY src/ ./src/` (correct). Already
@@ -56,15 +57,29 @@ fixed upstream; nothing to do.
 
 ## 3. New findings (this review)
 
-### 🔴 HIGH — `/api/chat` is broken (regression)
-`agent/communicator_agent.py` was overwritten (commit `2576e3d "add maikes changes"`) with
-the **template-memo `CommunicatorAgent` class**; the chat ReAct implementation and its
-`run_chat` function are **gone**. [main.py](backend/src/main.py) `/api/chat` still does
-`from agent.communicator_agent import run_chat` → `ImportError` → **HTTP 500 on every chat
-request** (with an API key; 503 without). `grep -rn 'def run_chat'` finds nothing. The
-frontend's chat feature is dead, and the RAG-in-chat capability was lost with it.
-- **Fix:** restore the `run_chat` ReAct agent (git has it at `f39404b:...communicator_agent.py`)
-  or repoint `/api/chat`. A one-line import smoke test would have caught this.
+### ✅ RESOLVED — `/api/chat` was broken (regression), now restored
+`agent/communicator_agent.py` had been overwritten (commit `2576e3d "add maikes changes"`)
+with the template-memo `CommunicatorAgent` class, dropping the chat ReAct implementation and
+its `run_chat` function; [main.py](backend/src/main.py) `/api/chat` still did
+`from agent.communicator_agent import run_chat`, so every chat request 500'd. **Fixed this
+session:** `run_chat` (the ReAct agent with `lookup_subscriptions` + the tariff RAG tools,
+grounded via `_load_user_context`) was restored from `f39404b`; endpoint verified HTTP 200
+live. The new `test_imports.py` smoke test now guards against this class of regression.
+
+### 🟠 MEDIUM — optimizer cost model uses `estimated_cost_eur` (already-paid), not `reference_cost_eur`
+Surfaced by the empty-catalog test in the new suite. When scoring a candidate portfolio,
+[optimization.py](backend/src/agent/engines/optimization.py) sums each leg's
+`estimated_cost_eur` — the amount the user *actually paid*, which is **€0 for legs covered by
+an existing pass** — instead of `reference_cost_eur` (the undiscounted fare, i.e. what the trip
+would cost without the pass). Consequence: dropping a subscription looks free because the legs
+it covered already show €0, so a scenario that *cancels a pass the user relies on* can score as
+pure savings. The engine also can't see the value a pass provides, only its sticker price.
+Analysis-side realized-savings already correctly uses `reference_cost_eur`; the optimizer
+should too.
+- **Fix:** cost a candidate portfolio as `sum(reference_cost_eur for legs not covered by the
+  portfolio) + annual cost of the portfolio's plans`, so cancelling a pass restores the
+  full-fare cost of the trips it used to cover. Add a regression test that cancelling a
+  utilised pass never shows phantom savings.
 
 ### 🟠 MEDIUM — SQL built with f-strings in `register_endpoint._copy_user_table`
 [register_endpoint.py:95-99,129-138](backend/src/register_endpoint.py) interpolate override
@@ -109,11 +124,15 @@ corrupt any future query that does. Prefer using `%s` natively, or scope the rep
 ---
 
 ## 4. Prioritised actions
-1. **Restore `/api/chat` (`run_chat`)** — user-facing feature currently 500s. (HIGH)
-2. **Add `backend/tests/` (pytest)** — engine unit tests + reproducibility + a route-import
-   smoke test. Catches #1 and this session's class of bug. (HIGH leverage)
-3. **Prune optimizer candidates + compute once** — fixes `/analyze` latency. (MEDIUM)
-4. **Harden `/api/register`** — UNIQUE email/username, validation, parameterise
+
+**Done this session:** ✅ Restored `/api/chat` (`run_chat`) · ✅ Added `backend/tests/`
+(37-test pytest suite: engines + reproducibility + route-import smoke test).
+
+**Remaining:**
+1. **Fix optimizer cost model** — score portfolios on `reference_cost_eur` for uncovered legs
+   so cancelling a utilised pass stops looking free. (MEDIUM, correctness)
+2. **Prune optimizer candidates + compute once** — fixes `/analyze` latency. (MEDIUM)
+3. **Harden `/api/register`** — UNIQUE email/username, validation, parameterise
    `_copy_user_table`, rate limit. (MEDIUM)
-5. **Single-call grounded memo** off the tool loop. (MEDIUM)
-6. **Tighten CORS**; tidy the `?`/`%s` cursor shim. (LOW)
+4. **Single-call grounded memo** off the tool loop. (MEDIUM)
+5. **Tighten CORS**; tidy the `?`/`%s` cursor shim. (LOW)
