@@ -36,6 +36,31 @@ export async function login(identifier, password) {
   return { ok: false, error }
 }
 
+// Persists a completed onboarding profile. Resolves (rather than throws) on a
+// non-2xx so the registration screen can render the backend's message inline.
+// Backend must expose POST /api/register accepting { user, onboarding, subscriptions, credentials }.
+export async function submitOnboarding(profile) {
+  let res
+  try {
+    res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    })
+  } catch {
+    return { ok: false, error: 'Keine Verbindung zum Server.' }
+  }
+  if (res.ok) return { ok: true, data: await res.json().catch(() => ({})) }
+  let error = `Registrierung fehlgeschlagen (${res.status})`
+  try {
+    const body = await res.json()
+    if (body?.detail) error = body.detail
+  } catch {
+    /* non-JSON error body — keep the generic message */
+  }
+  return { ok: false, error }
+}
+
 export async function analyze(userId) {
   const res = await fetch('/api/analyze', {
     method: 'POST',

@@ -44,7 +44,15 @@ export function AuthProvider({ children }) {
     persist(null)
   }, [])
 
-  const value = { currentUser, login, logout }
+  // Setzt die Session direkt aus einem User-Objekt (z. B. nach der Registrierung),
+  // ohne erneuten Login-Roundtrip.
+  const setSession = useCallback((user) => {
+    if (!user || !user.id) return
+    setCurrentUser(user)
+    persist(user)
+  }, [])
+
+  const value = { currentUser, login, logout, setSession }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

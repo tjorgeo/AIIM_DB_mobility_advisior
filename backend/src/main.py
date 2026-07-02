@@ -4,6 +4,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from register_endpoint import register 
+from auth_utils import verify_password
+
 
 from database import ping_db
 from orchestrator import Orchestrator
@@ -74,22 +77,21 @@ def read_root():
         "version": "1.0.0"
     }
 
+app.post("/api/register")(register)   
 @app.post("/api/login")
 def login(req: LoginRequest):
     """
-    Authenticate a real database user by username or email plus the shared demo
-    password. Matches username first (always unique), falling back to email, and
-    returns the compact user object the frontend stores as the session.
+    Authentifiziert per Username/E-Mail. Nutzt das eigene Passwort des Nutzers,
+    falls eines gespeichert ist (via /api/register angelegt) — sonst Fallback auf
+    das gemeinsame Demo-Passwort, damit die Seed-Personas weiter funktionieren.
     """
-    if req.password != DEMO_LOGIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Incorrect password.")
-
     from database import get_connection
+ 
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT user_id, first_name, last_name, email, username
+        SELECT user_id, first_name, last_name, email, username, password_hash
         FROM users
         WHERE username = ? OR email = ?
         ORDER BY (username = ?) DESC
@@ -99,13 +101,23 @@ def login(req: LoginRequest):
     )
     row = cursor.fetchone()
     conn.close()
-
+ 
     if not row:
         raise HTTPException(
             status_code=401, detail="No account matches that username or email."
         )
-
+ 
     user = dict(row)
+    stored = user.get("password_hash")
+    if stored:
+        # Registrierter Nutzer -> eigenes Passwort prüfen
+        if not verify_password(req.password, stored):
+            raise HTTPException(status_code=401, detail="Incorrect password.")
+    else:
+        # Seed-Persona ohne Hash -> gemeinsames Demo-Passwort
+        if req.password != DEMO_LOGIN_PASSWORD:
+            raise HTTPException(status_code=401, detail="Incorrect password.")
+ 
     first = user.get("first_name") or ""
     last = user.get("last_name") or ""
     initials = f"{first[:1]}{last[:1]}".upper()
