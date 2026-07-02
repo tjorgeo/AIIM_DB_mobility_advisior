@@ -1,0 +1,183 @@
+"""Read the production schema for one user and shape the context the engines consume.
+
+Records keep their production column names; the engines translate the transport-mode
+and subscription vocabularies via ``schema_map``. Returns ``{"error": ...}`` when the
+user is missing so callers can surface a clean 404.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+from dateutil.rrule import rrulestr
+
+from database import get_connection
+from agent.schema_map import clean_row, preferences_from_onboarding
+
+# How far ahead to look for calendar occurrences — roughly 2x the forecaster's
+# 90-day horizon so a stray far-future entry doesn't dominate.
+_CALENDAR_LOOKAHEAD_DAYS = 180
+
+
+def _next_occurrence(dtstart, rrule_str, exdate_raw, window_start, window_end):
+    """Earliest occurrence of one user_calendars row that falls within
+    ``[window_start, window_end]``, or ``None`` if none does.
+
+    Non-recurring rows (``rrule_str`` falsy) just check their own ``dtstart``. For
+    recurring rows, the RRULE is expanded with ``dateutil`` (dtstart anchors the
+    series) so a series that started long before the window still surfaces its
+    future occurrences — a plain ``dtstart >= NOW()`` filter would otherwise hide
+    every recurring event whose first occurrence has already passed. Dates listed
+    in ``exdate`` (expected as a JSON list of ISO date/datetime strings) are
+    excluded. RDATE (extra ad-hoc occurrences beyond the rule) is not handled.
+    Malformed rrule/exdate data falls back to treating the row as a single
+    non-recurring event rather than raising.
+    """
+    if not dtstart:
+        return None
+
+    if not rrule_str:
+        return dtstart if window_start <= dtstart <= window_end else None
+
+    try:
+        occurrences = rrulestr(rrule_str, dtstart=dtstart).between(
+            window_start, window_end, inc=True
+        )
+    except (ValueError, TypeError):
+        return dtstart if window_start <= dtstart <= window_end else None
+
+    if not occurrences:
+        return None
+
+    excluded_dates = set()
+    for value in exdate_raw or []:
+        try:
+            excluded_dates.add(
+                datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+            )
+        except ValueError:
+            continue
+
+    for occ in occurrences:
+        if occ.date() not in excluded_dates:
+            return occ
+    return None
+
+
+def load_context(user_id: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user_row = cursor.fetchone()
+    if not user_row:
+        conn.close()
+        return {"error": f"User with ID {user_id} not found in database."}
+
+    user = clean_row(user_row)
+    user["name"] = f"{user['first_name']} {user['last_name']}".strip()
+
+    # Preferences live in user_onboardings (0-100 scores).
+    cursor.execute(
+        "SELECT * FROM user_onboardings WHERE user_id = ?", (user_id,)
+    )
+    onboarding_row = cursor.fetchone()
+    preferences = preferences_from_onboarding(onboarding_row)
+
+    # Subscriptions joined to the catalog. The engines key on the catalog PK
+    # (subscription_id) and the subscription category, not on a service slug.
+    cursor.execute(
+        """
+        SELECT s.user_subscription_id, s.subscription_status,
+               s.is_primary_mobility_option, s.estimated_usage_frequency,
+               c.subscription_id, c.provider_name, c.provider_plan_name,
+               c.subscription_category, c.monthly_cost_eur, c.annual_cost_eur
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        WHERE s.user_id = ?
+        """,
+        (user_id,),
+    )
+    subscriptions = []
+    for row in cursor.fetchall():
+        sub = clean_row(row)
+        sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
+        subscriptions.append(sub)
+
+    # Travel history is leg-level (legs carry distance, cost, CO2 and mode),
+    # ordered chronologically for the forecaster's monthly grouping.
+    # reference_cost_eur is the pay-as-you-go price for a leg regardless of any
+    # subscription held; the analysis engine uses it to compute discount-card
+    # (e.g. BahnCard) realized savings, falling back to estimated_cost_eur when NULL.
+    cursor.execute(
+        """
+        SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
+               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
+        FROM trip_legs
+        WHERE user_id = ?
+        ORDER BY started_at ASC
+        """,
+        (user_id,),
+    )
+    travel_history = [clean_row(r) for r in cursor.fetchall()]
+
+    # Upcoming calendar entries, fed to the forecaster's raw-ICS LLM path (see
+    # raw_calendar_entries in forecast()) so it can factor in known future plans
+    # (e.g. a relocation, a trip already on the calendar). Only VEVENT rows are
+    # considered — matches _parse_ics's own VEVENT-only filter, excluding VTODO/
+    # VJOURNAL/VFREEBUSY/VTIMEZONE/OTHER rows that aren't really "something
+    # happening on a date". Date filtering happens in Python (via
+    # _next_occurrence), not SQL, since a recurring row's own dtstart can be far
+    # in the past even though it still has future occurrences.
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(days=_CALENDAR_LOOKAHEAD_DAYS)
+    cursor.execute(
+        """
+        SELECT summary, dtstart, location, description, rrule, exdate
+        FROM user_calendars
+        WHERE user_id = ? AND component_type = 'VEVENT'
+        """,
+        (user_id,),
+    )
+    raw_calendar_entries = []
+    for row in cursor.fetchall():
+        row = dict(row)
+        occurrence = _next_occurrence(
+            row.get("dtstart"), row.get("rrule"), row.get("exdate"), now, window_end
+        )
+        if occurrence is None:
+            continue
+        raw_calendar_entries.append(
+            {
+                "summary": row.get("summary") or "",
+                "date": occurrence.date().isoformat(),
+                "location": row.get("location") or "",
+                "description": row.get("description") or "",
+            }
+        )
+    raw_calendar_entries.sort(key=lambda e: e["date"])
+
+    # The optimizer's candidate catalog comes straight from subscription_catalogs,
+    # keyed by the real PK.
+    cursor.execute("SELECT * FROM subscription_catalogs")
+    pricing_catalog = []
+    for row in cursor.fetchall():
+        item = clean_row(row)
+        pricing_catalog.append(
+            {
+                "id": item.get("subscription_id"),
+                "name": item.get("provider_plan_name"),
+                "category": item.get("subscription_category"),
+                "monthly_cost": item.get("monthly_cost_eur") or 0.0,
+                "annual_cost": item.get("annual_cost_eur"),
+                "subscription_type": item.get("subscription_type"),
+            }
+        )
+
+    conn.close()
+    return {
+        "user": user,
+        "user_preferences": preferences,
+        "subscriptions": subscriptions,
+        "travel_history": travel_history,
+        "pricing_catalog": pricing_catalog,
+        "raw_calendar_entries": raw_calendar_entries,
+    }

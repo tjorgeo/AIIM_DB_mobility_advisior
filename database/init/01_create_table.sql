@@ -323,6 +323,15 @@ CREATE TABLE IF NOT EXISTS trip_legs (
             OR estimated_cost_eur >= 0
         ),
 
+    -- Pay-as-you-go reference price for this leg, regardless of any subscription held.
+    -- Used by the analyst to measure how much a subscription actually saved.
+    -- For unsubscribed legs this equals estimated_cost_eur.
+    reference_cost_eur NUMERIC(10,2)
+        CHECK (
+            reference_cost_eur IS NULL
+            OR reference_cost_eur >= 0
+        ),
+
     estimated_co2_emissions NUMERIC(10,3)
         CHECK (
             estimated_co2_emissions IS NULL
@@ -361,7 +370,6 @@ CREATE TABLE IF NOT EXISTS recommendations (
     user_feedback           TEXT,
     created_at              TEXT
 );
-
 
 CREATE TABLE IF NOT EXISTS user_calendars (
 

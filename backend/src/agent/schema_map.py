@@ -24,7 +24,7 @@ _DISPLAY_MODE = {
     "walking": "walk",
     "bicycle": "bike",
     "bike_sharing": "bike",
-    "public_transport": "bus",
+    "public_transport": "public_transport",
     "regional_train": "train",
     "long_distance_train": "train",
     "car": "car",
