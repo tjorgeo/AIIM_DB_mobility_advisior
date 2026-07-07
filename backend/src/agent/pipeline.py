@@ -53,6 +53,9 @@ def run_analysis(user_id: str) -> dict:
     optimizer_out = optimize(
         travel_history, subscriptions, ctx["pricing_catalog"], preferences
     )
+    # Hand the already-computed result to the memo step so the Analyst agent's
+    # optimize_portfolio tool reuses it instead of re-running the optimizer.
+    ctx["optimizer_out"] = optimizer_out
 
     # --- communicate: template memo, upgraded to LLM prose when available ---
     name = ctx["user"]["name"]

@@ -56,14 +56,16 @@ def make_analysis_tools(ctx: dict) -> list:
         catalogue for how this customer travels, with baseline cost, annual savings and
         the exact contract changes. Returns the exact optimizer JSON — the authoritative
         source of every recommended plan and savings figure."""
-        return json.dumps(
-            optimize(
-                ctx["travel_history"],
-                ctx["subscriptions"],
-                ctx["pricing_catalog"],
-                ctx["user_preferences"],
-            ),
-            ensure_ascii=False,
+        # Reuse the pipeline's already-computed optimizer result when present (the
+        # pipeline stashes it on the context) so the optimizer isn't run twice per
+        # /api/analyze; fall back to computing it so the tool stays self-contained.
+        cached = ctx.get("optimizer_out")
+        data = cached if cached is not None else optimize(
+            ctx["travel_history"],
+            ctx["subscriptions"],
+            ctx["pricing_catalog"],
+            ctx["user_preferences"],
         )
+        return json.dumps(data, ensure_ascii=False)
 
     return [analyze_history, forecast_demand, optimize_portfolio]

@@ -43,7 +43,11 @@ def optimize(travel_history: list, current_subscriptions: list, pricing_catalog:
             mode = leg.get("transport_mode")
             covered = any(category_covers_mode(p.get("category"), mode) for p in portfolio)
             if not covered:
-                legs_cost += leg.get("estimated_cost_eur") or 0.0
+                # Uncovered legs cost their intrinsic full fare. reference_cost_eur is
+                # the pay-as-you-go price regardless of any subscription (falls back to
+                # estimated_cost_eur), so cancelling a pass restores the real cost of the
+                # legs it covered instead of the €0 they show while the pass applies.
+                legs_cost += leg.get("reference_cost_eur") or leg.get("estimated_cost_eur") or 0.0
         return round(legs_cost + sub_annual, 2), round(sub_annual, 2), round(legs_cost, 2)
 
     def covered_count(portfolio):
@@ -75,7 +79,13 @@ def optimize(travel_history: list, current_subscriptions: list, pricing_catalog:
     for plan in pricing_catalog:
         by_category.setdefault(plan.get("category"), []).append(plan)
 
-    option_lists = [[None] + plans for plans in by_category.values()]
+    # Coverage is category-based (category_covers_mode), so every plan within a
+    # category covers the exact same legs — only price differs. Only the cheapest
+    # plan per category can ever be in an optimal or balanced portfolio, so pruning
+    # to it is exact and collapses the candidate space from ~product(sizes) to
+    # 2**(#categories).
+    pruned = {cat: min(plans, key=_plan_annual) for cat, plans in by_category.items()}
+    option_lists = [[None, plan] for plan in pruned.values()]
     seen = set()
     candidates = []
     for combo in itertools.product(*option_lists) if option_lists else [()]:
