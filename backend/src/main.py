@@ -25,6 +25,10 @@ async def lifespan(app: FastAPI):
     ping_db()
     yield
     print("Shutting down DB MoveOptimizer Backend...")
+    # Flush any buffered Langfuse traces so nothing is lost on shutdown (no-op
+    # when Langfuse is not configured).
+    from agent.observability import flush as flush_langfuse
+    flush_langfuse()
 
 app = FastAPI(
     title="DB MoveOptimizer — Strategy IT Consulting API Gateway",
@@ -68,6 +72,11 @@ class ChatRequest(BaseModel):
 class LoginRequest(BaseModel):
     identifier: str
     password: str
+
+class FeedbackRequest(BaseModel):
+    trace_id: str
+    value: int          # 1 = thumbs up, 0 = thumbs down
+    comment: str | None = None
 
 class ForecasterTestRequest(BaseModel):
     analyst_summary: dict
@@ -240,12 +249,32 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
     try:
         from agent.communicator_agent import run_chat
-        reply = run_chat(req.user_id, req.messages)
-        return {"reply": reply}
+        reply, trace_id = run_chat(req.user_id, req.messages)
+        # trace_id lets the frontend attach a thumbs up/down score to this reply
+        # (null when Langfuse tracing is disabled).
+        return {"reply": reply, "trace_id": trace_id}
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.post("/api/feedback")
+def submit_feedback(req: FeedbackRequest):
+    """
+    Records end-user feedback (chat thumbs up/down) as a `user-thumbs` BOOLEAN
+    score on the given Langfuse trace. No-op (still 200) when Langfuse tracing is
+    disabled, so the frontend can call it unconditionally.
+    """
+    from agent.observability import create_score
+    create_score(
+        trace_id=req.trace_id,
+        name="user-thumbs",
+        value=1 if req.value else 0,
+        data_type="BOOLEAN",
+        comment=req.comment,
+    )
+    return {"status": "ok"}
+
 
 @app.get("/api/analyst/{user_id}")
 def test_analyst(user_id: str):

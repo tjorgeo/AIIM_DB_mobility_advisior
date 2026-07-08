@@ -62,6 +62,7 @@ def run_analysis(user_id: str) -> dict:
     name = ctx["user"]["name"]
     communicator_out = template_memos(name, analyst_out, optimizer_out)
     communicator_out["memo_source"] = "template"
+    memo_trace_id = None
 
     if llm_available():
         try:
@@ -70,8 +71,13 @@ def run_analysis(user_id: str) -> dict:
             # Every figure is already computed above; the Analyst makes one grounded
             # LLM call instead of re-deriving them through a tool loop. pricing_catalog
             # carries markdown_ref so the memo cites the exact tariff doc per plan.
-            memo_en, memo_de = run_briefing(
-                name, analyst_out, forecaster_out, optimizer_out, ctx["pricing_catalog"]
+            memo_en, memo_de, memo_trace_id = run_briefing(
+                name,
+                analyst_out,
+                forecaster_out,
+                optimizer_out,
+                ctx["pricing_catalog"],
+                user_id=user_id,
             )
             communicator_out["memo_english"] = memo_en
             communicator_out["memo_german"] = memo_de
@@ -90,4 +96,8 @@ def run_analysis(user_id: str) -> dict:
         "forecaster_out": forecaster_out,
         "optimizer_out": optimizer_out,
         "communicator_out": communicator_out,
+        # Langfuse trace id of the memo LLM call (None when tracing disabled or the
+        # memo fell back to the template) — persisted so recommendation approval can
+        # attach a feedback score to the exact trace that produced the memo.
+        "memo_trace_id": memo_trace_id,
     }

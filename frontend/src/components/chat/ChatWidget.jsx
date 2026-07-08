@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageCircle, X, Send } from 'lucide-react'
+import { MessageCircle, X, Send, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useChat } from './useChat'
 
 export default function ChatWidget({ user, lang, getContext, actions, advisorMemo }) {
@@ -8,7 +8,7 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
   const [unread, setUnread] = useState(0)
   const [teaserDismissed, setTeaserDismissed] = useState(false)
   const [input, setInput] = useState('')
-  const { messages, sending, send } = useChat({ user, lang, getContext, actions, advisorMemo })
+  const { messages, sending, send, sendFeedback } = useChat({ user, lang, getContext, actions, advisorMemo })
   const bodyRef = useRef(null)
   const prevLenRef = useRef(messages.length)
   const t = (en, de) => (lang === 'de' ? de : en)
@@ -84,7 +84,31 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
 
       <div className="chat__body" ref={bodyRef}>
         {messages.map((m, i) => (
-          <div className={`msg msg--${m.role}`} key={i}>{m.content}</div>
+          <div className={`msg msg--${m.role}`} key={i}>
+            {m.content}
+            {m.role === 'assistant' && m.traceId && (
+              <div className="msg__feedback">
+                <button
+                  className={`msg__thumb${m.feedback === 1 ? ' msg__thumb--on' : ''}`}
+                  onClick={() => sendFeedback(i, 1)}
+                  aria-label={t('Helpful', 'Hilfreich')}
+                  aria-pressed={m.feedback === 1}
+                  disabled={m.feedback !== null}
+                >
+                  <ThumbsUp size={13} />
+                </button>
+                <button
+                  className={`msg__thumb${m.feedback === 0 ? ' msg__thumb--on' : ''}`}
+                  onClick={() => sendFeedback(i, 0)}
+                  aria-label={t('Not helpful', 'Nicht hilfreich')}
+                  aria-pressed={m.feedback === 0}
+                  disabled={m.feedback !== null}
+                >
+                  <ThumbsDown size={13} />
+                </button>
+              </div>
+            )}
+          </div>
         ))}
         {sending && (
           <div className="typing"><span className="typing__dot" /><span className="typing__dot" /><span className="typing__dot" /></div>
