@@ -305,6 +305,38 @@ def test_analyst(user_id: str):
         raise HTTPException(status_code=500, detail=f"Analyst error: {str(e)}")
 
 
+@app.get("/api/forecaster/{user_id}")
+def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90):
+    """
+    Run load_context -> analyze_portfolio -> forecast for a real seeded persona,
+    stopping before the optimize/communicate steps of the full /api/analyze
+    pipeline. Useful for inspecting the forecaster's output (LLM demand scenarios,
+    or the deterministic fallback) on its own, against real travel history and
+    calendar entries.
+
+    Same six personas as /api/analyst/{user_id} work here.
+    """
+    from agent.context import load_context
+    from agent.engines import analyze_portfolio, forecast
+
+    ctx = load_context(user_id)
+    if ctx.get("error"):
+        raise HTTPException(status_code=404, detail=ctx["error"])
+
+    try:
+        analyst_out = analyze_portfolio(ctx["travel_history"], ctx["subscriptions"])
+        result = forecast(
+            analyst_out["forecaster_summary"],
+            raw_calendar_entries=ctx["raw_calendar_entries"],
+            forecast_horizon_days=forecast_horizon_days,
+        )
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Forecaster error: {str(e)}")
+
+
 @app.post("/api/forecaster/test")
 def test_forecaster(req: ForecasterTestRequest):
     """
