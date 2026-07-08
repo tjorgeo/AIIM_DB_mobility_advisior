@@ -2,7 +2,13 @@
 
 **Date:** May 20, 2026 | **Project:** DB Mobility Portfolio Management Agent (Pilot)  
 **Partnership:** University AIIM & **BCG Platinion** (Strategy IT Data Consulting Review)  
-**Team:** 5 Data Scientists (Consulting Pilot Team) | **Duration:** 15 Weeks Remaining (out of 16) | **Status:** Locked & Ready for Execution
+**Team:** 5 Data Scientists (Consulting Pilot Team) | **Duration:** 16 Weeks | **Status:** Locked; reconciled with code 2026-07-08
+
+> **Reconciliation note.** Scope and constraints below still hold. Tech-stack specifics were
+> updated to the implementation: LLM is **University GPT** (kiconnect.nrw), framework is
+> **LangGraph**, store is **Postgres-only** (Redis never used in Phase 1), the optimizer produces
+> a **per-category subscription analysis** rather than 2 portfolios, there are **6** seeded
+> personas, and **calendar data is used** by the forecaster.
 
 ---
 
@@ -11,7 +17,7 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 
 ### Phase 1: High-Fidelity Pilot Sandbox (Current Academic Scope)
 *   **Objective:** Deliver a working, fully-orchestrated **4-Agent Prototype** that demonstrates end-to-end analytical reasoning, demand forecasting, multi-scenario optimization, and natural-language presentation.
-*   **Infrastructure:** Python FastAPI, LangChain orchestration, Claude 3.5, local PostgreSQL state storage (no Redis in Phase 1 — deferred to Phase 2), a React 18 + Vite frontend, and mock database layers.
+*   **Infrastructure:** Python FastAPI, **LangGraph** orchestration, **University GPT** (kiconnect.nrw) LLM, docker **PostgreSQL 16** state storage (no Redis in Phase 1 — deferred to Phase 2), a React 18 + Vite frontend, and seeded synthetic database layers.
 *   **Integration Strategy:** Use a simulated API gateway and high-fidelity mock datasets that replicate the exact JSON schema formats of Deutsche Bahn’s Navigator API and third-party partner systems. This de-risks legal, commercial, and security integration bottlenecks.
 *   **Core Deliverables:** Working Technical Prototype + 10-Page Management & IT Strategy Report + 3-Minute Product Demo Video.
 
@@ -26,9 +32,9 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 
 ### Core 4-Agent Architecture
 1.  **Analyst Agent:** Ingests 12-month travel logs; detects inefficiencies and baseline cost metrics using multi-modal clustering and heuristic pattern recognition.
-2.  **Forecaster Agent:** Analyzes travel history to identify seasonality; generates a probabilistic 6-month demand forecast (trip counts by mode/month).
-3.  **Optimizer Agent:** Evaluates pricing catalogs (Bahncard tiers, Deutschlandticket, sharing rates) and solves for 2 cost-optimized contract portfolios.
-4.  **Communicator Agent:** Leverages Claude 3.5 Sonnet to draft highly personalized, conversational recommendations in German/English, tracking user approval states.
+2.  **Forecaster Agent:** Analyzes travel history for seasonality and reads upcoming calendar entries to generate a 90-day demand forecast (LLM scenarios with a deterministic seasonal fallback).
+3.  **Optimizer (deterministic tool):** Evaluates pricing catalogs (Bahncard tiers, Deutschlandticket, sharing rates) and computes, per travel category, whether to keep / switch / drop the current subscription.
+4.  **Communicator Agent:** Leverages University GPT to draft personalized, conversational recommendations in German/English (with a deterministic template fallback), tracking user approval states.
 
 ### In Scope (Phase 1 Pilot)
 *   ✅ Complete 4-Agent Orchestration Flow (Analyst $\rightarrow$ Forecaster $\rightarrow$ Optimizer $\rightarrow$ Communicator).
@@ -43,7 +49,7 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 *   ❌ Real-time live DB Navigator database connections.
 *   ❌ Live contract cancellation/execution API calls (Miles, Lime, DB Accounts).
 *   ❌ Dedicated production-grade Vector DB (Weaviate deferred if time-constrained).
-*   ❌ Real-time calendar synchronization or raw email signal mining.
+*   ❌ Real-time **live** calendar synchronization or raw email signal mining. (Seeded, opt-in calendar data *is* used by the forecaster in Phase 1; only live sync and email mining are deferred.)
 
 ---
 
@@ -54,7 +60,7 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 | **Architectural Integrity** | 4 distinct agents fully orchestrated | Code review & architecture check |
 | **Data Sandbox Completeness** | Replicates DB API JSON schemas exactly | API endpoint testing and schema validation |
 | **Recommendation Latency** | <30s end-to-end response time | P95 latency logging |
-| **Analytical Accuracy** | Optimizer cost calculations within ±5% | Automated validation on 100 test profiles |
+| **Analytical Accuracy** | Deterministic, reproducible cost/CO₂ figures (number guard) | Engine unit tests (`backend/tests/`) across the 6 seeded personas |
 | **Academic Deliverables** | 100% complete and polished | Delivery of 10-page report & Demo Video |
 
 ---
@@ -65,11 +71,11 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 | :--- | :--- | :--- |
 | **API Availability** | Private DB Navigator API cannot be queried live | Implement a **Sandbox Gateway** providing simulated high-fidelity travel data. |
 | **Data Privacy (GDPR)** | GDPR restricts active data gathering | Pilot operates strictly on simulated/mock customer data. |
-| **Orchestration Latency** | Sequential agent calling can exceed <30s | Run Analyst and Forecaster in parallel; cache static schemas in Redis. |
+| **Orchestration Latency** | Sequential agent calling can exceed <30s | Read-through cache on the latest recommendation; defer the slow LLM memo to a background task (no Redis in Phase 1). |
 
 ### Critical Sandbox Dependencies (Weeks 1-2)
 1.  **JSON API Schemas:** Locking down the target JSON payloads for DB travel history.
-2.  **Synthetic Profile Definitions:** Establishing 5-10 detailed customer travel personas for rigorous automated testing.
+2.  **Synthetic Profile Definitions:** Establishing detailed customer travel personas for rigorous automated testing (6 built; see `database/seed/PERSONAS.md`).
 3.  **Pricing Database Catalog:** Compiling current Bahncard, Deutschlandticket, and regional German transit rates into local data catalogs.
 
 ---
@@ -78,9 +84,10 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 
 | Component | Choice | Rationale |
 | :--- | :--- | :--- |
-| **Agent Framework** | LangChain (Python) | High ecosystem maturity, robust tooling. |
-| **LLM** | Claude 3.5 Sonnet / Gemini | Top-tier analytical reasoning, high speed. |
-| **Data Store** | SQLite / PostgreSQL | Lightweight local state storage, SQL compatibility. |
-| **Caching Layer** | None in Phase 1 (Redis deferred to Phase 2) | PostgreSQL-only persistence is sufficient for the pilot; session state is the `recommendations` row id. |
-| **User Interface** | React 18 + Vite | Component-based chat widget matching the Phase-2 enterprise UI target (no Streamlit). |
+| **Agent Framework** | LangGraph (Python) | Graph/tool orchestration for the agentic memo + chat loop. |
+| **LLM** | University GPT (kiconnect.nrw, GPT-OSS-120b) | Provided OpenAI-compatible endpoint; degrades to deterministic templates when absent. |
+| **Data Store** | PostgreSQL 16 (docker) | Relational state storage; the only store in Phase 1. |
+| **Observability** | Langfuse (optional) | Traces LLM calls; captures thumbs + approval scores. |
+| **Caching Layer** | None (Redis deferred to Phase 2) | Read-through cache is the latest `recommendations` row; session state is that row id. |
+| **User Interface** | React 18 + Vite | Component-based chat widget + dashboard (no Streamlit). |
 
