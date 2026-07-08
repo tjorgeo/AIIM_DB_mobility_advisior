@@ -373,6 +373,8 @@ CREATE TABLE IF NOT EXISTS recommendations (
     approved_at             TEXT,
     executed_at             TEXT,
     user_feedback           TEXT,
+    memo_trace_id           TEXT,   -- Langfuse trace id of the memo LLM call
+                                    -- (lets approval attach a feedback score to it)
     created_at              TEXT
 );
 

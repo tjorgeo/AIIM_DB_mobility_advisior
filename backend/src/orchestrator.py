@@ -59,6 +59,8 @@ class Orchestrator:
         }
 
         # Persist into the production recommendations table (one row per analysis run).
+        # memo_trace_id links this recommendation to the Langfuse trace of the memo
+        # LLM call, so approval can attach a `recommendation-accepted` score to it.
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -66,9 +68,9 @@ class Orchestrator:
         INSERT INTO recommendations (
             recommendation_id, user_id,
             analyst_output, forecaster_output, optimizer_scenarios,
-            analysis_status, created_at
+            analysis_status, memo_trace_id, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 rec_id,
@@ -77,6 +79,7 @@ class Orchestrator:
                 json.dumps(forecaster_out),
                 json.dumps(scenarios_payload),
                 "ready",
+                state.get("memo_trace_id"),
                 created_at_str,
             ),
         )
@@ -136,17 +139,25 @@ class Orchestrator:
         return pipeline_payload
 
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
-        """Marks a recommendation approved and records the selected scenario."""
+        """Marks a recommendation approved and records the selected scenario.
+
+        Approval is the app's strongest quality signal, so it is also recorded in
+        Langfuse as a `recommendation-accepted` score on the memo's trace (when
+        tracing was enabled at analyze time). Best-effort: scoring never blocks the
+        approval.
+        """
         conn = get_connection()
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT recommendation_id FROM recommendations WHERE recommendation_id = ?",
+            "SELECT memo_trace_id FROM recommendations WHERE recommendation_id = ?",
             (rec_id,),
         )
-        if not cursor.fetchone():
+        row = cursor.fetchone()
+        if not row:
             conn.close()
             return False
+        memo_trace_id = dict(row).get("memo_trace_id")
 
         approval_time = datetime.now().isoformat()
         cursor.execute(
@@ -161,6 +172,16 @@ class Orchestrator:
         )
         conn.commit()
         conn.close()
+
+        from agent.observability import create_score
+
+        create_score(
+            trace_id=memo_trace_id,
+            name="recommendation-accepted",
+            value=1,
+            data_type="BOOLEAN",
+            comment=f"Scenario {scenario_id} approved",
+        )
         return True
 
 

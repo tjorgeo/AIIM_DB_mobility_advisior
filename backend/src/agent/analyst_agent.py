@@ -25,10 +25,13 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from agent.llm import get_llm
+from agent.observability import get_prompt, trace
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
 
 _PROMPT_PATH = Path(__file__).with_name("prompts") / "analyst_system.md"
-_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
+# Local copy of the system prompt, used as the offline fallback when the
+# Langfuse-managed "analyst-memo" prompt cannot be fetched (or is disabled).
+_SYSTEM_PROMPT_FALLBACK = _PROMPT_PATH.read_text(encoding="utf-8")
 
 # Cap how many tariff documents get pulled into one grounding payload, and how much
 # of each — some AGB files run 40k-100k characters of legalese, which would blow up
@@ -141,8 +144,9 @@ def run_briefing(
     analyst_out: dict,
     forecaster_out: dict,
     pricing_catalog: list,
-) -> tuple[str, str]:
-    """Write the (english, german) memo from the already-computed engine outputs.
+    user_id: str | None = None,
+) -> tuple[str, str, str | None]:
+    """Write the (english, german, trace_id) memo from the already-computed engine outputs.
 
     Every euro/CO2/trip figure is handed in verbatim from the deterministic pipeline
     step; the only work done here is fetching the tariff documents relevant to the
@@ -150,6 +154,11 @@ def run_briefing(
     subscriptions plus each category's cheapest priceable alternative, if any) and
     making one grounded LLM call. Raises on malformed output so the caller can fall
     back to the template memo.
+
+    ``user_id`` (a non-PII UUID) is attached to the Langfuse trace for the memo call
+    when tracing is enabled, so memo generations are attributable per user. The third
+    return value is the Langfuse ``trace_id`` (or ``None`` when tracing is disabled) so
+    the caller can later attach a ``recommendation-accepted`` feedback score to it.
     """
     plan_names = sorted({
         plan_name
@@ -167,22 +176,36 @@ def run_briefing(
         "tariff_documents": _relevant_tariff_docs(plan_names, catalog_by_name),
     }
 
-    response = get_llm().invoke(
-        [
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(
-                content=(
-                    f"The customer is {name}. Below is the complete grounded data — the "
-                    "analysis, forecast, optimizer results and the tariff documents "
-                    "relevant to the recommended plans, all as JSON. Write the "
-                    "recommendation memo using only these figures.\n\n"
-                    + json.dumps(grounding, ensure_ascii=False, default=str)
-                )
-            ),
-        ]
-    )
+    # Fetch the versioned system prompt from Langfuse (falls back to the local
+    # copy when Langfuse is disabled or unreachable); link it to the trace so the
+    # Generation shows exactly which prompt version produced the memo.
+    prompt = get_prompt("analyst-memo", fallback=_SYSTEM_PROMPT_FALLBACK, type="text")
+    system_prompt = prompt.compile() if prompt is not None else _SYSTEM_PROMPT_FALLBACK
+
+    with trace(
+        "analyst-memo",
+        user_id=user_id,
+        tags=["analyst", "memo", "analyze-pipeline"],
+        metadata={"memo_source": "llm"},
+    ) as tr:
+        response = get_llm().invoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(
+                    content=(
+                        f"The customer is {name}. Below is the complete grounded data — the "
+                        "analysis, forecast, optimizer results and the tariff documents "
+                        "relevant to the recommended plans, all as JSON. Write the "
+                        "recommendation memo using only these figures.\n\n"
+                        + json.dumps(grounding, ensure_ascii=False, default=str)
+                    )
+                ),
+            ],
+            config=tr.config(prompt=prompt),
+        )
+        trace_id = tr.trace_id
 
     data = _extract_json(response.content)
     if not data or "english" not in data or "german" not in data:
         raise ValueError("Analyst memo response missing english/german keys")
-    return data["english"], data["german"]
+    return data["english"], data["german"], trace_id

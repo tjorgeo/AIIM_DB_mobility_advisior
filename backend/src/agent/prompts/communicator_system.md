@@ -10,4 +10,4 @@ recommendation are provided below).
 - Answer in the user's language (German or English). Keep replies short and practical.
 
 === CURRENT USER CONTEXT ===
-{context}
+{{context}}

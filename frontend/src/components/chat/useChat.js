@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { chat as apiChat } from '../../api/client'
+import { chat as apiChat, submitFeedback } from '../../api/client'
 import { euro, co2 } from '../../lib/format'
 
 // Pick the recommended scenario (or the first) from an analysis result.
@@ -99,7 +99,10 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  const push = (role, content) => setMessages((m) => [...m, { role, content }])
+  // Optional `traceId` on assistant messages enables thumbs feedback (only set
+  // for real LLM replies from /api/chat, not scripted fallbacks).
+  const push = (role, content, traceId = null) =>
+    setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
   // When the analysis finishes, the advisor delivers the personalized memo
   // straight into the chat (once).
@@ -121,7 +124,7 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     try {
       const data = await apiChat(user.id, history)
       if (!data || !data.reply) throw new Error('no reply')
-      push('assistant', data.reply)
+      push('assistant', data.reply, data.trace_id || null)
     } catch {
       const reply = await scriptedReply(text, { user, lang, getContext, actions })
       push('assistant', reply)
@@ -130,5 +133,16 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     }
   }, [sending, user, lang, getContext, actions])
 
-  return { messages, sending, send }
+  // Send thumbs feedback for one assistant message (by index) and remember the
+  // choice locally so the UI can reflect it. Best-effort; ignores failures.
+  const sendFeedback = useCallback((index, value) => {
+    setMessages((m) => {
+      const msg = m[index]
+      if (!msg || !msg.traceId || msg.feedback === value) return m
+      submitFeedback(msg.traceId, value)
+      return m.map((x, i) => (i === index ? { ...x, feedback: value } : x))
+    })
+  }, [])
+
+  return { messages, sending, send, sendFeedback }
 }
