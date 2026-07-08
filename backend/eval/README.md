@@ -21,7 +21,7 @@ seed/experiment scripts live in [`../scripts/`](../scripts/).
 | **Prompt management** | The two system prompts are versioned in Langfuse and fetched at runtime — iterate in the UI without a redeploy. Local `.md` files are the offline fallback. | [`scripts/seed_prompts.py`](../scripts/seed_prompts.py), [`prompts/`](../src/agent/prompts/) |
 | **Feedback → scores** | `recommendation-accepted` (approval) and `user-thumbs` (chat 👍/👎) attach to the trace that produced the output. | [`orchestrator.py`](../src/orchestrator.py), `POST /api/feedback` in [`main.py`](../src/main.py) |
 | **Evaluation** | LLM judges score every memo for `memo-groundedness` and `memo-bilingual-complete`. | [`judges.py`](./judges.py), [`calibrate.py`](./calibrate.py) |
-| **Experiments & CI gate** | Re-generate memos over the 6 fixed personas and block PRs that regress groundedness. | [`scripts/seed_dataset.py`](../scripts/seed_dataset.py), [`scripts/run_experiment.py`](../scripts/run_experiment.py), [`langfuse-experiment.yml`](../../.github/workflows/langfuse-experiment.yml) |
+| **Experiments (manual)** | Re-generate memos over the 6 fixed personas and score them, to spot-check quality after changes. Run on demand — no CI gate (see below). | [`scripts/seed_dataset.py`](../scripts/seed_dataset.py), [`scripts/run_experiment.py`](../scripts/run_experiment.py) |
 
 ---
 
@@ -117,10 +117,11 @@ python -m eval.calibrate      # prints per-judge accuracy vs your labels
 
 Record the accuracy in your deliverable before using the judge to gate merges.
 
-### Experiments & CI gate
+### Experiments (manual)
 
 Build a reusable evaluation set from the six seed personas, then run the memo
-generator over it and score with the judges:
+generator over it and score with the judges — a quick way to spot-check quality
+after changing a prompt or the pipeline:
 
 ```bash
 cd backend
@@ -129,15 +130,16 @@ python scripts/run_experiment.py     # runs the experiment; exits non-zero if gr
 ```
 
 The dataset stores each persona's **grounding data**, so the experiment only
-needs an LLM key — no database — which is what lets it run in CI.
+needs an LLM key — no database.
 
-**PR gate.** [`langfuse-experiment.yml`](../../.github/workflows/langfuse-experiment.yml)
-runs the experiment on PRs touching the agent, prompts, or eval code and fails if
-the `memo-groundedness` pass-rate drops below `GROUNDEDNESS_THRESHOLD` (default
-0.9). Add these as repository secrets (`gh secret set ...`):
-
-- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`
-- `UNI_GPT_API_KEY` (memo generation + judges)
+**No CI gate (intentionally).** While the pipeline is still changing a lot, an
+automated PR gate would just create noise, so it isn't wired up. Re-enabling it
+later is one file: add a GitHub Actions workflow that runs
+[`run_experiment.py`](../scripts/run_experiment.py) via
+[`langfuse/experiment-action`](https://github.com/langfuse/experiment-action) —
+the `experiment(context)` entry point and `GROUNDEDNESS_THRESHOLD` gating are
+already in place. You'd add these repository secrets: `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`, `UNI_GPT_API_KEY`.
 
 ---
 
