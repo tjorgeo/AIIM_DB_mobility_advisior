@@ -407,6 +407,7 @@ def forecast(
     raw_calendar_entries: list[dict] | None = None,
     forecast_horizon_days: int = 90,
     as_of_date: str | None = None,
+    use_llm: bool = True,
 ) -> dict:
     """
     Produce a 90-day demand forecast from an analyst summary plus calendar data.
@@ -433,6 +434,11 @@ def forecast(
 
     Falls back to a deterministic baseline when no API key is configured or the LLM
     response cannot be parsed.
+
+    ``use_llm=False`` forces the deterministic fallback and skips the LLM call entirely —
+    used on the synchronous ``/api/analyze`` fast path so the response isn't blocked on a
+    forecaster round-trip; the LLM forecast is regenerated later in the background (see
+    ``orchestrator.Orchestrator.generate_memo``).
     """
     resolved_as_of_date = date.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc).date()
 
@@ -443,7 +449,7 @@ def forecast(
     except ImportError:
         _has_llm = False
 
-    if not _has_llm:
+    if not use_llm or not _has_llm:
         return _deterministic_fallback(
             analyst_summary, forecast_horizon_days,
             calendar_events=calendar_events, ics_text=ics_text,

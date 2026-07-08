@@ -7,10 +7,12 @@
 
 > **v1.1 reconciliation note.** Sections below have been corrected against the running code.
 > The biggest changes since v1.0: the LLM/framework is **University GPT (kiconnect.nrw) via
-> LangGraph** (not Claude 3.5 via LangChain); the Optimizer is now a deterministic catalog **tool**
-> called by the Analyst rather than a separate scenario-generating agent; the Forecaster runs a
-> 90-day, **calendar-aware** horizon; and persistence is **docker Postgres 16 only** (no Redis,
-> no Weaviate, no SQLite). The "sandbox API" is realised as seeded Postgres data, not a live HTTP
+> LangGraph** (not Claude 3.5 via LangChain); the per-category subscription **optimization is
+> computed inside the Analyst engine** (`analysis.py::analyze_portfolio` →
+> `category_subscription_analysis`) — the separate scenario-generating optimizer was removed, and
+> a constraint-aware re-optimizer (`engines/reoptimize.py`) now backs the chat feedback loop; the
+> Forecaster runs a 90-day, **calendar-aware** horizon; and persistence is **docker Postgres 16
+> only** (no Redis, no Weaviate, no SQLite). The "sandbox API" is realised as seeded Postgres data, not a live HTTP
 > gateway.
 
 ---
@@ -40,11 +42,11 @@ agentic ReAct loop that reuses the Communicator + catalogue tools).
    │  load_context                         │   │
    │      │  (Postgres: user, subs,        │   │
    │      ▼   trips/legs, catalog, cal.)   │   │
-   │  ┌─────────┐   calls   ┌────────────┐ │   │
-   │  │ Analyst │──tool────▶│Optimization│ │   │
-   │  │(analysis│◀──────────│ (catalog   │ │   │
-   │  │  .py)   │  result   │  enum.)    │ │   │
-   │  └────┬────┘           └────────────┘ │   │
+   │  ┌───────────────────────┐           │   │
+   │  │ Analyst (analysis.py)  │           │   │
+   │  │  incl. per-category    │           │   │
+   │  │  optimization (inline) │           │   │
+   │  └────┬───────────────────┘           │   │
    │       ▼                               │   │
    │  ┌────────────┐                       │   │
    │  │ Forecaster │ (90-day, calendar-    │   │
@@ -54,9 +56,9 @@ agentic ReAct loop that reuses the Communicator + catalogue tools).
    │       ▼                               │   │
    │  ┌──────────────┐                     │   │
    │  │ Communicator │ template memo now,  │   │
-   │  │ (memo.py +   │◀── LLM memo upgrade │◀──┘  ReAct loop
-   │  │ communicator)│    (background task)│      (catalogue tools)
-   │  └──────┬───────┘                     │
+   │  │ (memo.py +   │◀── LLM memo upgrade │◀──┘  ReAct loop: catalogue +
+   │  │ communicator)│    (background task)│      tariff-doc + reoptimize tools
+   │  └──────┬───────┘                     │      (chat → optimizer loop)
    └─────────┼─────────────────────────────┘
              ▼
    Response → dashboard / chat reply → [Approve]
@@ -108,7 +110,8 @@ per-category subscription option
 **Tech Stack:**
 - Pure-Python deterministic engine (`agent/engines/analysis.py`) — no scikit-learn clustering
 - DB: PostgreSQL (travel history + catalog)
-- Calls the optimization tool for the per-category subscription comparison
+- The per-category subscription comparison is computed inline (`_build_category_entry`), not via
+  a separate module
 
 ---
 
@@ -149,14 +152,16 @@ life-event signal mining remains deferred to Phase 2.
 
 ---
 
-### 3. Optimizer (deterministic tool, not a standalone agent)
+### 3. Optimizer (deterministic logic inside the Analyst, not a standalone agent)
 **Purpose:** Price the best subscription option per travel category against the user's real history
 
 > **Changed since v1.0.** The scenario A/B generator + weighted ranking was removed (July
-> refactor: "Logik war unsinnig"). Optimization is now a **pure deterministic function**
-> (`agent/engines/optimization.py`) that the Analyst calls as a tool; the per-category
-> comparison lives in `analysis.py::category_subscription_analysis`. There is no separate
-> Optimizer agent in the pipeline.
+> refactor: "Logik war unsinnig"), and the standalone `optimization.py` module was later deleted
+> as dead code. The per-category comparison now lives **inside** the Analyst engine
+> (`analysis.py::analyze_portfolio`, built by `_build_category_entry` into
+> `category_subscription_analysis`). A separate **constraint-aware re-optimizer**
+> (`engines/reoptimize.py`) re-derives that verdict under user constraints and backs the chat
+> feedback loop (see Communicator). There is no separate Optimizer agent in the pipeline.
 
 **Input:**
 - The user's travel history (per-leg `estimated_cost_eur` and `reference_cost_eur`)
@@ -200,7 +205,14 @@ life-event signal mining remains deferred to Phase 2.
 1. Build the deterministic **template memo** immediately (English + German)
 2. Upgrade the memo prose with one grounded LLM call (background task); fall back to the template
    on any failure. `memo_source` records which path was taken.
-3. Chat path (`/api/chat`): agentic **ReAct loop** with catalogue tool use
+3. Chat path (`/api/chat`): agentic **ReAct loop** with catalogue, tariff-doc, and **`reoptimize`**
+   tools. The last closes the **chat → optimizer feedback loop**: when the user asks for changes
+   ("keep my car", "drop the BahnCard", "switch to the Deutschlandticket"), the LLM parses the
+   wish into constraints and calls `reoptimize` (`agent/tools/optimize.py` →
+   `engines/reoptimize.py`), which re-derives the per-category verdict **deterministically** from
+   the Analyst's already-priced alternatives — numbers stay engine-grounded. With `apply=true`
+   (only on explicit user confirmation) it persists a new `recommendations` row so the dashboard
+   reflects the revision.
 4. Capture the user decision (approve) and persist approval state + Langfuse score
 
 **Output (memo, abbreviated):**

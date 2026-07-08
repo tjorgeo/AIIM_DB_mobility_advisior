@@ -56,10 +56,16 @@ def run_analysis(user_id: str, include_memo: bool = True) -> dict:
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
     # seasonality) plus the user's upcoming calendar entries (see context.py).
     # Demand-only + deterministic fallback, so numbers stay guarded.
+    #
+    # use_llm is tied to include_memo: both are the slow LLM steps. On the fast fresh
+    # return (include_memo=False) we run the deterministic forecast only and defer the
+    # LLM forecast to the same background task that upgrades the memo, so the response
+    # isn't blocked on a forecaster round-trip.
     forecaster_out = forecast(
         analyst_out["forecaster_summary"],
         raw_calendar_entries=ctx["raw_calendar_entries"],
         forecast_horizon_days=90,
+        use_llm=include_memo,
     )
 
     # --- communicate: template memo, upgraded to LLM prose when available ---

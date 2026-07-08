@@ -92,6 +92,55 @@ export async function chat(userId, messages) {
   return parseJson(res, 'Chat')
 }
 
+// Streaming variant: POST /api/chat/stream returns Server-Sent Events. Calls
+// onToken(text) for each token as it arrives and resolves to { traceId, gotTokens }.
+// Throws on a non-OK response (e.g. 503 when no LLM key) so the caller can fall back
+// to the non-streaming chat() and then to the scripted assistant.
+export async function streamChat(userId, messages, onToken) {
+  const res = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, messages }),
+  })
+  if (!res.ok || !res.body) {
+    const err = new Error(`Chat stream failed (${res.status})`)
+    err.status = res.status
+    throw err
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let traceId = null
+  let gotTokens = false
+
+  // Parse the SSE stream: events are separated by a blank line; each carries one
+  // `data: <json>` line.
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() ?? ''
+    for (const evt of events) {
+      const line = evt.trim()
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (!payload) continue
+      let ev
+      try { ev = JSON.parse(payload) } catch { continue }
+      if (ev.type === 'token') { gotTokens = true; onToken(ev.text) }
+      else if (ev.type === 'done') { traceId = ev.trace_id || null }
+      else if (ev.type === 'error') {
+        const err = new Error(ev.detail || 'Chat stream error')
+        err.gotTokens = gotTokens
+        throw err
+      }
+    }
+  }
+  return { traceId, gotTokens }
+}
+
 // Records a thumbs up/down on a chat reply as a Langfuse score. Best-effort:
 // resolves to false on any failure so feedback UI never disrupts the chat.
 export async function submitFeedback(traceId, value, comment) {

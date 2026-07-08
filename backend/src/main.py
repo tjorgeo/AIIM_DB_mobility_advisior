@@ -1,7 +1,9 @@
+import json
 import os
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from register_endpoint import register 
@@ -172,41 +174,45 @@ def get_personas():
     )
     rows = cursor.fetchall()
 
+    # Fetch onboardings and subscriptions in two bulk queries and group them in Python,
+    # rather than issuing two extra queries per user (the old N+1). Constant query count
+    # regardless of how many users exist.
+    cursor.execute(
+        """
+        SELECT user_id, occupation, score_emission, score_money, score_flexibility,
+               preferred_transport_modes, mobility_budget_monthly_eur
+        FROM user_onboardings
+        """
+    )
+    onboarding_by_user = {}
+    for o in cursor.fetchall():
+        o = dict(o)
+        onboarding_by_user[o.pop("user_id")] = o
+
+    cursor.execute(
+        """
+        SELECT s.user_id, c.provider_name, c.provider_plan_name, c.monthly_cost_eur,
+               s.subscription_status, s.is_primary_mobility_option
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        """
+    )
+    subs_by_user = {}
+    for s in cursor.fetchall():
+        s = dict(s)
+        subs_by_user.setdefault(s.pop("user_id"), []).append(s)
+
+    conn.close()
+
     personas = []
     for row in rows:
         r = dict(row)
         r["name"] = f"{r['first_name']} {r['last_name']}".strip()
         uid = r["user_id"]
-
-        # Onboarding preferences (0-100 scores) for this user, if present.
-        cursor.execute(
-            """
-            SELECT occupation, score_emission, score_money, score_flexibility,
-                   preferred_transport_modes, mobility_budget_monthly_eur
-            FROM user_onboardings
-            WHERE user_id = ?
-            """,
-            (uid,),
-        )
-        onboarding = cursor.fetchone()
-        r["preferences"] = dict(onboarding) if onboarding else None
-
-        # Active subscriptions, joined to the catalog for human-readable names.
-        cursor.execute(
-            """
-            SELECT c.provider_name, c.provider_plan_name, c.monthly_cost_eur,
-                   s.subscription_status, s.is_primary_mobility_option
-            FROM user_subscriptions s
-            LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
-            WHERE s.user_id = ?
-            """,
-            (uid,),
-        )
-        r["subscriptions"] = [dict(s) for s in cursor.fetchall()]
-
+        r["preferences"] = onboarding_by_user.get(uid)
+        r["subscriptions"] = subs_by_user.get(uid, [])
         personas.append(r)
 
-    conn.close()
     return personas
 
 @app.post("/api/analyze")
@@ -268,6 +274,31 @@ def chat(req: ChatRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest):
+    """Streaming variant of /api/chat — Server-Sent Events. Each event is a JSON line:
+    ``{"type":"token","text":"…"}`` per token, then ``{"type":"done","trace_id":…}``.
+    Requires an LLM key (503 otherwise); the frontend falls back to /api/chat and then
+    to its scripted assistant.
+    """
+    from agent.llm import llm_available
+    if not llm_available():
+        raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
+
+    from agent.communicator_agent import stream_chat
+
+    def event_stream():
+        try:
+            for event in stream_chat(req.user_id, req.messages):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 
 @app.post("/api/feedback")
 def submit_feedback(req: FeedbackRequest):
