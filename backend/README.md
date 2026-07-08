@@ -48,7 +48,7 @@ Everything runs via `docker-compose.yml` at the repo root (start with `./run.sh`
 | Concern | Choice |
 | --- | --- |
 | Web framework | FastAPI + Uvicorn (`src/main.py`) |
-| Agent orchestration | Deterministic pipeline + ReAct agents (`src/agent/pipeline.py`, `src/agent/analyst_agent.py`) |
+| Agent orchestration | Deterministic pipeline (`src/agent/pipeline.py`) + single-call grounded Analyst memo (`src/agent/analyst_agent.py`) + ReAct chat (`src/agent/communicator_agent.py`) |
 | LLM access | LangChain + `langchain-openai`, pointed at University GPT (`src/agent/llm.py`) |
 | Database driver | `psycopg2` (`src/database.py`) |
 | Database | PostgreSQL 16 (Docker service `db`, database `app_db`) |
@@ -76,7 +76,7 @@ backend/
         ├── schema_map.py     # Adapters: production schema  ->  agent vocabulary
         ├── context.py        # load_context(user_id): DB read shaping the agent context
         ├── pipeline.py       # deterministic /analyze driver (numbers guaranteed)
-        ├── analyst_agent.py  # Analyst: analyze->forecast->optimize workflow + RAG, writes memo
+        ├── analyst_agent.py  # Analyst: one grounded LLM call over pipeline's numbers + tariff docs, writes memo
         ├── communicator_agent.py  # customer chat advisor (ReAct + tool use)
         ├── engines/          # Deterministic compute — the authoritative numbers
         │   ├── analysis.py       # audits travel history + subscriptions
@@ -84,7 +84,6 @@ backend/
         │   ├── optimization.py   # simulates subscription portfolios
         │   └── memo.py           # drafts the EN/DE memo (template baseline)
         ├── tools/            # tools the agents call
-        │   ├── analysis_tools.py # analyze_history / forecast_demand / optimize_portfolio
         │   ├── catalog.py        # lookup_subscriptions tool (reads catalog)
         │   └── knowledge.py      # OKF tariff RAG: list_tariff_docs / read_tariff_doc
         └── prompts/          # Analyst + Communicator system prompts
