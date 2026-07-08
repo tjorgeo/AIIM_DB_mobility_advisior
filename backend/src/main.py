@@ -75,6 +75,7 @@ class ForecasterTestRequest(BaseModel):
     ics_text: str | None = None                  # raw ICS — parsed and filtered by the LLM
     raw_calendar_entries: list | None = None     # pre-parsed raw entries (skips ICS parsing)
     forecast_horizon_days: int = 90
+    as_of_date: str | None = None                # ISO date; overrides "today" for seasonal testing
 
 # --- API ENDPOINTS ---
 
@@ -315,13 +316,18 @@ def test_analyst(user_id: str):
 
 
 @app.get("/api/forecaster/{user_id}")
-def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90):
+def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90, as_of_date: str | None = None):
     """
     Run load_context -> analyze_portfolio -> forecast for a real seeded persona,
     stopping before the optimize/communicate steps of the full /api/analyze
     pipeline. Useful for inspecting the forecaster's output (LLM demand scenarios,
     or the deterministic fallback) on its own, against real travel history and
     calendar entries.
+
+    Optional ``as_of_date`` (ISO "YYYY-MM-DD") overrides "today" — handy for
+    checking the deterministic fallback's seasonal-month override against a
+    persona's historical data without waiting for the real calendar to reach the
+    relevant months (e.g. ``?as_of_date=2025-11-15`` to test a winter forecast now).
 
     Same six personas as /api/analyst/{user_id} work here.
     """
@@ -338,6 +344,7 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90):
             analyst_out["forecaster_summary"],
             raw_calendar_entries=ctx["raw_calendar_entries"],
             forecast_horizon_days=forecast_horizon_days,
+            as_of_date=as_of_date,
         )
         return result
     except Exception as e:
@@ -365,6 +372,7 @@ def test_forecaster(req: ForecasterTestRequest):
             ics_text=req.ics_text,
             raw_calendar_entries=req.raw_calendar_entries,
             forecast_horizon_days=req.forecast_horizon_days,
+            as_of_date=req.as_of_date,
         )
         return result
     except Exception as e:
