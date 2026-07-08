@@ -27,34 +27,234 @@ const TRANSPORT_MODES = [
 ]
 
 // Lesbare Labels für die in Schritt 2 wählbaren Abos (für die Abo-Detail-Frage)
-const SERVICE_LABELS = {
-  deutschlandticket: 'Deutschlandticket',
-  job_ticket: 'Job-Ticket',
-  monthly_pass: 'Monatskarte',
-  bahncard25_50: 'BahnCard 25 / 50',
-  bahncard100: 'BahnCard 100',
-  miles_pass: 'Miles / ShareNow',
-  sixt_share: 'SIXT share',
-  teilauto: 'teilAuto',
-  carsharing_regular: 'Carsharing (ohne Abo)',
-  scooter_flat: 'Tier / Voi Pass',
-  dott: 'Dott Pass',
-  swapfiets: 'Swapfiets',
-  nextbike: 'nextbike'
-}
-
-const WEEKDAY_PATTERNS = [
-  '🏢 Pendeln ins Büro',
-  '🏠 Homeoffice mit kurzen Wegen',
-  '🗓️ Viel unterwegs (Termine / Außendienst)',
-  '🛋️ Kaum unterwegs'
+const DEFAULT_TYPE_OPTS = [
+  { id: 'subscription', label: 'Abo' },
+  { id: 'employer_benefit', label: 'Über Arbeitgeber' },
+  { id: 'student_benefit', label: 'Studi-Tarif' },
+  { id: 'other', label: 'Sonstiges' }
 ]
 
-const WEEKEND_PATTERNS = [
-  '🛋️ Meist zu Hause',
+const DEFAULT_BILL_OPTS = [
+  { id: 'monthly', label: 'Monatlich' },
+  { id: 'yearly', label: 'Jährlich' },
+  { id: 'none', label: 'Keine / unbekannt' }
+]
+
+const SUBSCRIPTION_OPTIONS = {
+  deutschlandticket: {
+    label: 'Deutschlandticket',
+    typeOptions: [
+      { id: 'subscription', label: 'Privates Abo' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber / Jobticket' },
+      { id: 'student_benefit', label: 'Studi-Ticket' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  job_ticket: {
+    label: 'Job-Ticket / Firmenticket',
+    typeOptions: [
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'yearly', label: 'Jährlich' },
+      { id: 'none', label: 'Unbekannt / vom Arbeitgeber getragen' }
+    ],
+    defaultType: 'employer_benefit',
+    defaultBilling: 'monthly'
+  },
+
+  bahncard25: {
+    label: 'BahnCard 25',
+    typeOptions: [
+      { id: 'subscription', label: 'Privat gekauft' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'yearly',
+    asksTravelClass: true
+  },
+
+  bahncard50: {
+    label: 'BahnCard 50',
+    typeOptions: [
+      { id: 'subscription', label: 'Privat gekauft' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'yearly',
+    asksTravelClass: true
+  },
+
+  bahncard100: {
+    label: 'BahnCard 100',
+    typeOptions: [
+      { id: 'subscription', label: 'Privat gekauft' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'yearly',
+    asksTravelClass: true
+  },
+
+  miles_pass: {
+    label: 'Miles / ShareNow Pass',
+    typeOptions: [
+      { id: 'subscription', label: 'Pass / Abo' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'pay_as_you_go', label: 'Nach Nutzung' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  sixt_share: {
+    label: 'SIXT share Pass',
+    typeOptions: [
+      { id: 'subscription', label: 'Pass / Abo' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'pay_as_you_go', label: 'Nach Nutzung' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  teilauto: {
+    label: 'teilAuto',
+    typeOptions: [
+      { id: 'membership', label: 'Mitgliedschaft' },
+      { id: 'employer_benefit', label: 'Rahmenvertrag / Arbeitgeber' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'membership',
+    defaultBilling: 'monthly'
+  },
+
+  carsharing_regular: {
+    label: 'Carsharing ohne Abo',
+    skipDetails: true,
+    defaultType: 'pay_as_you_go_account',
+    defaultBilling: 'pay_as_you_go'
+  },
+
+  scooter_flat: {
+    label: 'Tier / Voi Pass',
+    typeOptions: [
+      { id: 'subscription', label: 'Pass / Flat' },
+      { id: 'student_benefit', label: 'Studi-Tarif' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'pay_as_you_go', label: 'Nach Nutzung' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  dott: {
+    label: 'Dott Pass',
+    typeOptions: [
+      { id: 'subscription', label: 'Pass / Flat' },
+      { id: 'student_benefit', label: 'Studi-Tarif' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'pay_as_you_go', label: 'Nach Nutzung' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  swapfiets: {
+    label: 'Swapfiets',
+    typeOptions: [
+      { id: 'subscription', label: 'Abo' },
+      { id: 'student_benefit', label: 'Studi-Tarif' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  },
+
+  nextbike: {
+    label: 'nextbike',
+    typeOptions: [
+      { id: 'subscription', label: 'Monats- / Jahreskarte' },
+      { id: 'employer_benefit', label: 'Über Arbeitgeber / Hochschule' },
+      { id: 'student_benefit', label: 'Studi-Tarif' }
+    ],
+    billingOptions: [
+      { id: 'monthly', label: 'Monatlich' },
+      { id: 'yearly', label: 'Jährlich' }
+    ],
+    defaultType: 'subscription',
+    defaultBilling: 'monthly'
+  }
+}
+
+const SUBSCRIPTION_CATEGORIES = [
+  {
+    id: 'bahn',
+    title: '🚆 ÖPNV & Deutsche Bahn',
+    services: ['deutschlandticket', 'job_ticket', 'bahncard25', 'bahncard50', 'bahncard100']
+  },
+  {
+    id: 'car',
+    title: '🚗 Carsharing & Verleih',
+    services: ['miles_pass', 'sixt_share', 'teilauto', 'carsharing_regular']
+  },
+  {
+    id: 'scooter',
+    title: '🛴 E-Scooter & Bike-Sharing',
+    services: ['scooter_flat', 'dott', 'swapfiets', 'nextbike']
+  }
+]
+
+const TYPICAL_WORK_PATTERNS = [
+  '🏢 Pendeln ins Büro',
+  '🏠 Homeoffice mit kurzen Wegen',
+  '🗓️ Viel unterwegs für Termine / Außendienst',
+  '🎓 Uni / Ausbildung / Schule',
+  '👨‍👩‍👧 Kinderbetreuung / Familie',
+  '🧾 Erledigungen im Alltag',
+  '🛋️ Kaum regelmäßige Wege'
+]
+
+const TYPICAL_LEISURE_PATTERNS = [
   '🏙️ Lokale Freizeit in der Stadt',
   '🌳 Ausflüge ins Umland',
-  '✈️ Häufig längere Reisen'
+  '🏋️ Sport / Verein / Hobbys',
+  '👥 Freunde & Familie besuchen',
+  '🛍️ Shopping / Gastronomie',
+  '✈️ Häufig längere Reisen',
+  '🛋️ Meist zu Hause'
 ]
 
 const COUNTRY_OPTIONS = [
@@ -80,7 +280,7 @@ export default function Login() {
   const [services, setServices] = useState([])
   const [hasLicense, setHasLicense] = useState(null)
   const [carAccess, setCarAccess] = useState('')
-  const [bikeAccess, setBikeAccess] = useState('')
+  const [bikeAccess, setBikeAccess] = useState([])
   const [frequentModes, setFrequentModes] = useState([]) 
   const [avoidModes, setAvoidModes] = useState([])       
   const [priorities, setPriorities] = useState([])
@@ -109,8 +309,8 @@ export default function Login() {
 
   // Abo-Details, Wochenmuster, Konto-Daten
   const [subscriptionDetails, setSubscriptionDetails] = useState({}) // { [serviceId]: { type, billing } }
-  const [typicalWeekday, setTypicalWeekday] = useState('')
-  const [typicalWeekend, setTypicalWeekend] = useState('')
+  const [typicalWorkPatterns, setTypicalWorkPatterns] = useState([])
+  const [typicalLeisurePatterns, setTypicalLeisurePatterns] = useState([])
   const [homeCountry, setHomeCountry] = useState('DE')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -141,6 +341,9 @@ export default function Login() {
       : (workArrangement === 'hybrid' && remoteDaysPerWeek != null) ? Number((remoteDaysPerWeek / 5).toFixed(3))
       : null
 
+    const workPatternSummary = typicalWorkPatterns.join(', ')
+    const leisurePatternSummary = typicalLeisurePatterns.join(', ')
+
     const profile = {
       user: {
         first_name: firstName.trim() || null,
@@ -156,7 +359,7 @@ export default function Login() {
       onboarding: {
         has_driving_license: hasLicense,
         car_access: carAccess || null,
-        bike_access: bikeAccess || null,
+        bike_access: bikeAccess.length > 0 ? bikeAccess.join(',') : null,
         preferred_transport_modes: frequentModes,
         avoided_transport_modes: avoidModes,
         score_money: priorityScores.budget * 10,
@@ -169,17 +372,25 @@ export default function Login() {
         mobility_budget_monthly_eur: mobilityBudget !== '' ? Number(mobilityBudget) : null,
         household_size: householdSize ? (householdSize === '5+' ? 5 : Number(householdSize)) : null,
         income_band: incomeBand || null,
-        typical_weekday_pattern: typicalWeekday || null,
-        typical_weekend_pattern: typicalWeekend || null,
+        typical_weekday_pattern: workPatternSummary || null,
+        typical_weekend_pattern: leisurePatternSummary || null,
         // NOT-NULL-Textfelder: clientseitig aus den Antworten generiert
         travel_statement: `Bevorzugt: ${frequentModes.join(', ') || 'k. A.'}. Meidet: ${avoidModes.join(', ') || 'nichts'}.`,
-        activity_statement: `Werktags: ${typicalWeekday || 'k. A.'}. Wochenende: ${typicalWeekend || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : '') + (workNote.trim() ? ` Notiz Arbeit: ${workNote.trim()}.` : '')
+        activity_statement: `Arbeit/Verpflichtungen: ${workPatternSummary || 'k. A.'}. Freizeit/Wochenende: ${leisurePatternSummary || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : '') + (workNote.trim() ? ` Notiz Arbeit: ${workNote.trim()}.` : '')
       },
-      subscriptions: services.filter(s => s !== 'none').map(sid => ({
-        service: sid,
-        subscription_type: subscriptionDetails[sid]?.type || 'subscription',
-        billing_cycle: subscriptionDetails[sid]?.billing || 'monthly'
-      })),
+      subscriptions: services.filter(s => s !== 'none').map(sid => {
+        const config = SUBSCRIPTION_OPTIONS[sid] || {}
+        const typeOptions = config.typeOptions || DEFAULT_TYPE_OPTS
+        const billingOptions = config.billingOptions || DEFAULT_BILL_OPTS
+        const details = subscriptionDetails[sid] || {}
+
+        return {
+          service: sid,
+          subscription_type: details.type || config.defaultType || typeOptions[0]?.id || 'subscription',
+          billing_cycle: details.billing || config.defaultBilling || billingOptions[0]?.id || 'monthly',
+          travel_class: config.asksTravelClass ? (details.travel_class || null) : null
+        }
+      }),
       // Passwort getrennt, falls das Backend ein Auth-Konto anlegt
       credentials: { password: regPassword || null }
     }
@@ -222,9 +433,46 @@ export default function Login() {
     return () => { clearInterval(cycle); clearTimeout(done) }
   }, [currentView, pendingUser])
 
-  const handleServiceToggle = (serviceId) => {
-    setServices(prev => 
-      prev.includes(serviceId) ? prev.filter(s => s !== serviceId) : [...prev, serviceId]
+const handleServiceToggle = (serviceId) => {
+  setServices(prev => {
+    if (serviceId === 'none') {
+      setSubscriptionDetails({})
+      return prev.includes('none') ? [] : ['none']
+    }
+
+    const withoutNone = prev.filter(s => s !== 'none')
+
+    if (withoutNone.includes(serviceId)) {
+      setSubscriptionDetails(prevDetails => {
+        const next = { ...prevDetails }
+        delete next[serviceId]
+        return next
+      })
+
+      return withoutNone.filter(s => s !== serviceId)
+    }
+
+    return [...withoutNone, serviceId]
+  })
+}
+
+  const handleBikeAccessToggle = (id) => {
+  setBikeAccess(prev => {
+    if (id === 'none') {
+      return prev.includes('none') ? [] : ['none']
+    }
+
+    const withoutNone = prev.filter(item => item !== 'none')
+
+    return withoutNone.includes(id)
+      ? withoutNone.filter(item => item !== id)
+      : [...withoutNone, id]
+  })
+}
+
+  const handlePatternToggle = (setter, id) => {
+    setter(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     )
   }
 
@@ -409,11 +657,11 @@ export default function Login() {
                 if (onboardingStep === 1 && hasLicense !== null) {
                   setHasLicense(null);
                   setCarAccess('');
-                  setBikeAccess('');
+                  setBikeAccess([]);
                 } else if (onboardingStep === 2) {
                   setHasLicense(null);
                   setCarAccess('');
-                  setBikeAccess('');
+                  setBikeAccess([]);
                   setOnboardingStep(1);
                 } else if (onboardingStep > 1) {
                   setOnboardingStep(onboardingStep - 1);
@@ -473,20 +721,46 @@ export default function Login() {
                             {[
                               { id: 'own', label: 'Eigenes Fahrrad' },
                               { id: 'shared', label: 'Leihrad / Bike-Sharing (z. B. nextbike)' },
-                              { id: 'occasional', label: 'Gelegentlich' },
                               { id: 'none', label: 'Kein Fahrrad' }
                             ].map((bikeOpt) => {
-                              const isBikeSelected = bikeAccess === bikeOpt.id;
+                              const isBikeSelected = bikeAccess.includes(bikeOpt.id)
+
                               return (
-                                <button key={bikeOpt.id} onClick={() => setBikeAccess(bikeOpt.id)} style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isBikeSelected ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: isBikeSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{bikeOpt.label}</span></button>
-                              );
+                                <button
+                                  key={bikeOpt.id}
+                                  onClick={() => handleBikeAccessToggle(bikeOpt.id)}
+                                  style={{
+                                    ...optionButtonStyle,
+                                    padding: '0.95rem 1.1rem',
+                                    backgroundColor: isBikeSelected ? 'rgba(168, 85, 247, 0.05)' : colors.card,
+                                    border: isBikeSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
+                                  }}
+                                >
+                                  <span>{bikeOpt.label}</span>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '18px',
+                                      height: '18px',
+                                      borderRadius: '6px',
+                                      border: `2px solid ${colors.accentPurple}`,
+                                      backgroundColor: isBikeSelected ? colors.accentPurple : 'transparent',
+                                      flexShrink: 0
+                                    }}
+                                  >
+                                    {isBikeSelected && <Check size={12} strokeWidth={3} color="#000000" />}
+                                  </div>
+                                </button>
+                              )
                             })}
                           </div>
                         </div>
                       </div>
                       <div style={{ flex: 1 }} />
                       {(() => {
-                        const ready = (hasLicense === false || carAccess) && bikeAccess;
+                        const ready = (hasLicense === false || carAccess) && bikeAccess.length > 0;
                         return (
                           <button onClick={() => setOnboardingStep(2)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
                         );
@@ -503,87 +777,276 @@ export default function Login() {
                     <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Welche Mobilitäts-Abos hast du?</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Tippe auf eine Kategorie, um deine aktiven Tickets oder Firmenleistungen auszuwählen.</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '52vh', overflowY: 'auto', paddingRight: '2px' }}>
-                      {[
-                        { id: 'bahn', title: '🚆 ÖPNV & Deutsche Bahn', options: [{ id: 'deutschlandticket', label: 'Deutschlandticket (49 €-Ticket)' }, { id: 'job_ticket', label: 'Job-Ticket (Firmenticket)' }, { id: 'monthly_pass', label: 'Monatskarte' }, { id: 'bahncard25_50', label: 'DB BahnCard 25 / 50' }, { id: 'bahncard100', label: 'DB BahnCard 100' }] },
-                        { id: 'car', title: '🚗 Carsharing & Verleih', options: [{ id: 'miles_pass', label: 'Miles Pass / ShareNow Silver & Gold' }, { id: 'sixt_share', label: 'SIXT share Flat / Plus' }, { id: 'teilauto', label: 'teilAuto (Rahmenvertrag / Abo)' }, { id: 'carsharing_regular', label: 'Gelegentlicher Carsharing-Nutzer (kein Abo)' }] },
-                        { id: 'scooter', title: '🛴 E-Scooter & Bike-Sharing', options: [{ id: 'scooter_flat', label: 'Tier / Voi Pass (Scooter-Flat)' }, { id: 'dott', label: 'Dott Pass (Flat / Unbegrenzt)' }, { id: 'swapfiets', label: 'Swapfiets (Fahrrad-Abo)' }, { id: 'nextbike', label: 'nextbike (Monats- / Jahreskarte)' }] }
-                      ].map((cat) => {
-                        if (cat.id === 'car' && hasLicense === false) return null;
-                        const isOpen = activeCategory === cat.id;
+                      {SUBSCRIPTION_CATEGORIES.map((cat) => {
+                        if (cat.id === 'car' && hasLicense === false) return null
+
+                        const isOpen = activeCategory === cat.id
+
                         return (
                           <div key={cat.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            <div onClick={() => setActiveCategory(isOpen ? '' : cat.id)} style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: isOpen ? 'rgba(0, 242, 254, 0.02)' : colors.card, border: isOpen ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`, fontWeight: '600' }}><span style={{ color: '#ffffff' }}>{cat.title}</span><span style={{ color: colors.accentCyan, fontSize: '0.8rem', transition: 'transform 0.2s', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span></div>
-                            {isOpen && (<div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingLeft: '0.75rem' }}>{cat.options.map((opt) => { const isSelected = services.includes(opt.id); return (<div key={opt.id} onClick={() => handleServiceToggle(opt.id)} style={{ ...optionButtonStyle, padding: '0.85rem 1rem', backgroundColor: isSelected ? 'rgba(168, 85, 247, 0.05)' : '#0d0d10', border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span style={{ color: '#ffffff', fontSize: '0.9rem' }}>{opt.label}</span><div style={{ width: '16px', height: '16px', borderRadius: '5px', border: `2px solid ${colors.accentPurple}`, backgroundColor: isSelected ? colors.accentPurple : 'transparent', flexShrink: 0 }} /></div>); })}</div>)}
+                            <div
+                              onClick={() => setActiveCategory(isOpen ? '' : cat.id)}
+                              style={{
+                                ...optionButtonStyle,
+                                padding: '1rem 1.2rem',
+                                backgroundColor: isOpen ? 'rgba(0, 242, 254, 0.02)' : colors.card,
+                                border: isOpen ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`,
+                                fontWeight: '600'
+                              }}
+                            >
+                              <span style={{ color: '#ffffff' }}>{cat.title}</span>
+                              <span
+                                style={{
+                                  color: colors.accentCyan,
+                                  fontSize: '0.8rem',
+                                  transition: 'transform 0.2s',
+                                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)'
+                                }}
+                              >
+                                ▶
+                              </span>
+                            </div>
+
+                            {isOpen && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingLeft: '0.75rem' }}>
+                                {cat.services.map((sid) => {
+                                  const config = SUBSCRIPTION_OPTIONS[sid]
+                                  const isSelected = services.includes(sid)
+
+                                  return (
+                                    <div
+                                      key={sid}
+                                      onClick={() => handleServiceToggle(sid)}
+                                      style={{
+                                        ...optionButtonStyle,
+                                        padding: '0.85rem 1rem',
+                                        backgroundColor: isSelected ? 'rgba(168, 85, 247, 0.05)' : '#0d0d10',
+                                        border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
+                                      }}
+                                    >
+                                      <span style={{ color: '#ffffff', fontSize: '0.9rem' }}>{config.label}</span>
+                                      <div
+                                        style={{
+                                          width: '16px',
+                                          height: '16px',
+                                          borderRadius: '5px',
+                                          border: `2px solid ${colors.accentPurple}`,
+                                          backgroundColor: isSelected ? colors.accentPurple : 'transparent',
+                                          flexShrink: 0
+                                        }}
+                                      />
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
-                        );
+                        )
                       })}
-                      <div onClick={() => handleServiceToggle('none')} style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: services.includes('none') ? 'rgba(0, 242, 254, 0.05)' : colors.card, border: services.includes('none') ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}><span style={{ color: '#ffffff' }}>❌ Keine Abos (Pay-per-Trip)</span><div style={{ width: '18px', height: '18px', borderRadius: '5px', border: `2px solid ${colors.accentCyan}`, backgroundColor: services.includes('none') ? colors.accentCyan : 'transparent', flexShrink: 0 }} /></div>
+
+                      <div
+                        onClick={() => handleServiceToggle('none')}
+                        style={{
+                          ...optionButtonStyle,
+                          padding: '1rem 1.2rem',
+                          backgroundColor: services.includes('none') ? 'rgba(0, 242, 254, 0.05)' : colors.card,
+                          border: services.includes('none') ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
+                        }}
+                      >
+                        <span style={{ color: '#ffffff' }}>❌ Keine Abos (Pay-per-Trip)</span>
+                        <div
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '5px',
+                            border: `2px solid ${colors.accentCyan}`,
+                            backgroundColor: services.includes('none') ? colors.accentCyan : 'transparent',
+                            flexShrink: 0
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button onClick={() => setOnboardingStep(3)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1rem' }}>Weiter</button>
+                  <button
+                    onClick={() => setOnboardingStep(3)}
+                    style={{
+                      width: '100%',
+                      padding: '1rem',
+                      backgroundColor: colors.accentCyan,
+                      color: '#000000',
+                      borderRadius: '14px',
+                      border: 'none',
+                      fontSize: '1.1rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      marginTop: '1rem'
+                    }}
+                  >
+                    Weiter
+                  </button>
                 </div>
               )}
 
               {/* SCHRITT 3: ABO-DETAILS */}
               {onboardingStep === 3 && (() => {
                 const selected = services.filter(s => s !== 'none')
-                if (selected.length === 0) {
+                const selectedWithDetails = selected.filter(sid => !SUBSCRIPTION_OPTIONS[sid]?.skipDetails)
+
+                if (selected.length === 0 || selectedWithDetails.length === 0) {
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                       <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Keine Abo-Details nötig</h1>
-                        <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>Du hast keine Abos angegeben — weiter geht's.</p>
+                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>
+                          Keine Abo-Details nötig
+                        </h1>
+                        <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>
+                          Für deine Auswahl brauchen wir keine weiteren Detailangaben.
+                        </p>
                       </div>
                       <div style={{ flex: 1 }} />
-                      <button onClick={() => setOnboardingStep(4)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
+                      <button
+                        onClick={() => setOnboardingStep(4)}
+                        style={{
+                          width: '100%',
+                          padding: '1.1rem',
+                          backgroundColor: colors.accentCyan,
+                          color: '#000000',
+                          borderRadius: '14px',
+                          border: 'none',
+                          fontSize: '1.1rem',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          marginTop: '1rem'
+                        }}
+                      >
+                        Weiter
+                      </button>
                     </div>
                   )
                 }
-                const TYPE_OPTS = [
-                  { id: 'subscription', label: 'Abo' },
-                  { id: 'membership', label: 'Mitgliedschaft' },
-                  { id: 'employer_benefit', label: 'Über Arbeitgeber' },
-                  { id: 'student_benefit', label: 'Studi-Tarif' },
-                  { id: 'trial', label: 'Testphase' },
-                  { id: 'pay_as_you_go_account', label: 'Pay-per-Use' },
-                  { id: 'other', label: 'Sonstiges' }
-                ]
-                const BILL_OPTS = [
-                  { id: 'monthly', label: 'Monatlich' },
-                  { id: 'semester', label: 'Pro Semester' },
-                  { id: 'yearly', label: 'Jährlich' },
-                  { id: 'pay_as_you_go', label: 'Pay-per-Use' },
-                  { id: 'one_time', label: 'Einmalig' },
-                  { id: 'none', label: 'Keine' }
-                ]
+
                 const chip = (active) => ({
-                  padding: '0.5rem 0.85rem', borderRadius: '999px', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer',
-                  backgroundColor: active ? colors.accentPurple : colors.card, color: active ? '#000000' : '#ffffff',
-                  border: active ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, transition: 'all 0.15s'
+                  padding: '0.5rem 0.85rem',
+                  borderRadius: '999px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  backgroundColor: active ? colors.accentPurple : colors.card,
+                  color: active ? '#000000' : '#ffffff',
+                  border: active ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`,
+                  transition: 'all 0.15s'
                 })
-                const miniLabel = { color: colors.textMuted, fontSize: '0.72rem', fontWeight: '500', display: 'block', margin: '0.65rem 0 0.4rem' }
+
+                const miniLabel = {
+                  color: colors.textMuted,
+                  fontSize: '0.72rem',
+                  fontWeight: '500',
+                  display: 'block',
+                  margin: '0.65rem 0 0.4rem'
+                }
+
+                const detailsReady = selectedWithDetails.every((sid) => {
+                  const config = SUBSCRIPTION_OPTIONS[sid]
+                  if (!config?.asksTravelClass) return true
+                  return Boolean(subscriptionDetails[sid]?.travel_class)
+                })
+
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                      <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Erzähl uns mehr zu deinen Abos</h1>
-                      <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>So ordnen wir Kosten korrekt zu — etwa ob ein Tarif über deinen Arbeitgeber oder als Studi-Tarif läuft.</p>
+                      <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>
+                        Erzähl uns mehr zu deinen Abos
+                      </h1>
+                      <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>
+                        So ordnen wir Kosten, Tarifart und BahnCard-Klasse korrekt zu.
+                      </p>
+
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                        {selected.map((sid) => {
+                        {selectedWithDetails.map((sid) => {
+                          const config = SUBSCRIPTION_OPTIONS[sid]
                           const d = subscriptionDetails[sid] || {}
+
+                          const typeOptions = config.typeOptions || DEFAULT_TYPE_OPTS
+                          const billingOptions = config.billingOptions || DEFAULT_BILL_OPTS
+
+                          const selectedType = d.type || config.defaultType || typeOptions[0]?.id
+                          const selectedBilling = d.billing || config.defaultBilling || billingOptions[0]?.id
+
                           return (
-                            <div key={sid} style={{ backgroundColor: '#0d0d10', border: `1px solid ${colors.border}`, borderRadius: '16px', padding: '1rem 1.1rem', textAlign: 'left' }}>
-                              <span style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '700', display: 'block' }}>{SERVICE_LABELS[sid] || sid}</span>
+                            <div
+                              key={sid}
+                              style={{
+                                backgroundColor: '#0d0d10',
+                                border: `1px solid ${colors.border}`,
+                                borderRadius: '16px',
+                                padding: '1rem 1.1rem',
+                                textAlign: 'left'
+                              }}
+                            >
+                              <span style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '700', display: 'block' }}>
+                                {config.label}
+                              </span>
+
                               <span style={miniLabel}>Art</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                {TYPE_OPTS.map((o) => (
-                                  <span key={o.id} onClick={() => setSubDetail(sid, 'type', o.id)} style={chip((d.type || 'subscription') === o.id)}>{o.label}</span>
+                                {typeOptions.map((o) => (
+                                  <span
+                                    key={o.id}
+                                    onClick={() => setSubDetail(sid, 'type', o.id)}
+                                    style={chip(selectedType === o.id)}
+                                  >
+                                    {o.label}
+                                  </span>
                                 ))}
                               </div>
+
+                              {config.asksTravelClass && (
+                                <>
+                                  <span style={miniLabel}>Klasse</span>
+                                  <div style={{ display: 'flex', gap: '0.45rem' }}>
+                                    {[
+                                      { id: 1, label: '1. Klasse' },
+                                      { id: 2, label: '2. Klasse' }
+                                    ].map((travelClassOpt) => {
+                                      const isSelected = d.travel_class === travelClassOpt.id
+
+                                      return (
+                                        <button
+                                          key={travelClassOpt.id}
+                                          type="button"
+                                          onClick={() => setSubDetail(sid, 'travel_class', travelClassOpt.id)}
+                                          style={{
+                                            flex: 1,
+                                            padding: '0.7rem 0.8rem',
+                                            borderRadius: '12px',
+                                            fontSize: '0.82rem',
+                                            fontWeight: '700',
+                                            cursor: 'pointer',
+                                            backgroundColor: isSelected ? colors.accentPurple : colors.card,
+                                            color: isSelected ? '#000000' : '#ffffff',
+                                            border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
+                                          }}
+                                        >
+                                          {travelClassOpt.label}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </>
+                              )}
+
                               <span style={miniLabel}>Abrechnung</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                {BILL_OPTS.map((o) => (
-                                  <span key={o.id} onClick={() => setSubDetail(sid, 'billing', o.id)} style={chip((d.billing || 'monthly') === o.id)}>{o.label}</span>
+                                {billingOptions.map((o) => (
+                                  <span
+                                    key={o.id}
+                                    onClick={() => setSubDetail(sid, 'billing', o.id)}
+                                    style={chip(selectedBilling === o.id)}
+                                  >
+                                    {o.label}
+                                  </span>
                                 ))}
                               </div>
                             </div>
@@ -591,8 +1054,28 @@ export default function Login() {
                         })}
                       </div>
                     </div>
+
                     <div style={{ flex: 1 }} />
-                    <button onClick={() => setOnboardingStep(4)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
+
+                    <button
+                      onClick={() => setOnboardingStep(4)}
+                      disabled={!detailsReady}
+                      style={{
+                        width: '100%',
+                        padding: '1.1rem',
+                        backgroundColor: detailsReady ? colors.accentCyan : colors.card,
+                        color: detailsReady ? '#000000' : colors.textMuted,
+                        borderRadius: '14px',
+                        border: 'none',
+                        fontSize: '1.1rem',
+                        fontWeight: '700',
+                        cursor: detailsReady ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.2s',
+                        marginTop: '1rem'
+                      }}
+                    >
+                      Weiter
+                    </button>
                   </div>
                 )
               })()}
@@ -711,40 +1194,70 @@ export default function Login() {
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
                     <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie sieht deine typische Woche aus?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Das hilft uns, deinen Mobilitätsbedarf vorherzusagen.</p>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Wähle alles aus, was regelmäßig auf dich zutrifft — beruflich, privat oder im Alltag.</p>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Werktags</span>
+                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Arbeit & Verpflichtungen</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', marginBottom: '1.5rem' }}>
-                      {WEEKDAY_PATTERNS.map((p) => {
-                        const isSel = typicalWeekday === p
+                      {TYPICAL_WORK_PATTERNS.map((p) => {
+                        const isSel = typicalWorkPatterns.includes(p)
                         return (
-                          <button key={p} onClick={() => setTypicalWeekday(p)} style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card, border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}><span>{p}</span></button>
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handlePatternToggle(setTypicalWorkPatterns, p)}
+                            style={{
+                              ...optionButtonStyle,
+                              padding: '0.95rem 1.1rem',
+                              backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card,
+                              border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
+                            }}
+                          >
+                            <span>{p}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentCyan}`, backgroundColor: isSel ? colors.accentCyan : 'transparent', flexShrink: 0 }}>
+                              {isSel && <Check size={12} strokeWidth={3} color="#000000" />}
+                            </div>
+                          </button>
                         )
                       })}
                     </div>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Wochenende</span>
+                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Freizeit & Wochenende</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                      {WEEKEND_PATTERNS.map((p) => {
-                        const isSel = typicalWeekend === p
+                      {TYPICAL_LEISURE_PATTERNS.map((p) => {
+                        const isSel = typicalLeisurePatterns.includes(p)
                         return (
-                          <button key={p} onClick={() => setTypicalWeekend(p)} style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card, border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}><span>{p}</span></button>
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handlePatternToggle(setTypicalLeisurePatterns, p)}
+                            style={{
+                              ...optionButtonStyle,
+                              padding: '0.95rem 1.1rem',
+                              backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card,
+                              border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
+                            }}
+                          >
+                            <span>{p}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentCyan}`, backgroundColor: isSel ? colors.accentCyan : 'transparent', flexShrink: 0 }}>
+                              {isSel && <Check size={12} strokeWidth={3} color="#000000" />}
+                            </div>
+                          </button>
                         )
                       })}
                     </div>
 
                     <label style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas dazu? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
-                    <textarea value={weekNote} onChange={(e) => setWeekNote(e.target.value)} placeholder="z. B. „Mittwochs oft Sport am anderen Ende der Stadt.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentCyan} onBlur={(e) => e.target.style.borderColor = colors.border} />
+                    <textarea value={weekNote} onChange={(e) => setWeekNote(e.target.value)} placeholder="z. B. „Dienstags Sport am anderen Ende der Stadt oder alle zwei Wochen Familie im Umland.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentCyan} onBlur={(e) => e.target.style.borderColor = colors.border} />
                   </div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
                     {(() => {
-                      const ready = typicalWeekday && typicalWeekend
+                      const ready = typicalWorkPatterns.length > 0 || typicalLeisurePatterns.length > 0
                       return (
                         <button onClick={() => setOnboardingStep(8)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       )
                     })()}
-                    <button onClick={() => { setTypicalWeekday(''); setTypicalWeekend(''); setWeekNote(''); setOnboardingStep(8); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setTypicalWorkPatterns([]); setTypicalLeisurePatterns([]); setWeekNote(''); setOnboardingStep(8); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
