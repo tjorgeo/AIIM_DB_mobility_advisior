@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react'
-import { login as apiLogin } from '../api/client'
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { login as apiLogin, getPersonas } from '../api/client'
 
 const STORAGE_KEY = 'moveoptimizer.session'
 
@@ -52,7 +52,40 @@ export function AuthProvider({ children }) {
     persist(user)
   }, [])
 
-  const value = { currentUser, login, logout, setSession }
+  // Demo-Personas aus der DB laden (die 6 Seed-User mit echten Daten). Registrierte
+  // User (user_id beginnt mit "user_") werden ausgefiltert.
+  const [personas, setPersonas] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    getPersonas()
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows)) return
+        const demo = rows
+          .filter((p) => p.user_id && !p.user_id.startsWith('user_'))
+          .map((p) => {
+            const first = p.first_name || ''
+            const last = p.last_name || ''
+            const initials = `${first[0] || ''}${last[0] || ''}`.toUpperCase() || 'U'
+            const occ = p.preferences?.occupation
+            const tagline = [occ, p.home_city].filter(Boolean).join(' · ') || p.home_city || ''
+            return { id: p.user_id, name: p.name || `${first} ${last}`.trim(), firstName: first, initials, tagline }
+          })
+        setPersonas(demo)
+      })
+      .catch(() => { /* Personas optional — der Formular-Login bleibt möglich */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Direkt als Demo-Persona einloggen (kein Passwort nötig).
+  const loginAs = useCallback((personaId) => {
+    const p = personas.find((x) => x.id === personaId)
+    if (!p) return
+    const user = { id: p.id, name: p.name, firstName: p.firstName, initials: p.initials }
+    setCurrentUser(user)
+    persist(user)
+  }, [personas])
+
+  const value = { currentUser, login, logout, setSession, personas, loginAs }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

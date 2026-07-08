@@ -14,14 +14,41 @@ Hinweis zum API-Contract: /api/register ist ADDITIV (kein bestehender Payload
 ändert sich), also Contract-konform.
 """
 
+import re
+import time
 import uuid
-from fastapi import HTTPException
+from collections import deque
+from fastapi import HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Tuple
 
 # vorhandener Helper im Backend
 from database import get_connection
 from auth_utils import hash_password
+
+# Fixed allowlist of tables _copy_user_table may touch — defence in depth so the
+# dynamic table name can never be attacker-shaped even after a future refactor.
+_COPYABLE_TABLES = {"user_trips", "trip_legs"}
+
+# Minimal email format check (normalisation + a sane shape, not full RFC 5322).
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Lightweight in-memory, per-IP fixed-window rate limit for /api/register. Single
+# process only (fine for the demo container); a multi-process deploy would need
+# shared state (e.g. Redis).
+_RATE_LIMIT_MAX = 5
+_RATE_LIMIT_WINDOW_S = 600  # 10 minutes
+_register_hits: Dict[str, deque] = {}
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.monotonic()
+    hits = _register_hits.setdefault(client_ip, deque())
+    while hits and now - hits[0] > _RATE_LIMIT_WINDOW_S:
+        hits.popleft()
+    if len(hits) >= _RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Zu viele Registrierungen. Bitte später erneut versuchen.")
+    hits.append(now)
 
 
 # --- Request-Schemas (locker gehalten; Frontend liefert null für Skips) ---
@@ -79,10 +106,17 @@ class RegisterRequest(BaseModel):
 
 # --- Seed-Persona-Verknüpfung (Demo) ---
 
-def _copy_user_table(cur, table: str, src_user: str, overrides: Dict[str, str]) -> None:
+def _copy_user_table(cur, table: str, src_user: str, overrides: Dict[str, Tuple[str, tuple]]) -> None:
     """Kopiert alle Zeilen einer user-bezogenen Tabelle von src_user, wobei einzelne
     Spalten per SQL-Ausdruck überschrieben werden (z. B. user_id/PK-Remap). Die
-    Spaltenliste kommt dynamisch aus information_schema, damit es schema-robust bleibt."""
+    Spaltenliste kommt dynamisch aus information_schema, damit es schema-robust bleibt.
+
+    ``overrides`` map jede zu überschreibende Spalte auf ``(expr, params)`` — ein
+    SQL-Ausdruck mit ``%s``-Platzhaltern und den zugehörigen gebundenen Werten, damit
+    keine Nutzer-/ID-Werte in den SQL-String interpoliert werden. Tabellen-/Spaltennamen
+    stammen aus einer festen Allowlist bzw. information_schema (nie nutzergesteuert)."""
+    if table not in _COPYABLE_TABLES:
+        raise ValueError(f"table not allowed: {table}")
     cur.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_name = %s ORDER BY ordinal_position",
@@ -91,11 +125,22 @@ def _copy_user_table(cur, table: str, src_user: str, overrides: Dict[str, str]) 
     cols = [r["column_name"] for r in cur.fetchall()]
     if not cols:
         return
-    select_exprs = [overrides.get(c, c) for c in cols]
+
+    select_exprs = []
+    override_params: list = []
+    for c in cols:
+        if c in overrides:
+            expr, params = overrides[c]
+            select_exprs.append(expr)
+            override_params.extend(params)
+        else:
+            # identity copy — c comes from information_schema, not user input
+            select_exprs.append(c)
+
     cur.execute(
         f"INSERT INTO {table} ({', '.join(cols)}) "
         f"SELECT {', '.join(select_exprs)} FROM {table} WHERE user_id = %s",
-        (src_user,),
+        (*override_params, src_user),
     )
 
 
@@ -126,15 +171,16 @@ def _link_random_persona(new_user_id: str) -> Optional[str]:
         suffix = new_user_id  # bereits eindeutig
 
         # Reihenfolge wichtig: erst user_trips (Parent), dann trip_legs (FK auf trip_id).
+        # Werte werden als Query-Parameter gebunden (%s), nicht in SQL interpoliert.
         _copy_user_table(cur, "user_trips", src, {
-            "trip_id": f"trip_id || '_' || '{suffix}'",
-            "user_id": f"'{new_user_id}'",
+            "trip_id": ("trip_id || '_' || %s", (suffix,)),
+            "user_id": ("%s", (new_user_id,)),
         })
         _copy_user_table(cur, "trip_legs", src, {
-            "leg_id": f"leg_id || '_' || '{suffix}'",
-            "trip_id": f"trip_id || '_' || '{suffix}'",
-            "user_id": f"'{new_user_id}'",
-            "user_subscription_id": "NULL",  # Abo-Referenz der Quell-Persona nicht übernehmen
+            "leg_id": ("leg_id || '_' || %s", (suffix,)),
+            "trip_id": ("trip_id || '_' || %s", (suffix,)),
+            "user_id": ("%s", (new_user_id,)),
+            "user_subscription_id": ("NULL", ()),  # Abo-Referenz der Quell-Persona nicht übernehmen
         })
         conn.commit()
         return src
@@ -144,8 +190,11 @@ def _link_random_persona(new_user_id: str) -> Optional[str]:
 
 # --- Handler ---
 
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
     """Legt einen neuen Nutzer samt Onboarding-Profil an."""
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
     u = req.user
     o = req.onboarding
 
@@ -154,6 +203,12 @@ def register(req: RegisterRequest):
     # Fallbacks setzen, sonst schlägt der INSERT fehl.
     if not (u.first_name and u.last_name):
         raise HTTPException(status_code=422, detail="Vor- und Nachname sind erforderlich.")
+
+    # E-Mail normalisieren + validieren (email == username in diesem Flow).
+    email = (u.email or "").strip().lower()
+    if not email or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Bitte eine gültige E-Mail-Adresse angeben.")
+
     home_city = u.home_city or "unknown"
     home_postal_code = u.home_postal_code or "00000"
     date_of_birth = u.date_of_birth or "1970-01-01"
@@ -167,6 +222,16 @@ def register(req: RegisterRequest):
     try:
         cur = conn.cursor()
 
+        # Duplikat-Prüfung (case-insensitiv). Die partiellen UNIQUE-Indizes auf
+        # users(lower(email))/users(lower(username)) sind die harte Garantie; dieser
+        # Vorab-Check liefert dem Frontend eine saubere 409 statt eines DB-Fehlers.
+        cur.execute(
+            "SELECT 1 FROM users WHERE lower(email) = ? OR lower(username) = ? LIMIT 1",
+            (email, email),
+        )
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Diese E-Mail ist bereits registriert.")
+
         cur.execute(
             """
             INSERT INTO users
@@ -174,7 +239,7 @@ def register(req: RegisterRequest):
                age, gender, home_city, home_postal_code, home_country_code, password_hash)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (user_id, u.email, u.email, u.first_name, u.last_name, date_of_birth,
+            (user_id, email, email, u.first_name, u.last_name, date_of_birth,
              age, u.gender, home_city, home_postal_code, u.home_country_code or "DE", password_hash),
         )
 
@@ -227,11 +292,12 @@ def register(req: RegisterRequest):
     except HTTPException:
         conn.rollback()
         raise
-    except Exception as e:
+    except Exception:
         conn.rollback()
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Registrierung fehlgeschlagen: {e}")
+        # Keine rohe Exception an den Client leaken (interne Details / Schemainfos).
+        raise HTTPException(status_code=500, detail="Registrierung fehlgeschlagen.")
     finally:
         conn.close()
 
@@ -254,8 +320,8 @@ def register(req: RegisterRequest):
             "id": user_id,
             "name": f"{u.first_name} {u.last_name}".strip(),
             "firstName": u.first_name,
-            "username": u.email,
-            "email": u.email,
+            "username": email,
+            "email": email,
         },
         "linked_persona": linked_from,
     }

@@ -33,10 +33,19 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for frontend integration
+# Enable CORS for frontend integration. Pin explicit origins (a wildcard combined
+# with allow_credentials=True is an invalid/insecure combo browsers reject). Override
+# for other environments via the comma-separated ALLOWED_ORIGINS env var.
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
+    ).split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In development, allow all origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

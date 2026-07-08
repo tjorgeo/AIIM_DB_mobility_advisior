@@ -16,7 +16,7 @@
 -- ----------------------------------------------------------------------------
 CREATE TEMP TABLE tmp_users (LIKE users);
 
-COPY tmp_users
+COPY tmp_users (user_id, email, username, external_auth_id, first_name, last_name, date_of_birth, age, gender, life_stage, home_city, home_postal_code, home_country_code)
 FROM '/seed/user_profiles_v3.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
