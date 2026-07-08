@@ -564,8 +564,16 @@ request/response tests, and CI wiring are future work.
   (`per_km` / `per_minute` / `time_pass` / `hybrid`) is **deferred**: the catalog
   has no rate columns yet. Adding a rate schema + a per‑leg pricing engine is the
   natural next step; `OptimizerAgent.simulate()` is the single extension point.
-* **CO₂ savings are conservative.** Flat plans don't shift emissions in the current
-  model, so `co2_savings_kg` is 0; a mode‑shift model is future work.
+* **CO₂ savings are conservative** (accepted Phase‑1 simplification, AMB‑02). Flat
+  plans don't shift emissions in the current model, so `co2_savings_kg` is 0 —
+  CO₂ is baseline‑reporting only and does not differentiate scenarios (hence there
+  is no separate "Sustainability" scenario). A mode‑shift model is future work.
+* **Ranking is cost‑and‑coverage only** (accepted Phase‑1 simplification, AMB‑03).
+  Scenarios are ordered by `(total_cost, -covered_count)`. The onboarding preference
+  scores (`cost_priority` / `co2_priority` / `convenience_priority`) are collected and
+  passed into `optimize(preferences=…)` but are **intentionally not consumed by
+  ranking** in Phase 1. A weighted/shadow‑price score is future work (coupled to the
+  CO₂ mode‑shift model above). See `DELIVERABLES/requirements_ambiguity_analysis.md`.
 * **Coverage is an assumption.** `category_covers_mode` encodes which modes each
   subscription category pays for (e.g. a public‑transport pass does *not* cover
   long‑distance rail). Tune it in `schema_map.py` if the product rules change.

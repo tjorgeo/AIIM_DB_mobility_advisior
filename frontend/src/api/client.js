@@ -61,11 +61,13 @@ export async function submitOnboarding(profile) {
   return { ok: false, error }
 }
 
-export async function analyze(userId) {
+// force=true bypasses the backend read-through cache and recomputes the analysis
+// (e.g. after the user changes something and wants a fresh recommendation).
+export async function analyze(userId, { force = false } = {}) {
   const res = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId }),
+    body: JSON.stringify({ user_id: userId, force }),
   })
   return parseJson(res, 'Analysis')
 }

@@ -11,7 +11,7 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 
 ### Phase 1: High-Fidelity Pilot Sandbox (Current Academic Scope)
 *   **Objective:** Deliver a working, fully-orchestrated **4-Agent Prototype** that demonstrates end-to-end analytical reasoning, demand forecasting, multi-scenario optimization, and natural-language presentation.
-*   **Infrastructure:** Python FastAPI, LangChain orchestration, Claude 3.5, local PostgreSQL state storage, Redis cache, and mock database layers.
+*   **Infrastructure:** Python FastAPI, LangChain orchestration, Claude 3.5, local PostgreSQL state storage (no Redis in Phase 1 — deferred to Phase 2), a React 18 + Vite frontend, and mock database layers.
 *   **Integration Strategy:** Use a simulated API gateway and high-fidelity mock datasets that replicate the exact JSON schema formats of Deutsche Bahn’s Navigator API and third-party partner systems. This de-risks legal, commercial, and security integration bottlenecks.
 *   **Core Deliverables:** Working Technical Prototype + 10-Page Management & IT Strategy Report + 3-Minute Product Demo Video.
 
@@ -35,7 +35,7 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 *   ✅ Mock API Gateway & Sandbox mimicking DB Navigator schema formats.
 *   ✅ Pricing database for core German transit (Bahncard 25/50/100, Deutschlandticket, pay-as-you-go).
 *   ✅ Synthetic Customer Profile Generator (generating travel histories for various target user personas).
-*   ✅ Streamlit-based Chat UI to demonstrate user-agent interaction.
+*   ✅ React 18 + Vite Chat UI to demonstrate user-agent interaction.
 *   ✅ 10-Page Strategic IT Consultant Report (covering architecture, business value, and rollout plan).
 *   ✅ 3-Minute Demo Video highlighting technical and business value.
 
@@ -81,6 +81,6 @@ To balance technical feasibility in the 15-week timeline with enterprise strateg
 | **Agent Framework** | LangChain (Python) | High ecosystem maturity, robust tooling. |
 | **LLM** | Claude 3.5 Sonnet / Gemini | Top-tier analytical reasoning, high speed. |
 | **Data Store** | SQLite / PostgreSQL | Lightweight local state storage, SQL compatibility. |
-| **Caching Layer** | Redis | Session state management and caching of API payloads. |
-| **User Interface** | Streamlit | Rapid development of premium interactive chat widgets without HTML/JS overhead. |
+| **Caching Layer** | None in Phase 1 (Redis deferred to Phase 2) | PostgreSQL-only persistence is sufficient for the pilot; session state is the `recommendations` row id. |
+| **User Interface** | React 18 + Vite | Component-based chat widget matching the Phase-2 enterprise UI target (no Streamlit). |
 

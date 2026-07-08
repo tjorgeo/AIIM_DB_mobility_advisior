@@ -232,19 +232,30 @@ CREATE TABLE users (
   consent_status JSONB (email_opted_in: bool, calendar_shared: bool)
 );
 
--- Travel History
-CREATE TABLE travel_history (
-  id UUID PRIMARY KEY,
+-- Travel History (implemented as a two-level trips → legs model; see
+-- database/init/01_create_table.sql for the authoritative schema)
+CREATE TABLE user_trips (
+  trip_id UUID PRIMARY KEY,
   user_id UUID REFERENCES users,
   trip_date DATE,
-  origin VARCHAR,
-  destination VARCHAR,
-  mode VARCHAR (train/scooter/bus/car),
-  distance_km FLOAT,
-  cost_eur FLOAT,
-  co2_kg FLOAT,
-  created_at TIMESTAMP,
-  INDEX (user_id, trip_date)
+  main_transport_mode VARCHAR,  -- CHECK-constrained enum (see below)
+  ...
+);
+
+CREATE TABLE trip_legs (
+  leg_id UUID PRIMARY KEY,
+  trip_id UUID REFERENCES user_trips,
+  -- Regional vs. long-distance rail is encoded directly in this enum (AMB-01),
+  -- not via a separate train_type/is_regional field:
+  transport_mode VARCHAR,  -- public_transport | regional_train | long_distance_train
+                           -- | e_scooter | car | car_sharing | ride_hailing
+                           -- | taxi | bike_sharing
+  origin_label VARCHAR, origin_city VARCHAR, origin_postal_code VARCHAR,
+  destination_label VARCHAR, destination_city VARCHAR, destination_postal_code VARCHAR,
+  estimated_cost_eur FLOAT,
+  reference_cost_eur FLOAT,        -- pay-as-you-go price (savings baseline)
+  estimated_co2_emissions FLOAT,
+  ticket_class INTEGER
 );
 
 -- Current Subscriptions
@@ -278,7 +289,10 @@ CREATE TABLE audit_log (
 );
 ```
 
-### Redis (Caching)
+### Redis (Caching) — Phase 2 (NOT implemented in Phase 1)
+> Phase 1 persistence is **PostgreSQL-only**; there is no Redis container. Session state is
+> simply the `recommendations` row id returned to the frontend (see AMB-09). The following is
+> the Phase-2 caching target:
 - Session state: Multi-turn conversation (24h TTL)
 - User context: Cached preferences + consent (1h TTL)
 - Travel history cache: 12-month summary (24h TTL)
@@ -302,7 +316,8 @@ CREATE TABLE audit_log (
       "date": "2025-01-15",
       "from": {"city": "Berlin", "station": "Hauptbahnhof"},
       "to": {"city": "Munich", "station": "Hauptbahnhof"},
-      "mode": "train",
+      "mode": "long_distance_train",
+      "_comment_mode": "ingestion maps this to trip_legs.transport_mode; rail is split into regional_train | long_distance_train (AMB-01)",
       "distance_km": 600,
       "cost_eur": 89.90,
       "class": "2",

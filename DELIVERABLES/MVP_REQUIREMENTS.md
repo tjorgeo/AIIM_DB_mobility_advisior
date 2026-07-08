@@ -309,8 +309,8 @@ As a data scientist, I need to **design 5 travel personas that represent common 
 | 10. Orchestrate Flow | End-to-end system | <60s latency, error handling | 5 days |
 | 11. Monitoring | Dashboard | Performance metrics visible | 2 days |
 | 12. Documentation | Docs complete | Team can understand system | 2 days |
-| 13. Frontend UI | Streamlit chatbot working | Conversational UX validated | 2 days |
-| 14. Traveller Personas | 5 traveler personas designed | Realistic synthetic data generated | 1 day |
+| 13. Frontend UI | React 18 + Vite chatbot working | Conversational UX validated | 2 days |
+| 14. Traveller Personas | 6 traveler personas designed | Realistic synthetic data generated | 1 day |
 
 
 ---

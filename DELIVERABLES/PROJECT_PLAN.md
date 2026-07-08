@@ -63,12 +63,12 @@ The progress meeting will be structured around a formal voting board to lock the
 
 ### Phase 3: Pilot Run & Interface Hardening (Weeks 9-12 | July 14 - Aug 10)
 
-* **Goal:** Run the prototype against 100 synthetic customer travel profiles; validate accuracy and launch the Streamlit frontend.
+* **Goal:** Run the prototype against 100 synthetic customer travel profiles; validate accuracy and launch the React frontend.
 * **Deliverables:**
   * ✅ 100-Profile Pilot simulation successfully executed
-  * ✅ Streamlit-based Premium Chat Widget deployed (local / web-accessible)
+  * ✅ React 18 + Vite Premium Chat Widget deployed (local / web-accessible)
   * ✅ Automated test runner proving optimizer calculations are accurate to within ±5%
-  * ✅ Caching layers (Redis) and state store (Postgres/SQLite) fully verified
+  * ✅ PostgreSQL state store fully verified (Redis caching deferred to Phase 2)
 * **Phase Gate (Aug 10):** Prototype functional, stable, and user-testable.
 
 ---
@@ -102,7 +102,7 @@ The progress meeting will be structured around a formal voting board to lock the
 - [ ] Technical Architecture document complete and approved.
 * [ ] Sandbox API Gateway operational with JSON schemas matching DB specifications.
 * [ ] Synthetic customer profile generator working with 5 traveler personas ([US 14]).
-* [ ] Local environment operational (Python FastAPI + Streamlit base).
+* [ ] Local environment operational (Python FastAPI + React 18/Vite base).
 
 ### Gate 2 (Week 8 - Agent Integration)
 
@@ -112,9 +112,9 @@ The progress meeting will be structured around a formal voting board to lock the
 
 ### Gate 3 (Week 12 - Prototype Hardening)
 
-- [ ] Streamlit interface fully integrated with the 4-agent backend ([US 13]).
+- [ ] React interface fully integrated with the 4-agent backend ([US 13]).
 * [ ] 100-profile automated test run successful with zero engine crashes.
-* [ ] Caching (Redis) working to speed up subsequent queries.
+* [ ] Caching (Redis) — deferred to Phase 2; Phase 1 runs Postgres-only.
 * [ ] Recommendations validated for mathematical accuracy.
 
 ### Gate 4 (Week 16 - Consulting Delivery)

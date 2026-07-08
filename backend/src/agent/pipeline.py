@@ -25,12 +25,16 @@ from agent.llm import llm_available
 logger = logging.getLogger(__name__)
 
 
-def run_analysis(user_id: str) -> dict:
+def run_analysis(user_id: str, include_memo: bool = True) -> dict:
     """Run the deterministic pipeline for one user.
 
     Returns a dict with ``user``, ``user_preferences``, ``subscriptions``,
     ``travel_history``, ``pricing_catalog`` and the agent outputs, or
     ``{"error": ...}`` if the user is not found.
+
+    ``include_memo=False`` skips the (slow) Analyst LLM memo and leaves the template
+    memo in place, so a caller can return the deterministic numbers immediately and
+    generate the LLM prose lazily (see :meth:`orchestrator.Orchestrator.generate_memo`).
     """
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -64,7 +68,7 @@ def run_analysis(user_id: str) -> dict:
     communicator_out["memo_source"] = "template"
     memo_trace_id = None
 
-    if llm_available():
+    if include_memo and llm_available():
         try:
             from agent.analyst_agent import run_briefing
 

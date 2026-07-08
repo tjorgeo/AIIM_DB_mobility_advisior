@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -61,6 +61,8 @@ orchestrator = Orchestrator()
 
 class AnalyzeRequest(BaseModel):
     user_id: str
+    # Bypass the read-through cache and recompute (e.g. an explicit "Re-analyze").
+    force: bool = False
 
 class ApproveRequest(BaseModel):
     scenario_id: str
@@ -208,12 +210,21 @@ def get_personas():
     return personas
 
 @app.post("/api/analyze")
-def analyze_portfolio(req: AnalyzeRequest):
+def analyze_portfolio(req: AnalyzeRequest, background_tasks: BackgroundTasks):
     """
-    Triggers the 4-Agent synchronous orchestration flow for a specific traveler persona.
+    Triggers the 4-Agent orchestration flow for a specific traveler persona.
+
+    Reuses the user's latest recommendation when available (unless ``force``); a fresh
+    run returns the deterministic numbers with the template memo immediately and
+    schedules the slow LLM memo as a background task, so the next mount serves the
+    upgraded prose from cache.
     """
     try:
-        pipeline_output = orchestrator.run_analysis(req.user_id)
+        pipeline_output = orchestrator.run_analysis(req.user_id, force=req.force)
+        if pipeline_output.pop("_fresh", False):
+            background_tasks.add_task(
+                orchestrator.generate_memo, pipeline_output["session_id"], req.user_id
+            )
         return pipeline_output
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
