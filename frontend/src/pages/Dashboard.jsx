@@ -1,10 +1,12 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Wallet, Leaf, Route, Globe, LogOut, TrendingUp, 
   Check, ChevronDown, ArrowUpRight, BarChart3, AlertCircle 
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo'
+import { analyze } from '../api/client'
+import { euro, number } from '../lib/format'
 
 export default function Dashboard() {
   const { logout, currentUser } = useAuth()
@@ -80,7 +82,7 @@ export default function Dashboard() {
     successGreen: '#22c55e'
   }
 
-  // Daten aus den Screenshots extrahiert
+  // Daten aus den Screenshots extrahiert (Fallback, solange die Analyse lädt)
   const travelStats = [
     { name: lang === 'DE' ? 'Zu Fuß' : 'walk', trips: '247', pct: 56, color: '#00f2fe' },
     { name: lang === 'DE' ? 'Bus' : 'Bus', trips: '84', pct: 19, color: '#a855f7' },
@@ -88,6 +90,48 @@ export default function Dashboard() {
     { name: lang === 'DE' ? 'E-Scooter' : 'Scooter', trips: '41', pct: 9, color: '#22c55e' },
     { name: lang === 'DE' ? 'Zug' : 'Train', trips: '6', pct: 1, color: '#eab308' },
   ]
+
+  // --- Echte Analyse für den eingeloggten User laden ---
+  const [analysis, setAnalysis] = useState(null)
+  const [loadingData, setLoadingData] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!currentUser?.id) { setLoadingData(false); return }
+    setLoadingData(true)
+    analyze(currentUser.id)
+      .then((res) => { if (!cancelled) setAnalysis(res) })
+      .catch(() => { /* leer lassen -> Fallback-Anzeige */ })
+      .finally(() => { if (!cancelled) setLoadingData(false) })
+    return () => { cancelled = true }
+  }, [currentUser?.id])
+
+  const langKey = lang.toLowerCase()
+  const analyst = analysis?.raw_agent_payloads?.analyst?.output || null
+  const summary = analysis?.summary || null
+  const scenarios = summary?.scenarios || []
+  const recommended = scenarios.find((s) => s.id === summary?.recommended_scenario) || scenarios[0] || null
+
+  const busy = (v) => (loadingData ? '…' : v)
+  const annualSpendStr = analyst ? euro(analyst.current_annual_spend, { lang: langKey }) : busy('—')
+  const distanceStr = analyst ? `${number(analyst.total_distance_km, langKey)} km` : busy('—')
+  const co2Str = analyst ? `${number(analyst.co2_total_kg, langKey)} kg` : busy('—')
+  const recPriceStr = recommended ? euro(recommended.annual_cost, { lang: langKey }) : annualSpendStr
+  const recSavings = recommended?.annual_savings || 0
+  const recChanges = recommended?.changes || []
+
+  const palette = ['#00f2fe', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f43f5e']
+  const derivedTravelStats = analyst?.mode_breakdown
+    ? Object.entries(analyst.mode_breakdown)
+        .map(([name, d]) => ({
+          name,
+          trips: String(d.trips),
+          pct: analyst.total_trips ? Math.round((d.trips / analyst.total_trips) * 100) : 0,
+        }))
+        .sort((a, b) => Number(b.trips) - Number(a.trips))
+        .map((x, i) => ({ ...x, color: palette[i % palette.length] }))
+    : null
+  const modes = derivedTravelStats || travelStats
 
   return (
     <div style={{
@@ -251,7 +295,7 @@ export default function Dashboard() {
               <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.annualSpend}</span>
               <span style={{ color: colors.accentCyan }}><Wallet size={14} /></span>
             </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>€183.35</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{annualSpendStr}</div>
             <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.subAndTickets}</span>
           </div>
 
@@ -261,7 +305,7 @@ export default function Dashboard() {
               <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.distance}</span>
               <span style={{ color: colors.accentPurple }}><Route size={14} /></span>
             </div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>1,319 km</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{distanceStr}</div>
             <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.acrossTransit}</span>
           </div>
         </div>
@@ -280,7 +324,7 @@ export default function Dashboard() {
             <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.35rem' }}>
               {t.co2}
             </span>
-            <div style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em' }}>46 kg</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{co2Str}</div>
             <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.estimatedEmissions}</span>
           </div>
           <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: 'rgba(34, 197, 94, 0.08)', display: 'flex', alignItems: 'center', justifyInContent: 'center', color: colors.successGreen }}>
@@ -318,7 +362,7 @@ export default function Dashboard() {
               <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.recommended}</span>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>€183.35<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
+              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
             </div>
           </div>
 
@@ -331,10 +375,21 @@ export default function Dashboard() {
             <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
               {t.whatChanges}
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.textMuted }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accentCyan }} />
-              {t.noChanges}
-            </div>
+            {recSavings > 0 && recChanges.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {recChanges.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#ffffff' }}>
+                    <span style={{ color: c.action === 'add' ? colors.successGreen : colors.accentPurple, fontWeight: '800' }}>{c.action === 'add' ? '+' : '−'}</span>
+                    {c.item}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.textMuted }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accentCyan }} />
+                {t.noChanges}
+              </div>
+            )}
           </div>
         </div>
 
@@ -348,13 +403,13 @@ export default function Dashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
-              <span style={{ fontSize: '0.78rem', color: colors.textMuted }}>{t.mostlyWalk}</span>
+              <span style={{ fontSize: '0.78rem', color: colors.textMuted }}>{modes[0] ? `${lang === 'DE' ? 'Meist' : 'Mostly'} ${modes[0].name}` : t.mostlyWalk}</span>
             </div>
             <BarChart3 size={18} style={{ color: colors.accentPurple }} />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {travelStats.map((item, index) => (
+            {modes.map((item, index) => (
               <div key={index}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.35rem', fontWeight: '500' }}>
                   <span style={{ color: '#ffffff' }}>{item.name}</span>
