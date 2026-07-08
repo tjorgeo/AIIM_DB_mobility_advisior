@@ -47,17 +47,27 @@ def test_unknown_plan_name_yields_no_doc_without_crashing():
 
 
 def test_run_briefing_grounds_multiple_recommended_plans():
-    """Two recommended plans (e.g. Deutschlandticket + BahnCard 25) must each get a
-    doc via their own markdown_ref — one plan's variants must not crowd out the other
-    (the bug the fuzzy-search-only version had before markdown_ref was wired in)."""
-    analyst_out = {"total_trips": 10}
-    forecaster_out = {"forecast_horizon_days": 90}
-    optimizer_out = {
-        "scenarios": [
-            {"id": "A", "portfolio": ["Deutschlandticket"]},
-            {"id": "B", "portfolio": ["Deutschlandticket", "BahnCard 25, 2. Klasse"]},
-        ]
+    """Two plans named in category_subscription_analysis (a currently-held
+    Deutschlandticket, and a BahnCard 25 as another category's cheapest alternative)
+    must each get a doc via their own markdown_ref — one plan's variants must not
+    crowd out the other (the bug the fuzzy-search-only version had before
+    markdown_ref was wired in)."""
+    analyst_out = {
+        "total_trips": 10,
+        "category_subscription_analysis": [
+            {
+                "category": "public_transport",
+                "current_subscriptions": [{"provider_plan_name": "Deutschlandticket"}],
+                "cheapest_alternative": None,
+            },
+            {
+                "category": "bike_sharing",
+                "current_subscriptions": [],
+                "cheapest_alternative": {"provider_plan_name": "BahnCard 25, 2. Klasse"},
+            },
+        ],
     }
+    forecaster_out = {"forecast_horizon_days": 90}
     pricing_catalog = [
         _catalog_entry(
             "Deutschlandticket",
@@ -74,7 +84,7 @@ def test_run_briefing_grounds_multiple_recommended_plans():
 
     with patch("agent.analyst_agent.get_llm") as mock_get_llm:
         mock_get_llm.return_value.invoke.return_value = fake_response
-        run_briefing("Jane Doe", analyst_out, forecaster_out, optimizer_out, pricing_catalog)
+        run_briefing("Jane Doe", analyst_out, forecaster_out, pricing_catalog)
 
         messages = mock_get_llm.return_value.invoke.call_args[0][0]
         payload = json.loads(messages[1].content.split("\n\n", 1)[1])

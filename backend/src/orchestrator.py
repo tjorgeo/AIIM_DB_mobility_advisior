@@ -16,7 +16,7 @@ class Orchestrator:
     """
 
     def run_analysis(self, user_id: str) -> dict:
-        # --- RUN PIPELINE (load_context → analyze → forecast → optimize → communicate) ---
+        # --- RUN PIPELINE (load_context → analyze → forecast → communicate) ---
         state = run_pipeline(user_id)
 
         if state.get("error"):
@@ -30,18 +30,28 @@ class Orchestrator:
 
         analyst_out = state["analyst_out"]
         forecaster_out = state["forecaster_out"]
-        optimizer_out = state["optimizer_out"]
         communicator_out = state["communicator_out"]
 
         # --- STATE MANAGEMENT & PERSISTENCE ---
         rec_id = str(uuid.uuid4())
         created_at_str = datetime.now().isoformat()
 
+        category_analysis = analyst_out["category_subscription_analysis"]
+        # Sum of what the user is actually paying today across every category we
+        # analyzed (each category's own current sub cost + out-of-pocket spend) — the
+        # closest equivalent to the old optimizer's "baseline_annual_cost", but built
+        # from the same per-category figures the memo and category_analysis use.
+        total_actual_annual_cost = round(sum(c["actual_annual_cost_eur"] for c in category_analysis), 2)
+
+        # Column name kept as `optimizer_scenarios` (see database/init/01_create_table.sql)
+        # to avoid a schema migration; the payload it stores is now the per-category
+        # current-vs-alternative-vs-no-subscription analysis, not portfolio scenarios.
         scenarios_payload = {
-            "scenarios": optimizer_out["scenarios"],
-            "baseline_annual_cost": optimizer_out["baseline_annual_cost"],
-            "baseline_co2_kg": optimizer_out["baseline_co2_kg"],
-            "best_recommendation_id": optimizer_out["best_recommendation_id"],
+            "category_subscription_analysis": category_analysis,
+            "total_actual_annual_cost_eur": total_actual_annual_cost,
+            "total_co2_kg": analyst_out["total_co2_kg"],
+            "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
+            "actions_required": communicator_out["actions_required"],
             "memos": {
                 "english": communicator_out["memo_english"],
                 "german": communicator_out["memo_german"],
@@ -84,10 +94,10 @@ class Orchestrator:
             "preferences": user_preferences,
             "current_subscriptions": subscriptions,
             "summary": {
-                "baseline_cost": optimizer_out["baseline_annual_cost"],
-                "baseline_co2": optimizer_out["baseline_co2_kg"],
-                "recommended_scenario": optimizer_out["best_recommendation_id"],
-                "scenarios": optimizer_out["scenarios"],
+                "total_actual_annual_cost_eur": total_actual_annual_cost,
+                "total_co2_kg": analyst_out["total_co2_kg"],
+                "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
+                "category_subscription_analysis": category_analysis,
                 "memos": {
                     "english": communicator_out["memo_english"],
                     "german": communicator_out["memo_german"],
@@ -102,6 +112,7 @@ class Orchestrator:
                             for s in subscriptions
                             if s["subscription_status"] == "active"
                         ],
+                        "pricing_catalog_size": len(pricing_catalog),
                     },
                     "output": analyst_out,
                 },
@@ -112,18 +123,9 @@ class Orchestrator:
                     },
                     "output": forecaster_out,
                 },
-                "optimizer": {
-                    "input": {
-                        "baseline_spend": optimizer_out["baseline_annual_cost"],
-                        "pricing_catalog_size": len(pricing_catalog),
-                        "preferences": user_preferences,
-                    },
-                    "output": optimizer_out,
-                },
                 "communicator": {
                     "input": {
-                        "best_recommendation": optimizer_out["best_recommendation_id"],
-                        "savings": communicator_out["annual_savings_eur"],
+                        "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
                         "memo_source": communicator_out.get("memo_source", "template"),
                     },
                     "output": communicator_out,

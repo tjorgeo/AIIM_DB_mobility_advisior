@@ -22,7 +22,6 @@ HANDLER_DEPS = [
     ("agent.pipeline", "run_analysis"),
     ("agent.engines", "analyze_portfolio"),
     ("agent.engines", "forecast"),
-    ("agent.engines", "optimize"),
     ("agent.engines", "template_memos"),
     ("agent.context", "load_context"),
     ("register_endpoint", "register"),

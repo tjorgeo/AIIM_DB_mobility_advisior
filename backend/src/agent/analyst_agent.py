@@ -1,15 +1,17 @@
 """The Analyst — writes the customer-facing consulting memo in a single grounded LLM call.
 
-``pipeline.py`` computes ``analyst_out``/``forecaster_out``/``optimizer_out``
-deterministically before this module ever runs. This used to re-derive that same data
-through a multi-hop ReAct tool loop (analyze -> forecast -> optimize -> tariff lookups),
-paying one LLM round-trip per tool call on the synchronous ``/api/analyze`` critical
-path. It now makes exactly one LLM call: every figure is injected into the prompt
-verbatim instead of re-fetched, so the LLM never computes money — see the "never state
-a number you did not get from the provided data" rule in the system prompt. The one
-piece of retrieval this still does itself is pulling the tariff/AGB documents relevant
-to the recommended plans, so the memo can keep citing real conditions without needing
-an agentic search loop to find them.
+``pipeline.py`` computes ``analyst_out`` (which includes the per-category
+current-vs-alternative-vs-no-subscription comparison, ``category_subscription_analysis``)
+and ``forecaster_out`` deterministically before this module ever runs. This used to
+re-derive that same data through a multi-hop ReAct tool loop (analyze -> forecast ->
+optimize -> tariff lookups), paying one LLM round-trip per tool call on the synchronous
+``/api/analyze`` critical path. It now makes exactly one LLM call: every figure is
+injected into the prompt verbatim instead of re-fetched, so the LLM never computes
+money — see the "never state a number you did not get from the provided data" rule in
+the system prompt. The one piece of retrieval this still does itself is pulling the
+tariff/AGB documents relevant to the plans named in ``category_subscription_analysis``,
+so the memo can keep citing real conditions without needing an agentic search loop to
+find them.
 
 Used by :mod:`agent.pipeline` for the ``/analyze`` memo. Requires an LLM key (``pipeline``
 guards with ``llm_available()`` and falls back to the deterministic template memo). The
@@ -138,28 +140,30 @@ def run_briefing(
     name: str,
     analyst_out: dict,
     forecaster_out: dict,
-    optimizer_out: dict,
     pricing_catalog: list,
 ) -> tuple[str, str]:
     """Write the (english, german) memo from the already-computed engine outputs.
 
     Every euro/CO2/trip figure is handed in verbatim from the deterministic pipeline
     step; the only work done here is fetching the tariff documents relevant to the
-    recommended portfolio and making one grounded LLM call. Raises on malformed output
-    so the caller can fall back to the template memo.
+    plans named in analyst_out's category_subscription_analysis (currently-held
+    subscriptions plus each category's cheapest priceable alternative, if any) and
+    making one grounded LLM call. Raises on malformed output so the caller can fall
+    back to the template memo.
     """
-    plan_names = sorted(
-        {
-            plan_name
-            for scenario in optimizer_out.get("scenarios", [])
-            for plan_name in scenario.get("portfolio", [])
-        }
-    )
+    plan_names = sorted({
+        plan_name
+        for entry in analyst_out.get("category_subscription_analysis", [])
+        for plan_name in (
+            [c["provider_plan_name"] for c in entry.get("current_subscriptions", [])]
+            + ([entry["cheapest_alternative"]["provider_plan_name"]] if entry.get("cheapest_alternative") else [])
+        )
+        if plan_name
+    })
     catalog_by_name = {p["name"]: p for p in pricing_catalog if p.get("name")}
     grounding = {
         "analysis": analyst_out,
         "forecast": forecaster_out,
-        "optimizer": optimizer_out,
         "tariff_documents": _relevant_tariff_docs(plan_names, catalog_by_name),
     }
 

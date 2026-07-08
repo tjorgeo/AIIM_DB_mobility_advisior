@@ -1,13 +1,16 @@
 """Deterministic analyze pipeline — the number guard.
 
 Topology (plain sequential Python, no StateGraph):
-    load_context → analyze → forecast → optimize → communicate
+    load_context → analyze → forecast → communicate
 
-Steps 1–3 are pure deterministic engines, so every euro / CO₂ figure is exact and
-reproducible and the frontend contract is guaranteed. The communicate step runs the
-deterministic template memo first (the fallback), then — when an LLM is configured —
-replaces the memo prose with the Analyst agent's version (which may consult the OKF
-tariff knowledge base). If the LLM is missing or errors, the template memo stands.
+Steps 1–2 are pure deterministic engines, so every euro / CO₂ figure is exact and
+reproducible. ``analyze`` computes, per travel category, whether the currently-held
+subscription (if any), a comparable catalog alternative, or paying as you go would be
+cheapest — see ``category_subscription_analysis`` in agent/engines/analysis.py. The
+communicate step runs the deterministic template memo first (the fallback), then —
+when an LLM is configured — replaces the memo prose with the Analyst agent's version
+(which may consult the OKF tariff knowledge base). If the LLM is missing or errors, the
+template memo stands.
 
 ``run_analysis`` returns the computed components; :class:`orchestrator.Orchestrator`
 persists them and shapes the exact response payload the frontend consumes.
@@ -16,7 +19,7 @@ persists them and shapes the exact response payload the frontend consumes.
 import logging
 
 from agent.context import load_context
-from agent.engines import analyze_portfolio, forecast, optimize, template_memos
+from agent.engines import analyze_portfolio, forecast, template_memos
 from agent.llm import llm_available
 
 logger = logging.getLogger(__name__)
@@ -26,7 +29,7 @@ def run_analysis(user_id: str) -> dict:
     """Run the deterministic pipeline for one user.
 
     Returns a dict with ``user``, ``user_preferences``, ``subscriptions``,
-    ``travel_history``, ``pricing_catalog`` and the four agent outputs, or
+    ``travel_history``, ``pricing_catalog`` and the agent outputs, or
     ``{"error": ...}`` if the user is not found.
     """
     ctx = load_context(user_id)
@@ -37,8 +40,13 @@ def run_analysis(user_id: str) -> dict:
     subscriptions = ctx["subscriptions"]
     preferences = ctx["user_preferences"]
 
-    # --- deterministic engines: the authoritative, reproducible numbers ---
-    analyst_out = analyze_portfolio(travel_history, subscriptions)
+    # --- deterministic engine: the authoritative, reproducible numbers ---
+    # category_subscription_analysis prices every current/alternative/no-subscription
+    # comparison off the user's actual travel history, never off a "holding any plan
+    # makes the category free" assumption — see analysis.py's _pricing_basis.
+    analyst_out = analyze_portfolio(
+        travel_history, subscriptions, ctx["pricing_catalog"], user_age=ctx["user"].get("age")
+    )
     analyst_out["preferences"] = preferences  # referenced by the memo
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
@@ -50,17 +58,9 @@ def run_analysis(user_id: str) -> dict:
         forecast_horizon_days=90,
     )
 
-    optimizer_out = optimize(
-        travel_history,
-        subscriptions,
-        ctx["pricing_catalog"],
-        preferences,
-        user_age=ctx["user"].get("age"),
-    )
-
     # --- communicate: template memo, upgraded to LLM prose when available ---
     name = ctx["user"]["name"]
-    communicator_out = template_memos(name, analyst_out, optimizer_out)
+    communicator_out = template_memos(name, analyst_out)
     communicator_out["memo_source"] = "template"
 
     if llm_available():
@@ -71,7 +71,7 @@ def run_analysis(user_id: str) -> dict:
             # LLM call instead of re-deriving them through a tool loop. pricing_catalog
             # carries markdown_ref so the memo cites the exact tariff doc per plan.
             memo_en, memo_de = run_briefing(
-                name, analyst_out, forecaster_out, optimizer_out, ctx["pricing_catalog"]
+                name, analyst_out, forecaster_out, ctx["pricing_catalog"]
             )
             communicator_out["memo_english"] = memo_en
             communicator_out["memo_german"] = memo_de
@@ -88,6 +88,5 @@ def run_analysis(user_id: str) -> dict:
         "pricing_catalog": ctx["pricing_catalog"],
         "analyst_out": analyst_out,
         "forecaster_out": forecaster_out,
-        "optimizer_out": optimizer_out,
         "communicator_out": communicator_out,
     }

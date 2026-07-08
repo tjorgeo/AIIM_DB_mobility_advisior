@@ -4,8 +4,16 @@ Ingests leg-level travel history and active subscription records, computes
 factual usage statistics, detects temporal patterns, and produces a structured
 summary. No LLM, no hardcoded thresholds — inefficiencies are flagged only
 when the math is unambiguous (e.g. a subscription cost more than it saved).
+
+It also evaluates, per travel category, whether the currently-held subscription
+(if any), a cheaper catalog alternative, or no subscription at all (pure
+pay-as-you-go) would have been cheapest for how the user actually traveled —
+see ``category_subscription_analysis`` in :func:`analyze_portfolio`'s return
+value and ``_pricing_basis`` for exactly which catalog plans can be priced this
+way and which can't.
 """
 
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -27,6 +35,22 @@ _CATEGORY_LABEL = {
     "e_scooter": "E-scooter pass",
 }
 
+# BahnCard-style catalog rows encode their eligibility band as free text in
+# subscription_type_other, e.g. "Ages 27-64", "Youth variant; ages 6-26", "Senior
+# variant; ages 65+". Parsed so an ineligible age-gated variant is never proposed as
+# a cheaper alternative.
+_AGE_RANGE_RE = re.compile(r"ages?\s+(\d+)\s*-\s*(\d+)", re.IGNORECASE)
+_AGE_MIN_RE = re.compile(r"ages?\s+(\d+)\s*\+", re.IGNORECASE)
+# Discount variants gated on a condition we have no data field to verify (disability /
+# reduced earning capacity pension) — excluded outright rather than assumed, since
+# recommending a plan we can't confirm eligibility for is worse than not recommending it.
+_UNVERIFIABLE_ELIGIBILITY_RE = re.compile(r"disability|reduced earning capacity|pension", re.IGNORECASE)
+# BahnCard 25/50/100 are percentage-discount cards (25%/50% off regular fares), not
+# flat-rate passes — the discount % isn't a structured catalog field (only prose in
+# the tariff markdown states it), so it's parsed from the well-known product name.
+# This is a hardcoded domain assumption, same spirit as the age-range parsing above.
+_BAHNCARD_DISCOUNT_RE = re.compile(r"bahncard\s*(\d+)", re.IGNORECASE)
+
 
 def _parse_dt(value) -> datetime | None:
     if value is None:
@@ -39,7 +63,73 @@ def _parse_dt(value) -> datetime | None:
         return None
 
 
-def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict:
+def _is_eligible(plan: dict, user_age) -> bool:
+    """Whether ``plan`` may be proposed to a customer of ``user_age`` (``None`` if
+    unknown, in which case age-gated plans are not excluded — there's nothing to check
+    them against)."""
+    text = plan.get("subscription_type_other") or ""
+    if _UNVERIFIABLE_ELIGIBILITY_RE.search(text):
+        return False
+    if user_age is None:
+        return True
+    match = _AGE_RANGE_RE.search(text)
+    if match:
+        lo, hi = int(match.group(1)), int(match.group(2))
+        return lo <= user_age <= hi
+    match = _AGE_MIN_RE.search(text)
+    if match:
+        return user_age >= int(match.group(1))
+    return True
+
+
+def _is_ongoing_candidate(plan: dict) -> bool:
+    """Excludes one-time trial cards (e.g. "Probe BahnCard") from the candidate space.
+
+    Their introductory one-time price (``billing_cycle == "one_time"``) isn't a real
+    ongoing annual cost, so it can't be fairly compared to what a year of holding an
+    alternative subscription would actually cost.
+    """
+    return plan.get("billing_cycle") != "one_time"
+
+
+def _plan_annual(plan: dict) -> float:
+    """Annual cost of a catalog plan — prefer an explicit annual price, else 12x
+    the monthly price."""
+    annual = plan.get("annual_cost")
+    if annual is not None:
+        return float(annual)
+    return float(plan.get("monthly_cost") or 0.0) * 12
+
+
+def _pricing_basis(plan: dict) -> tuple[float, str] | None:
+    """How confidently we can price ``plan``'s effect on a leg's cost.
+
+    Returns ``(fraction_of_intrinsic_still_paid, basis_label)``: 0.0 for a true
+    flat-rate pass (``pricing_model == "flat_monthly"`` — the trip costs nothing),
+    or ``1 - discount`` for a recognized percentage-discount card (BahnCard 25/50/100,
+    matched by name). Returns ``None`` for everything else — car-/bike-sharing and
+    e-scooter plans are almost all consumption-based (per-minute/per-km/hybrid) and
+    the catalog has no per-unit rate field, only prose tariff docs, so we cannot
+    honestly simulate what an untried plan like that would have cost on a specific
+    historical leg. Plans this returns ``None`` for are surfaced as "not comparable"
+    rather than silently guessed at.
+    """
+    if (plan.get("pricing_model") or "").lower() == "flat_monthly":
+        return 0.0, "flat-rate pass (fully covered)"
+    match = _BAHNCARD_DISCOUNT_RE.search(plan.get("name") or "")
+    if match:
+        pct = int(match.group(1))
+        if 0 < pct <= 100:
+            return round(1 - pct / 100, 4), f"{pct}% discount card (estimated from plan name)"
+    return None
+
+
+def analyze_portfolio(
+    travel_history: list,
+    current_subscriptions: list,
+    pricing_catalog: list | None = None,
+    user_age: int | None = None,
+) -> dict:
     """
     Parameters
     ----------
@@ -49,12 +139,22 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
     current_subscriptions:
         List of user_subscriptions rows joined to subscription_catalogs
         (production column names).
+    pricing_catalog:
+        List of subscription_catalogs rows (see agent/context.py), used only to
+        evaluate untried alternatives per category in ``category_subscription_analysis``.
+        Optional — omitting it just skips that section (no alternatives to compare).
+    user_age:
+        The user's age, for filtering out age-gated catalog plans they're not
+        eligible for when proposing alternatives (e.g. a Senioren BahnCard for a
+        30-year-old). ``None`` (unknown) doesn't exclude age-gated plans.
 
     Returns a dict with two logical sections:
-    - Full output consumed by the Optimizer and stored in recommendations.
+    - Full output — usage stats, subscription value audit, and the per-category
+      current-vs-alternative-vs-no-subscription comparison — stored in recommendations.
     - ``forecaster_summary`` — a nested dict already shaped to the
       AnalystSummary schema that ``forecast()`` in forecasting.py expects.
     """
+    pricing_catalog = pricing_catalog or []
 
     # ------------------------------------------------------------------ #
     # 1. Data window — capped to the last 12 months                      #
@@ -87,6 +187,12 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
     active_subs_by_id: dict[str, dict] = {}
     active_categories: set[str] = set()
     current_contracts: list[str] = []
+    # Active subs grouped by category — used by category_subscription_analysis to
+    # know which catalog plans are already held (so they're never re-offered as an
+    # "alternative") and their combined annual cost, independent of the >0-cost
+    # filter subscription_coverage below applies (a €0 employer-sponsored sub should
+    # still count as "already held", not show up as a switchable alternative).
+    held_subs_by_category: dict[str, list[dict]] = defaultdict(list)
 
     for sub in current_subscriptions:
         if sub.get("subscription_status") != "active":
@@ -100,6 +206,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         category = (sub.get("subscription_category") or "").lower()
         if category:
             active_categories.add(category)
+            held_subs_by_category[category].append({**sub, "_annual_cost": annual})
         name = sub.get("provider_plan_name") or sub.get("provider_name") or "Subscription"
         cost_label = f"€{monthly:.0f}/mo" if monthly else (f"€{annual:.0f}/yr" if annual else "")
         current_contracts.append(f"{name} ({cost_label})" if cost_label else name)
@@ -114,7 +221,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
 
     # raw_mode_stats: production transport_mode (for uncovered-category checks)
     raw_mode_stats: dict[str, dict] = defaultdict(
-        lambda: {"trips": 0, "intrinsic": 0.0, "distance": 0.0, "co2": 0.0}
+        lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
     )
     # disp_mode_stats: grouped display mode (for mode_breakdown output)
     disp_mode_stats: dict[str, dict] = defaultdict(
@@ -171,6 +278,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
 
         raw_mode_stats[raw_mode]["trips"] += 1
         raw_mode_stats[raw_mode]["intrinsic"] += intrinsic
+        raw_mode_stats[raw_mode]["effective"] += effective
         raw_mode_stats[raw_mode]["distance"] += dist
         raw_mode_stats[raw_mode]["co2"] += co2
 
@@ -270,13 +378,6 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
     # BahnCard (paid a reduced price) both produce a correct                #
     # realized_savings_eur = reference_cost - amount_paid, annualized.      #
     # ------------------------------------------------------------------ #
-    def _uncovered_annual_eur(category: str) -> float:
-        intrinsic = sum(
-            st["intrinsic"] for raw_mode, st in raw_mode_stats.items()
-            if category_covers_mode(category, raw_mode)
-        )
-        return round(intrinsic / months_of_data * 12, 2)
-
     subscription_coverage = []
     for sub_id, sub in active_subs_by_id.items():
         category = (sub.get("subscription_category") or "").lower()
@@ -290,6 +391,7 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         subscription_coverage.append({
             "provider_plan_name": sub.get("provider_plan_name") or sub.get("provider_name", ""),
             "subscription_category": category,
+            "subscription_id": sub.get("subscription_id"),
             "annual_cost_eur": round(annual_cost, 2),
             "covered_value_eur": covered_value,
             "realized_savings_eur": realized_savings,
@@ -299,14 +401,143 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         })
 
     # ------------------------------------------------------------------ #
-    # 8. Uncovered spend (raw fact for the Optimizer, not a rec)          #
+    # 8. Per-category annualized stats.                                    #
+    #                                                                      #
+    # For each of the 4 subscribable categories, the annualized cost/CO2/  #
+    # trip count of every leg whose raw mode falls under it — regardless   #
+    # of whether the user currently holds a subscription there — plus the  #
+    # annualized *effective* (actually paid) cost of those same legs. This  #
+    # is the building block category_subscription_analysis (below) prices   #
+    # every current/alternative/no-subscription comparison from, so those   #
+    # numbers can't drift out of sync with this engine's 12-month window.   #
+    #                                                                      #
+    # Legs whose raw mode isn't covered by *any* category (e.g. long-      #
+    # distance rail, car, taxi, walking) go in uncategorized_annual_stats  #
+    # instead — a fixed cost/CO2 floor no subscription can ever offset.    #
     # ------------------------------------------------------------------ #
+    def _category_annual_stats(mode_filter) -> dict:
+        trips = intrinsic = effective = co2 = distance = 0.0
+        for raw_mode, st in raw_mode_stats.items():
+            if mode_filter(raw_mode):
+                trips += st["trips"]
+                intrinsic += st["intrinsic"]
+                effective += st["effective"]
+                co2 += st["co2"]
+                distance += st["distance"]
+        return {
+            "annual_trips": round(trips / months_of_data * 12, 1),
+            "annual_cost_eur": round(intrinsic / months_of_data * 12, 2),
+            "annual_effective_cost_eur": round(effective / months_of_data * 12, 2),
+            "annual_co2_kg": round(co2 / months_of_data * 12, 2),
+            "annual_distance_km": round(distance / months_of_data * 12, 2),
+        }
+
+    category_annual_stats = {
+        cat: _category_annual_stats(lambda raw_mode, cat=cat: category_covers_mode(cat, raw_mode))
+        for cat in _ALL_CATEGORIES
+    }
+    uncategorized_annual_stats = _category_annual_stats(
+        lambda raw_mode: not any(category_covers_mode(cat, raw_mode) for cat in _ALL_CATEGORIES)
+    )
+
+    # Uncovered spend (raw fact for the memo/UI, not a rec) — a view over
+    # category_annual_stats restricted to categories with no active subscription.
     uncovered_spend_by_category: dict[str, float] = {}
     for cat in _ALL_CATEGORIES:
         if cat not in active_categories:
-            annual_eur = _uncovered_annual_eur(cat)
+            annual_eur = category_annual_stats[cat]["annual_cost_eur"]
             if annual_eur > 0:
                 uncovered_spend_by_category[cat] = annual_eur
+
+    # ------------------------------------------------------------------ #
+    # 8b. Per-category subscription verdict: current vs. cheapest priceable #
+    # alternative vs. no subscription at all (pure pay-as-you-go) — all     #
+    # three grounded in how the user actually traveled this window, never   #
+    # in a hypothetical "holding any plan makes the category free" guess.   #
+    #                                                                      #
+    # actual_annual_cost_eur = what really happened: the annualized cost    #
+    # of legs not attributed to a subscription (still their pay-as-you-go   #
+    # price) plus whatever active subscription(s) are held in this category #
+    # (their fixed annual cost, regardless of the discount they apply per   #
+    # leg — that discount already shows up in the legs' own effective cost).#
+    #                                                                      #
+    # cheapest_alternative only ever includes plans _pricing_basis() can    #
+    # actually price (flat-rate passes, or a recognized %-discount card) —  #
+    # see that function's docstring for exactly why most car-/bike-sharing  #
+    # and e-scooter plans can't be evaluated this way and land in            #
+    # non_comparable_alternatives instead.                                  #
+    # ------------------------------------------------------------------ #
+    category_subscription_analysis = []
+    for cat in sorted(_ALL_CATEGORIES):
+        stats = category_annual_stats[cat]
+        if stats["annual_trips"] <= 0:
+            continue  # nothing to evaluate — no trips in this category this window
+
+        no_subscription_annual_cost = stats["annual_cost_eur"]
+        held_subs = held_subs_by_category.get(cat, [])
+        held_ids = {s.get("subscription_id") for s in held_subs if s.get("subscription_id")}
+        held_annual_cost = sum(s["_annual_cost"] for s in held_subs)
+        actual_annual_cost = round(stats["annual_effective_cost_eur"] + held_annual_cost, 2)
+
+        current_subscriptions_detail = [
+            {
+                "provider_plan_name": cov["provider_plan_name"],
+                "annual_cost_eur": cov["annual_cost_eur"],
+                "annual_net_savings_eur": cov["net_savings_eur"],
+            }
+            for cov in subscription_coverage
+            if cov["subscription_category"] == cat
+        ]
+
+        alternatives = []
+        non_comparable_alternatives = []
+        for plan in pricing_catalog:
+            if (plan.get("category") or "").lower() != cat:
+                continue
+            if plan.get("id") in held_ids:
+                continue
+            if not _is_ongoing_candidate(plan) or not _is_eligible(plan, user_age):
+                continue
+            pricing = _pricing_basis(plan)
+            if pricing is None:
+                non_comparable_alternatives.append(plan.get("name"))
+                continue
+            multiplier, basis = pricing
+            estimated_annual_cost = round(_plan_annual(plan) + no_subscription_annual_cost * multiplier, 2)
+            alternatives.append({
+                "provider_plan_name": plan.get("name"),
+                "estimated_annual_cost_eur": estimated_annual_cost,
+                "pricing_basis": basis,
+            })
+        alternatives.sort(key=lambda a: a["estimated_annual_cost_eur"])
+        cheapest_alternative = alternatives[0] if alternatives else None
+
+        # Pick the genuinely cheapest of the three options — current setup, pure
+        # pay-as-you-go, and the cheapest priceable alternative — rather than only
+        # checking the alternative against the current setup. Without this, a case
+        # where pay-as-you-go actually beats *both* the current subscription and the
+        # best alternative would still recommend switching to that (pricier-than-payg)
+        # alternative instead of dropping subscriptions in this category entirely.
+        best_cost = actual_annual_cost
+        recommendation = "keep_current" if held_subs else "no_subscription_needed"
+
+        if no_subscription_annual_cost < best_cost:
+            best_cost = no_subscription_annual_cost
+            recommendation = "cancel_current_go_pay_as_you_go" if held_subs else "no_subscription_needed"
+
+        if cheapest_alternative and cheapest_alternative["estimated_annual_cost_eur"] < best_cost:
+            recommendation = "switch_to_alternative" if held_subs else "consider_subscribing"
+
+        category_subscription_analysis.append({
+            "category": cat,
+            "annual_trips": stats["annual_trips"],
+            "no_subscription_annual_cost_eur": no_subscription_annual_cost,
+            "actual_annual_cost_eur": actual_annual_cost,
+            "current_subscriptions": current_subscriptions_detail,
+            "cheapest_alternative": cheapest_alternative,
+            "non_comparable_alternatives": non_comparable_alternatives,
+            "recommendation": recommendation,
+        })
 
     # ------------------------------------------------------------------ #
     # 9. Inefficiencies — only when math is unambiguous                   #
@@ -365,6 +596,11 @@ def analyze_portfolio(travel_history: list, current_subscriptions: list) -> dict
         "monthly_mode_breakdown": monthly_mode_breakdown,
         "subscription_coverage": subscription_coverage,
         "uncovered_spend_by_category": uncovered_spend_by_category,
+        # Per-category annualized cost/CO2/trips (building blocks)
+        "category_annual_stats": category_annual_stats,
+        "uncategorized_annual_stats": uncategorized_annual_stats,
+        # Per-category current-vs-alternative-vs-no-subscription verdict
+        "category_subscription_analysis": category_subscription_analysis,
         # Patterns
         "dominant_patterns": dominant_patterns,
         "detected_seasonality": detected_seasonality,

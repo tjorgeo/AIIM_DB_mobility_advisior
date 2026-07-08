@@ -69,13 +69,18 @@ def _load_user_context(user_id: str) -> str:
         f"Active subscriptions: {', '.join(services) or 'none'}",
     ]
     if rec_row and rec_row["optimizer_scenarios"]:
+        # Despite the column name (kept to avoid a schema migration), this stores the
+        # per-category current-vs-alternative-vs-no-subscription analysis, not
+        # portfolio scenarios — see agent/engines/analysis.py's category_subscription_analysis.
         data = json.loads(rec_row["optimizer_scenarios"])
-        best = data.get("best_recommendation_id")
-        scen = next((s for s in data.get("scenarios", []) if s["id"] == best), None)
-        if scen:
+        savings = data.get("total_estimated_savings_eur")
+        if savings:
+            lines.append(f"Latest recommendation: potential additional savings of €{savings}/yr across categories.")
+        for action in data.get("actions_required") or []:
             lines.append(
-                f"Latest recommendation: {scen['label']} — annual cost €{scen['annual_cost']}, "
-                f"saving €{scen['annual_savings']}/yr, changes: {scen['changes']}"
+                f"- {action['category']}: {action['action']} "
+                f"(from {action.get('from') or 'no subscription'} to {action.get('to') or 'pay-as-you-go'}), "
+                f"estimated €{action['estimated_annual_savings_eur']}/yr"
             )
     return "\n".join(lines)
 
