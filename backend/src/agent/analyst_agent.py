@@ -31,9 +31,10 @@ _SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 # Cap how many tariff documents get pulled into one grounding payload, and how much
 # of each — some AGB files run 40k-100k characters of legalese, which would blow up
 # the single call's context (and its latency/cost) far worse than the tool loop did.
-# Per-plan-name cap keeps one plan's fare-class/discount variants (e.g. BahnCard 25
-# has separate docs per class x normal/reduced/senior/probe) from eating the whole
-# budget and starving the other recommended plan(s) of any doc at all.
+# The per-plan-name cap only matters for the fuzzy-search fallback below: one plan's
+# fare-class/discount variants (e.g. BahnCard 25 has separate docs per class x
+# normal/reduced/senior/probe) could otherwise eat the whole budget and starve the
+# other recommended plan(s) of any doc at all.
 _MAX_TARIFF_DOCS = 6
 _MAX_DOCS_PER_PLAN = 2
 _MAX_DOC_CHARS = 4000
@@ -54,12 +55,23 @@ def _extract_json(text: str):
         return None
 
 
-def _relevant_tariff_docs(plan_names: list) -> list:
-    """Deterministically pull the tariff/AGB docs matching the recommended plan names
-    (via the same catalog ``list_tariff_docs``/``read_tariff_doc`` search the ReAct
-    agent used to drive itself), so the single grounded call still cites real tariff
-    conditions instead of losing that context."""
-    seen_ids: set = set()
+def _read_doc_by_markdown_ref(markdown_ref: str):
+    """Read a tariff doc via its catalog ``markdown_ref`` (e.g.
+    ``"ÖPNV_Bahncards/2. Klasse/Bahncard 25/bahncard25_2klasse.md"``). Resolves by the
+    filename stem rather than the full path, since ``read_tariff_doc`` matches on the
+    scanned doc ``id`` (= ``Path(path).stem``) and doing so sidesteps any '/' vs '\\'
+    path-separator mismatch between the catalog's forward-slash paths and a scanned
+    Windows path."""
+    doc_id = Path(markdown_ref).stem
+    text = read_tariff_doc.invoke({"doc_id": doc_id})
+    if text.startswith("No tariff document") or text.startswith("Could not read"):
+        return None
+    return doc_id, text
+
+
+def _fuzzy_tariff_docs(plan_names: list, seen_ids: set) -> list:
+    """Fallback for plans with no ``markdown_ref`` in the catalog: search
+    ``list_tariff_docs`` by plan name instead of resolving an exact doc."""
     docs: list = []
     for name in plan_names:
         if not name or len(docs) >= _MAX_TARIFF_DOCS:
@@ -78,8 +90,6 @@ def _relevant_tariff_docs(plan_names: list) -> list:
                 continue
             seen_ids.add(m["id"])
             text = read_tariff_doc.invoke({"doc_id": m["id"]})
-            if len(text) > _MAX_DOC_CHARS:
-                text = text[:_MAX_DOC_CHARS].rstrip() + "\n…(truncated)"
             docs.append({"id": m["id"], "title": m["title"], "text": text})
             added_for_plan += 1
             if len(docs) >= _MAX_TARIFF_DOCS:
@@ -87,8 +97,49 @@ def _relevant_tariff_docs(plan_names: list) -> list:
     return docs
 
 
+def _relevant_tariff_docs(plan_names: list, catalog_by_name: dict) -> list:
+    """Pull the tariff/AGB docs for the recommended plans, capped and truncated so the
+    grounding payload stays bounded.
+
+    Prefers the catalog's ``markdown_ref`` — an exact 1:1 pointer to the right doc for
+    that specific plan variant (e.g. the right BahnCard 25 age band/class), set by
+    whichever catalog row the optimizer actually picked. Falls back to a fuzzy
+    ``list_tariff_docs`` name search only for plans with no ``markdown_ref`` on file.
+    """
+    seen_ids: set = set()
+    docs: list = []
+    fuzzy_names: list = []
+    for name in plan_names:
+        plan = catalog_by_name.get(name)
+        markdown_ref = plan.get("markdown_ref") if plan else None
+        if not markdown_ref:
+            fuzzy_names.append(name)
+            continue
+        resolved = _read_doc_by_markdown_ref(markdown_ref)
+        if resolved is None:
+            fuzzy_names.append(name)
+            continue
+        doc_id, text = resolved
+        if doc_id in seen_ids:
+            continue
+        seen_ids.add(doc_id)
+        docs.append({"id": doc_id, "title": name, "text": text})
+
+    if len(docs) < _MAX_TARIFF_DOCS and fuzzy_names:
+        docs += _fuzzy_tariff_docs(fuzzy_names, seen_ids)
+
+    for doc in docs:
+        if len(doc["text"]) > _MAX_DOC_CHARS:
+            doc["text"] = doc["text"][:_MAX_DOC_CHARS].rstrip() + "\n…(truncated)"
+    return docs[:_MAX_TARIFF_DOCS]
+
+
 def run_briefing(
-    name: str, analyst_out: dict, forecaster_out: dict, optimizer_out: dict
+    name: str,
+    analyst_out: dict,
+    forecaster_out: dict,
+    optimizer_out: dict,
+    pricing_catalog: list,
 ) -> tuple[str, str]:
     """Write the (english, german) memo from the already-computed engine outputs.
 
@@ -104,11 +155,12 @@ def run_briefing(
             for plan_name in scenario.get("portfolio", [])
         }
     )
+    catalog_by_name = {p["name"]: p for p in pricing_catalog if p.get("name")}
     grounding = {
         "analysis": analyst_out,
         "forecast": forecaster_out,
         "optimizer": optimizer_out,
-        "tariff_documents": _relevant_tariff_docs(plan_names),
+        "tariff_documents": _relevant_tariff_docs(plan_names, catalog_by_name),
     }
 
     response = get_llm().invoke(

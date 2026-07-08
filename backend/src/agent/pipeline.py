@@ -51,7 +51,11 @@ def run_analysis(user_id: str) -> dict:
     )
 
     optimizer_out = optimize(
-        travel_history, subscriptions, ctx["pricing_catalog"], preferences
+        travel_history,
+        subscriptions,
+        ctx["pricing_catalog"],
+        preferences,
+        user_age=ctx["user"].get("age"),
     )
 
     # --- communicate: template memo, upgraded to LLM prose when available ---
@@ -64,8 +68,11 @@ def run_analysis(user_id: str) -> dict:
             from agent.analyst_agent import run_briefing
 
             # Every figure is already computed above; the Analyst makes one grounded
-            # LLM call instead of re-deriving them through a tool loop.
-            memo_en, memo_de = run_briefing(name, analyst_out, forecaster_out, optimizer_out)
+            # LLM call instead of re-deriving them through a tool loop. pricing_catalog
+            # carries markdown_ref so the memo cites the exact tariff doc per plan.
+            memo_en, memo_de = run_briefing(
+                name, analyst_out, forecaster_out, optimizer_out, ctx["pricing_catalog"]
+            )
             communicator_out["memo_english"] = memo_en
             communicator_out["memo_german"] = memo_de
             communicator_out["memo_source"] = "llm"

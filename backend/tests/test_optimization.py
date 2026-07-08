@@ -75,6 +75,79 @@ def test_utilised_pass_is_not_phantom_cancelled(preferences):
             assert s["annual_savings"] <= 0, "cancelling a utilised pass showed phantom savings"
 
 
+def test_age_ineligible_cheaper_plan_is_skipped(travel_history, subscriptions, preferences):
+    """Regression: an age-gated variant the customer doesn't qualify for must not win
+    'cheapest per category' just because it's the cheapest row in the category — e.g. a
+    Senioren BahnCard must not be proposed to a 30-year-old just because it undercuts
+    the regular adult card."""
+    catalog = [
+        {"id": "adult", "name": "BahnCard 25 Adult", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 62.9, "subscription_type_other": "Ages 27-64"},
+        {"id": "senior", "name": "Senioren BahnCard 25", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 40.9, "subscription_type_other": "Senior variant; ages 65+"},
+    ]
+    out = optimize(travel_history, subscriptions, catalog, preferences, user_age=30)
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "Senioren BahnCard 25" not in recommended
+
+
+def test_age_eligible_variant_is_still_a_candidate(travel_history, subscriptions, preferences):
+    """The flip side: a 70-year-old should still get the (cheaper) senior variant, not
+    be forced onto the pricier adult card."""
+    catalog = [
+        {"id": "adult", "name": "BahnCard 25 Adult", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 62.9, "subscription_type_other": "Ages 27-64"},
+        {"id": "senior", "name": "Senioren BahnCard 25", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 40.9, "subscription_type_other": "Senior variant; ages 65+"},
+    ]
+    out = optimize(travel_history, subscriptions, catalog, preferences, user_age=70)
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "BahnCard 25 Adult" not in recommended
+
+
+def test_unverifiable_eligibility_variant_never_recommended(travel_history, subscriptions, preferences):
+    """A disability/reduced-earning-capacity discount card has no data field to confirm
+    eligibility against, so it must never be proposed — regardless of age, and even
+    though it's the cheapest row in its category."""
+    catalog = [
+        {"id": "adult", "name": "BahnCard 25 Adult", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 62.9, "subscription_type_other": "Ages 27-64"},
+        {"id": "erm", "name": "Ermäßigte BahnCard 25", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 40.9,
+         "subscription_type_other": "For people with full reduced earning capacity pension or severe disability >= 70%"},
+    ]
+    out = optimize(travel_history, subscriptions, catalog, preferences, user_age=40)
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "Ermäßigte BahnCard 25" not in recommended
+
+
+def test_one_time_trial_plan_excluded_from_candidates(travel_history, subscriptions, preferences):
+    """Regression: a one-time trial card's introductory price must not be compared as
+    if it were an ongoing annual cost — it would otherwise almost always look like the
+    'cheapest' option in its category despite not being a real annual subscription."""
+    catalog = [
+        {"id": "adult", "name": "BahnCard 25 Adult", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 62.9, "billing_cycle": "yearly"},
+        {"id": "probe", "name": "Probe BahnCard 25", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 19.9, "billing_cycle": "one_time"},
+    ]
+    out = optimize(travel_history, subscriptions, catalog, preferences, user_age=40)
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "Probe BahnCard 25" not in recommended
+
+
+def test_no_user_age_does_not_filter_by_age(travel_history, subscriptions, preferences):
+    """Without a known age (user_age=None, the default), age-gated plans aren't
+    excluded — there's nothing to check them against."""
+    catalog = [
+        {"id": "senior", "name": "Senioren BahnCard 25", "category": "public_transport",
+         "monthly_cost": None, "annual_cost": 40.9, "subscription_type_other": "Senior variant; ages 65+"},
+    ]
+    out = optimize(travel_history, subscriptions, catalog, preferences)
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "Senioren BahnCard 25" in recommended
+
+
 def test_pruning_ignores_dominated_plans(travel_history, subscriptions, pricing_catalog, preferences):
     """A pricier plan in a category that a cheaper plan already fully covers can never
     win, so adding it must not change the optimizer's output (pruning is exact)."""
