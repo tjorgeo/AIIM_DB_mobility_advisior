@@ -14,21 +14,55 @@ numbers are actually comparable (see analysis.py's ``_pricing_basis``).
 
 _CATEGORY_LABEL_EN = {
     "public_transport": "Public transport",
+    "long_distance_rail": "Long-distance rail",
     "bike_sharing": "Bike sharing",
     "car_sharing": "Car sharing",
     "e_scooter": "E-scooter",
 }
 _CATEGORY_LABEL_DE = {
     "public_transport": "Öffentlicher Nahverkehr",
+    "long_distance_rail": "Fernverkehr",
     "bike_sharing": "Bike-Sharing",
     "car_sharing": "Car-Sharing",
     "e_scooter": "E-Scooter",
 }
 
+# "public_transport" (local buses/trams + regional trains — Deutschlandticket
+# territory) and "long_distance_rail" (long-distance trains only — BahnCard
+# territory) are two independent categories that happen to share a DB catalog
+# category (see analysis.py's category_subscription_analysis docstring). Both are
+# genuinely worth holding at once — naming which modes each one's price covers
+# keeps the memo from implying one replaces the other.
+_MODE_LABEL_EN = {
+    "public_transport": "local buses/trams",
+    "regional_train": "regional trains",
+    "long_distance_train": "long-distance trains",
+}
+_MODE_LABEL_DE = {
+    "public_transport": "lokale Busse/Bahnen",
+    "regional_train": "Regionalzüge",
+    "long_distance_train": "Fernzüge",
+}
+_MODES_WORTH_NAMING = {"public_transport", "long_distance_rail"}
+
 
 def _current_names(entry: dict) -> str:
     names = [c["provider_plan_name"] for c in entry["current_subscriptions"] if c.get("provider_plan_name")]
     return " + ".join(names) if names else "no subscription"
+
+
+def _coverage_note(entry: dict, lang: str) -> str:
+    """A short parenthetical naming exactly which trip legs this category's plans
+    apply to. Only shown for public_transport/long_distance_rail (see module comment
+    above) — other categories map 1:1 to a single raw mode, nothing to disambiguate."""
+    if entry["category"] not in _MODES_WORTH_NAMING:
+        return ""
+    applies_to_modes = entry.get("applies_to_modes") or []
+    if not applies_to_modes:
+        return ""
+    labels = _MODE_LABEL_EN if lang == "en" else _MODE_LABEL_DE
+    joined = ", ".join(labels.get(m, m) for m in applies_to_modes)
+    return f" (covers {joined})" if lang == "en" else f" (deckt ab: {joined})"
 
 
 def _category_line(entry: dict, lang: str) -> tuple[str, float]:
@@ -39,41 +73,42 @@ def _category_line(entry: dict, lang: str) -> tuple[str, float]:
     label = (_CATEGORY_LABEL_EN if en else _CATEGORY_LABEL_DE)[entry["category"]]
     rec = entry["recommendation"]
     current = _current_names(entry)
+    note = _coverage_note(entry, lang)
     alt = entry.get("cheapest_alternative")
     alt_name = alt["provider_plan_name"] if alt else None
 
     if rec == "keep_current":
         savings = 0.0
         text = (
-            f"**{label}:** {current} pays off — it's cheaper than paying as you go, so keep it."
+            f"**{label}{note}:** {current} pays off — it's cheaper than paying as you go, so keep it."
             if en else
-            f"**{label}:** {current} lohnt sich — günstiger als Einzelfahrscheine, also behalten."
+            f"**{label}{note}:** {current} lohnt sich — günstiger als Einzelfahrscheine, also behalten."
         )
     elif rec == "switch_to_alternative":
         savings = round(entry["actual_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
         text = (
-            f"**{label}:** switching from {current} to {alt_name} could save an estimated "
-            f"€{savings:.2f}/year ({alt['pricing_basis']})."
+            f"**{label}{note}:** switching from {current} to {alt_name} could save an "
+            f"estimated €{savings:.2f}/year ({alt['pricing_basis']})."
             if en else
-            f"**{label}:** ein Wechsel von {current} zu {alt_name} könnte geschätzt "
+            f"**{label}{note}:** ein Wechsel von {current} zu {alt_name} könnte geschätzt "
             f"€{savings:.2f}/Jahr sparen ({alt['pricing_basis']})."
         )
     elif rec == "cancel_current_go_pay_as_you_go":
         savings = round(entry["actual_annual_cost_eur"] - entry["no_subscription_annual_cost_eur"], 2)
         text = (
-            f"**{label}:** {current} isn't paying off — cancelling and paying as you go would "
+            f"**{label}{note}:** {current} isn't paying off — cancelling and paying as you go would "
             f"save an estimated €{savings:.2f}/year."
             if en else
-            f"**{label}:** {current} lohnt sich nicht — eine Kündigung zugunsten von Einzelfahrscheinen "
-            f"würde geschätzt €{savings:.2f}/Jahr sparen."
+            f"**{label}{note}:** {current} lohnt sich nicht — eine Kündigung zugunsten von "
+            f"Einzelfahrscheinen würde geschätzt €{savings:.2f}/Jahr sparen."
         )
     elif rec == "consider_subscribing":
         savings = round(entry["no_subscription_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
         text = (
-            f"**{label}:** a {alt_name} could save an estimated €{savings:.2f}/year compared to "
+            f"**{label}{note}:** a {alt_name} could save an estimated €{savings:.2f}/year compared to "
             f"paying as you go ({alt['pricing_basis']})."
             if en else
-            f"**{label}:** ein {alt_name} könnte geschätzt €{savings:.2f}/Jahr im Vergleich zu "
+            f"**{label}{note}:** ein {alt_name} könnte geschätzt €{savings:.2f}/Jahr im Vergleich zu "
             f"Einzelfahrscheinen sparen ({alt['pricing_basis']})."
         )
     else:  # no_subscription_needed

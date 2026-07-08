@@ -84,6 +84,37 @@ def test_switch_to_alternative_reports_positive_savings_and_action():
     assert "Deutschlandticket" in memo["memo_english"]
 
 
+def test_category_line_names_which_modes_it_covers():
+    """applies_to_modes is now an entry-level field (one bucket, one scope) — the memo
+    must name which specific modes a category's figures cover, so a long_distance_rail
+    line never reads as if it were about the same trips as public_transport."""
+    analysis = {
+        "category_subscription_analysis": [
+            {
+                "category": "long_distance_rail",
+                "annual_trips": 40.0,
+                "no_subscription_annual_cost_eur": 900.0,
+                "actual_annual_cost_eur": 588.0,
+                "applies_to_modes": ["long_distance_train"],
+                "current_subscriptions": [
+                    {"provider_plan_name": "BahnCard 50, 2. Klasse", "annual_cost_eur": 244.0,
+                     "annual_net_savings_eur": -100.0}
+                ],
+                "cheapest_alternative": {
+                    "provider_plan_name": "BahnCard 25, 2. Klasse",
+                    "estimated_annual_cost_eur": 400.0,
+                    "pricing_basis": "25% discount card (estimated from plan name)",
+                },
+                "non_comparable_alternatives": [],
+                "recommendation": "switch_to_alternative",
+            }
+        ]
+    }
+    memo = template_memos("Test User", analysis)
+    assert "long-distance trains" in memo["memo_english"]
+    assert "Long-distance rail" in memo["memo_english"]
+
+
 def test_keep_current_reports_no_action_and_no_savings():
     analysis = {
         "category_subscription_analysis": [

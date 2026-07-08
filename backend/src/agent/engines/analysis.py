@@ -45,11 +45,59 @@ _AGE_MIN_RE = re.compile(r"ages?\s+(\d+)\s*\+", re.IGNORECASE)
 # reduced earning capacity pension) — excluded outright rather than assumed, since
 # recommending a plan we can't confirm eligibility for is worse than not recommending it.
 _UNVERIFIABLE_ELIGIBILITY_RE = re.compile(r"disability|reduced earning capacity|pension", re.IGNORECASE)
+# Employer-sponsored (e.g. Deutschlandticket Jobticket) and student-benefit plans are
+# gated on a condition no user-profile field can confirm (does this employer actually
+# offer it? is this person enrolled?) — excluded from alternatives for the same reason
+# as the disability/pension cards above. A user who already holds one still shows up
+# under current_subscriptions; this only stops proposing one as a switch/new pickup.
+_UNVERIFIABLE_SUBSCRIPTION_TYPES = {"employer_benefit", "student_benefit"}
 # BahnCard 25/50/100 are percentage-discount cards (25%/50% off regular fares), not
 # flat-rate passes — the discount % isn't a structured catalog field (only prose in
 # the tariff markdown states it), so it's parsed from the well-known product name.
 # This is a hardcoded domain assumption, same spirit as the age-range parsing above.
 _BAHNCARD_DISCOUNT_RE = re.compile(r"bahncard\s*(\d+)", re.IGNORECASE)
+# BahnCard 1st-class variants cost more than their 2nd-class siblings for the *same*
+# discount percentage. Trip legs never record which class a historical fare was
+# actually priced in (ticket_class is unpopulated in production data), so there is no
+# per-leg evidence of whether reference_cost_eur reflects a 1st- or 2nd-class fare —
+# only the class of a currently-held BahnCard (parsed from its own name) can anchor
+# that. Comparing a 1st-class card's price against fares that might be 2nd-class (or
+# vice versa) would silently mix the two, understating or overstating the real
+# saving. See the class-matching filter in _build_category_entry below.
+_TRAVEL_CLASS_RE = re.compile(r"(\d)\.\s*klasse", re.IGNORECASE)
+# BahnCard-family products are split out of the "public_transport" catalog category
+# into their own analysis bucket, scoped to long_distance_train only — see the
+# "8b." comment below for why regional_train stays exclusively Deutschlandticket
+# territory instead of being shared between the two (BahnCard does technically
+# discount regional fares too, but modeling that overlap correctly would require
+# knowing which of two products a user would use for a given regional trip; scoping
+# BahnCard to long-distance only keeps every number unambiguous).
+_LONG_DISTANCE_RAIL_CATEGORY = "long_distance_rail"
+_LONG_DISTANCE_RAIL_MODE = "long_distance_train"
+
+
+def _is_bahncard_plan(name: str) -> bool:
+    return bool(_BAHNCARD_DISCOUNT_RE.search(name or ""))
+
+
+def _travel_class(name: str) -> int | None:
+    """1 or 2 if ``name`` names its travel class (e.g. "BahnCard 50, 1. Klasse"),
+    else None (no class distinction — e.g. Deutschlandticket, or a non-rail plan)."""
+    match = _TRAVEL_CLASS_RE.search(name or "")
+    return int(match.group(1)) if match else None
+
+
+def _display_category(db_category: str, name: str) -> str:
+    """The category a subscription is *reported* under, as opposed to its raw
+    ``subscription_category`` DB value. A BahnCard is stored under the same
+    "public_transport" catalog row as a Deutschlandticket, but it's a long-distance
+    product — reporting it as "public_transport" would read as if it covered local/
+    regional trips, which it doesn't (see the "8b." comment below). Everywhere a
+    subscription's category is surfaced in output (not used as an internal lookup
+    key), it should go through this so a BahnCard is never labeled "public_transport"."""
+    if db_category == "public_transport" and _is_bahncard_plan(name):
+        return _LONG_DISTANCE_RAIL_CATEGORY
+    return db_category
 
 
 def _parse_dt(value) -> datetime | None:
@@ -67,6 +115,8 @@ def _is_eligible(plan: dict, user_age) -> bool:
     """Whether ``plan`` may be proposed to a customer of ``user_age`` (``None`` if
     unknown, in which case age-gated plans are not excluded — there's nothing to check
     them against)."""
+    if (plan.get("subscription_type") or "").lower() in _UNVERIFIABLE_SUBSCRIPTION_TYPES:
+        return False
     text = plan.get("subscription_type_other") or ""
     if _UNVERIFIABLE_ELIGIBILITY_RE.search(text):
         return False
@@ -381,6 +431,7 @@ def analyze_portfolio(
     subscription_coverage = []
     for sub_id, sub in active_subs_by_id.items():
         category = (sub.get("subscription_category") or "").lower()
+        plan_name = sub.get("provider_plan_name") or sub.get("provider_name", "")
         annual_cost = sub["_annual_cost"]
         if annual_cost <= 0:
             continue
@@ -389,8 +440,12 @@ def analyze_portfolio(
         realized_savings = round((st["reference"] - st["paid"]) / months_of_data * 12, 2)
         net_savings = round(realized_savings - annual_cost, 2)
         subscription_coverage.append({
-            "provider_plan_name": sub.get("provider_plan_name") or sub.get("provider_name", ""),
-            "subscription_category": category,
+            "provider_plan_name": plan_name,
+            # Reported category, not the raw DB one — a BahnCard is stored under
+            # "public_transport" in subscription_catalogs but is long-distance-only
+            # (see _display_category above), so it's relabeled here to match how
+            # category_subscription_analysis (below) already splits the two.
+            "subscription_category": _display_category(category, plan_name),
             "subscription_id": sub.get("subscription_id"),
             "annual_cost_eur": round(annual_cost, 2),
             "covered_value_eur": covered_value,
@@ -411,9 +466,10 @@ def analyze_portfolio(
     # every current/alternative/no-subscription comparison from, so those   #
     # numbers can't drift out of sync with this engine's 12-month window.   #
     #                                                                      #
-    # Legs whose raw mode isn't covered by *any* category (e.g. long-      #
-    # distance rail, car, taxi, walking) go in uncategorized_annual_stats  #
-    # instead — a fixed cost/CO2 floor no subscription can ever offset.    #
+    # Legs whose raw mode isn't covered by *any* of these 4 categories       #
+    # (long-distance rail, car, taxi, walking, ...) go into                 #
+    # uncategorized_annual_stats — except long_distance_train, which gets    #
+    # its own analysis bucket below (see "8b."), not lumped in here.        #
     # ------------------------------------------------------------------ #
     def _category_annual_stats(mode_filter) -> dict:
         trips = intrinsic = effective = co2 = distance = 0.0
@@ -437,7 +493,8 @@ def analyze_portfolio(
         for cat in _ALL_CATEGORIES
     }
     uncategorized_annual_stats = _category_annual_stats(
-        lambda raw_mode: not any(category_covers_mode(cat, raw_mode) for cat in _ALL_CATEGORIES)
+        lambda raw_mode: raw_mode != _LONG_DISTANCE_RAIL_MODE
+        and not any(category_covers_mode(cat, raw_mode) for cat in _ALL_CATEGORIES)
     )
 
     # Uncovered spend (raw fact for the memo/UI, not a rec) — a view over
@@ -457,24 +514,49 @@ def analyze_portfolio(
     #                                                                      #
     # actual_annual_cost_eur = what really happened: the annualized cost    #
     # of legs not attributed to a subscription (still their pay-as-you-go   #
-    # price) plus whatever active subscription(s) are held in this category #
+    # price) plus whatever active subscription(s) are held in this bucket   #
     # (their fixed annual cost, regardless of the discount they apply per   #
     # leg — that discount already shows up in the legs' own effective cost).#
     #                                                                      #
-    # cheapest_alternative only ever includes plans _pricing_basis() can    #
-    # actually price (flat-rate passes, or a recognized %-discount card) —  #
-    # see that function's docstring for exactly why most car-/bike-sharing  #
-    # and e-scooter plans can't be evaluated this way and land in            #
-    # non_comparable_alternatives instead.                                  #
+    # "public_transport" is split into TWO independent buckets here, not     #
+    # one: "public_transport" itself (local bus/tram + regional_train — a    #
+    # Deutschlandticket-style flat pass) and "long_distance_rail"             #
+    # (long_distance_train only — a BahnCard's territory). Both share the    #
+    # same underlying DB category (subscription_catalogs has no separate      #
+    # "long_distance_rail" row), so plans and held subscriptions are routed   #
+    # into whichever bucket matches _is_bahncard_plan(name). This keeps the   #
+    # two products independent — Deutschlandticket and a BahnCard are          #
+    # complements a customer can hold *both* of, not mutually-exclusive        #
+    # alternatives — and avoids double-counting regional_train, which stays   #
+    # exclusively Deutschlandticket territory (a BahnCard's regional discount  #
+    # is real, but only matters when nothing else already covers it for free; #
+    # modeling that overlap correctly needs knowing which product covers a     #
+    # given regional trip, so it's scoped out rather than guessed at).         #
+    #                                                                      #
+    # alternatives only ever includes plans _pricing_basis() can actually    #
+    # price (flat-rate passes, or a recognized %-discount card) — see that   #
+    # function's docstring for exactly why most car-/bike-sharing and        #
+    # e-scooter plans can't be evaluated this way and land in                #
+    # non_comparable_alternatives instead. A BahnCard in a different travel   #
+    # class than the one already held (or, with none held, any 1st-class      #
+    # card) lands there too — see _TRAVEL_CLASS_RE above. The full ranked     #
+    # list is exposed (not just the cheapest) so a rejected alternative like  #
+    # "BahnCard 25" is visibly considered-and-rejected, not silently dropped, #
+    # and each entry breaks its estimated_annual_cost_eur down into the       #
+    # plan's own fixed price vs. the pay-as-you-go remainder it doesn't       #
+    # cover, plus the savings that number implies against both pay-as-you-go  #
+    # and whatever's currently held (see the alternatives.append(...) below). #
     # ------------------------------------------------------------------ #
-    category_subscription_analysis = []
-    for cat in sorted(_ALL_CATEGORIES):
-        stats = category_annual_stats[cat]
+    def _build_category_entry(key, db_category, mode_filter, plan_filter):
+        stats = _category_annual_stats(mode_filter)
         if stats["annual_trips"] <= 0:
-            continue  # nothing to evaluate — no trips in this category this window
+            return None  # nothing to evaluate — no trips in this bucket this window
 
         no_subscription_annual_cost = stats["annual_cost_eur"]
-        held_subs = held_subs_by_category.get(cat, [])
+        held_subs = [
+            s for s in held_subs_by_category.get(db_category, [])
+            if plan_filter(s.get("provider_plan_name"))
+        ]
         held_ids = {s.get("subscription_id") for s in held_subs if s.get("subscription_id")}
         held_annual_cost = sum(s["_annual_cost"] for s in held_subs)
         actual_annual_cost = round(stats["annual_effective_cost_eur"] + held_annual_cost, 2)
@@ -486,28 +568,63 @@ def analyze_portfolio(
                 "annual_net_savings_eur": cov["net_savings_eur"],
             }
             for cov in subscription_coverage
-            if cov["subscription_category"] == cat
+            # subscription_coverage's category is the *display* category (see
+            # _display_category) — matches "key" here, not the raw db_category both
+            # buckets share (public_transport and long_distance_rail both come from
+            # the same DB row, so plan_filter alone can't disambiguate against the
+            # raw category).
+            if cov["subscription_category"] == key and plan_filter(cov["provider_plan_name"])
         ]
+
+        # The class a currently-held BahnCard (if any) is already anchored to — see
+        # _TRAVEL_CLASS_RE above for why this is the only reliable class baseline we
+        # have. None if nothing held here, or what's held has no class distinction.
+        held_travel_class = next(
+            (tc for s in held_subs if (tc := _travel_class(s.get("provider_plan_name"))) is not None),
+            None,
+        )
 
         alternatives = []
         non_comparable_alternatives = []
         for plan in pricing_catalog:
-            if (plan.get("category") or "").lower() != cat:
+            if (plan.get("category") or "").lower() != db_category:
+                continue
+            if not plan_filter(plan.get("name")):
                 continue
             if plan.get("id") in held_ids:
                 continue
             if not _is_ongoing_candidate(plan) or not _is_eligible(plan, user_age):
+                continue
+            plan_class = _travel_class(plan.get("name"))
+            # Default to a 2nd-class baseline when nothing is currently held (there's
+            # no per-leg class evidence to fall back on otherwise) — never silently
+            # compare a 1st-class card's price against fares that might be 2nd-class.
+            if plan_class is not None and plan_class != (held_travel_class or 2):
+                non_comparable_alternatives.append(plan.get("name"))
                 continue
             pricing = _pricing_basis(plan)
             if pricing is None:
                 non_comparable_alternatives.append(plan.get("name"))
                 continue
             multiplier, basis = pricing
-            estimated_annual_cost = round(_plan_annual(plan) + no_subscription_annual_cost * multiplier, 2)
+            plan_annual_cost = round(_plan_annual(plan), 2)
+            pay_as_you_go_remainder = round(no_subscription_annual_cost * multiplier, 2)
+            estimated_annual_cost = round(plan_annual_cost + pay_as_you_go_remainder, 2)
             alternatives.append({
                 "provider_plan_name": plan.get("name"),
                 "estimated_annual_cost_eur": estimated_annual_cost,
                 "pricing_basis": basis,
+                # Breakdown of how estimated_annual_cost_eur was derived: the plan's
+                # own fixed price, plus whatever pay-as-you-go cost remains after its
+                # discount (0 for a true flat-rate pass).
+                "plan_annual_cost_eur": plan_annual_cost,
+                "estimated_pay_as_you_go_remainder_eur": pay_as_you_go_remainder,
+                "annual_savings_vs_no_subscription_eur": round(
+                    no_subscription_annual_cost - estimated_annual_cost, 2
+                ),
+                "annual_savings_vs_current_eur": (
+                    round(actual_annual_cost - estimated_annual_cost, 2) if held_subs else None
+                ),
             })
         alternatives.sort(key=lambda a: a["estimated_annual_cost_eur"])
         cheapest_alternative = alternatives[0] if alternatives else None
@@ -517,7 +634,7 @@ def analyze_portfolio(
         # checking the alternative against the current setup. Without this, a case
         # where pay-as-you-go actually beats *both* the current subscription and the
         # best alternative would still recommend switching to that (pricier-than-payg)
-        # alternative instead of dropping subscriptions in this category entirely.
+        # alternative instead of dropping subscriptions in this bucket entirely.
         best_cost = actual_annual_cost
         recommendation = "keep_current" if held_subs else "no_subscription_needed"
 
@@ -528,16 +645,46 @@ def analyze_portfolio(
         if cheapest_alternative and cheapest_alternative["estimated_annual_cost_eur"] < best_cost:
             recommendation = "switch_to_alternative" if held_subs else "consider_subscribing"
 
-        category_subscription_analysis.append({
-            "category": cat,
+        return {
+            "category": key,
             "annual_trips": stats["annual_trips"],
             "no_subscription_annual_cost_eur": no_subscription_annual_cost,
             "actual_annual_cost_eur": actual_annual_cost,
+            "applies_to_modes": sorted(m for m in raw_mode_stats if mode_filter(m)),
             "current_subscriptions": current_subscriptions_detail,
+            # Full ranked comparison (cheapest first) — cheapest_alternative is just
+            # alternatives[0], kept alongside for convenience since most callers only
+            # care about the winner.
+            "alternatives": alternatives,
             "cheapest_alternative": cheapest_alternative,
             "non_comparable_alternatives": non_comparable_alternatives,
             "recommendation": recommendation,
-        })
+        }
+
+    category_subscription_analysis = []
+    for cat in sorted(_ALL_CATEGORIES):
+        if cat == "public_transport":
+            entry = _build_category_entry(
+                "public_transport", "public_transport",
+                lambda m: category_covers_mode("public_transport", m),
+                lambda name: not _is_bahncard_plan(name),
+            )
+            if entry:
+                category_subscription_analysis.append(entry)
+            entry = _build_category_entry(
+                _LONG_DISTANCE_RAIL_CATEGORY, "public_transport",
+                lambda m: m == _LONG_DISTANCE_RAIL_MODE,
+                _is_bahncard_plan,
+            )
+            if entry:
+                category_subscription_analysis.append(entry)
+            continue
+
+        entry = _build_category_entry(
+            cat, cat, lambda m, cat=cat: category_covers_mode(cat, m), lambda name: True
+        )
+        if entry:
+            category_subscription_analysis.append(entry)
 
     # ------------------------------------------------------------------ #
     # 9. Inefficiencies — only when math is unambiguous                   #

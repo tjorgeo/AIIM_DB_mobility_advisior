@@ -292,51 +292,20 @@ def test_analyst(user_id: str):
       - b31247a7-eb90-533a-bff7-1f0d37d28adc  (Petra Sommer — thin data, joined ~6 weeks ago)
       - 99cb2bd6-228b-566d-a250-16290da30521  (Sandra Hoffmann — family, car-sharing + flat pass)
     """
-    from database import get_connection
-    from agent.schema_map import clean_row
+    from agent.context import load_context
     from agent.engines import analyze_portfolio
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
-
-    cursor.execute(
-        """
-        SELECT s.user_subscription_id, s.subscription_status,
-               s.is_primary_mobility_option, s.estimated_usage_frequency,
-               c.subscription_id, c.provider_name, c.provider_plan_name,
-               c.subscription_category, c.monthly_cost_eur, c.annual_cost_eur
-        FROM user_subscriptions s
-        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
-        WHERE s.user_id = ?
-        """,
-        (user_id,),
-    )
-    subscriptions = []
-    for row in cursor.fetchall():
-        sub = clean_row(row)
-        sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
-        subscriptions.append(sub)
-
-    cursor.execute(
-        """
-        SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
-        FROM trip_legs
-        WHERE user_id = ?
-        ORDER BY started_at ASC
-        """,
-        (user_id,),
-    )
-    travel_history = [clean_row(r) for r in cursor.fetchall()]
-    conn.close()
+    ctx = load_context(user_id)
+    if ctx.get("error"):
+        raise HTTPException(status_code=404, detail=ctx["error"])
 
     try:
-        result = analyze_portfolio(travel_history, subscriptions)
+        result = analyze_portfolio(
+            ctx["travel_history"],
+            ctx["subscriptions"],
+            ctx["pricing_catalog"],
+            user_age=ctx["user"].get("age"),
+        )
         return result
     except Exception as e:
         import traceback
