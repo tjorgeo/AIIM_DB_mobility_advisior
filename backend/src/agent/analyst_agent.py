@@ -1,35 +1,43 @@
-"""The Analyst agent — sequences the analyze → forecast → optimize workflow and writes
-the customer-facing consulting memo.
+"""The Analyst — writes the customer-facing consulting memo in a single grounded LLM call.
 
-It is a genuine tool-using ReAct agent: its system prompt (``prompts/analyst_system.md``)
-walks it through calling the deterministic engine tools (``analyze_history`` /
-``forecast_demand`` / ``optimize_portfolio``) and the OKF tariff knowledge base, then
-writing the memo. Because the numbers come verbatim from the engine tools, the LLM never
-computes money — see the "never state a number you did not get from a tool" rule.
+``pipeline.py`` computes ``analyst_out``/``forecaster_out``/``optimizer_out``
+deterministically before this module ever runs. This used to re-derive that same data
+through a multi-hop ReAct tool loop (analyze -> forecast -> optimize -> tariff lookups),
+paying one LLM round-trip per tool call on the synchronous ``/api/analyze`` critical
+path. It now makes exactly one LLM call: every figure is injected into the prompt
+verbatim instead of re-fetched, so the LLM never computes money — see the "never state
+a number you did not get from the provided data" rule in the system prompt. The one
+piece of retrieval this still does itself is pulling the tariff/AGB documents relevant
+to the recommended plans, so the memo can keep citing real conditions without needing
+an agentic search loop to find them.
 
 Used by :mod:`agent.pipeline` for the ``/analyze`` memo. Requires an LLM key (``pipeline``
 guards with ``llm_available()`` and falls back to the deterministic template memo). The
 ``/analyze`` contract numbers are assembled separately from direct engine calls, so a
-misbehaving agent can never corrupt the figures the dashboard reads.
+misbehaving memo call can never corrupt the figures the dashboard reads.
 """
 
 import json
 from pathlib import Path
 
 from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.prebuilt import create_react_agent
 
 from agent.llm import get_llm
-from agent.tools.analysis_tools import make_analysis_tools
-from agent.tools.catalog import lookup_subscriptions
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
 
 _PROMPT_PATH = Path(__file__).with_name("prompts") / "analyst_system.md"
 _SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
-# Bound the tool-use loop so a misbehaving model can't run away (analyze → forecast →
-# optimize + a few tariff lookups fit comfortably below this).
-_RECURSION_LIMIT = 20
+# Cap how many tariff documents get pulled into one grounding payload, and how much
+# of each — some AGB files run 40k-100k characters of legalese, which would blow up
+# the single call's context (and its latency/cost) far worse than the tool loop did.
+# The per-plan-name cap only matters for the fuzzy-search fallback below: one plan's
+# fare-class/discount variants (e.g. BahnCard 25 has separate docs per class x
+# normal/reduced/senior/probe) could otherwise eat the whole budget and starve the
+# other recommended plan(s) of any doc at all.
+_MAX_TARIFF_DOCS = 6
+_MAX_DOCS_PER_PLAN = 2
+_MAX_DOC_CHARS = 4000
 
 
 def _extract_json(text: str):
@@ -47,35 +55,130 @@ def _extract_json(text: str):
         return None
 
 
-def run_briefing(ctx: dict, name: str) -> tuple[str, str]:
-    """Run the analyze→forecast→optimize workflow and write the (english, german) memo.
+def _read_doc_by_markdown_ref(markdown_ref: str):
+    """Read a tariff doc via its catalog ``markdown_ref`` (e.g.
+    ``"ÖPNV_Bahncards/2. Klasse/Bahncard 25/bahncard25_2klasse.md"``). Resolves by the
+    filename stem rather than the full path, since ``read_tariff_doc`` matches on the
+    scanned doc ``id`` (= ``Path(path).stem``) and doing so sidesteps any '/' vs '\\'
+    path-separator mismatch between the catalog's forward-slash paths and a scanned
+    Windows path."""
+    doc_id = Path(markdown_ref).stem
+    text = read_tariff_doc.invoke({"doc_id": doc_id})
+    if text.startswith("No tariff document") or text.startswith("Could not read"):
+        return None
+    return doc_id, text
 
-    ``ctx`` is the loaded context from :func:`agent.context.load_context`; the engine
-    tools are bound to it so every number is engine-computed. Raises on malformed output
+
+def _fuzzy_tariff_docs(plan_names: list, seen_ids: set) -> list:
+    """Fallback for plans with no ``markdown_ref`` in the catalog: search
+    ``list_tariff_docs`` by plan name instead of resolving an exact doc."""
+    docs: list = []
+    for name in plan_names:
+        if not name or len(docs) >= _MAX_TARIFF_DOCS:
+            break
+        try:
+            matches = json.loads(list_tariff_docs.invoke({"query": name}))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(matches, list):
+            continue
+        added_for_plan = 0
+        for m in matches:
+            if added_for_plan >= _MAX_DOCS_PER_PLAN:
+                break
+            if m["id"] in seen_ids:
+                continue
+            seen_ids.add(m["id"])
+            text = read_tariff_doc.invoke({"doc_id": m["id"]})
+            docs.append({"id": m["id"], "title": m["title"], "text": text})
+            added_for_plan += 1
+            if len(docs) >= _MAX_TARIFF_DOCS:
+                break
+    return docs
+
+
+def _relevant_tariff_docs(plan_names: list, catalog_by_name: dict) -> list:
+    """Pull the tariff/AGB docs for the recommended plans, capped and truncated so the
+    grounding payload stays bounded.
+
+    Prefers the catalog's ``markdown_ref`` — an exact 1:1 pointer to the right doc for
+    that specific plan variant (e.g. the right BahnCard 25 age band/class), set by
+    whichever catalog row the optimizer actually picked. Falls back to a fuzzy
+    ``list_tariff_docs`` name search only for plans with no ``markdown_ref`` on file.
+    """
+    seen_ids: set = set()
+    docs: list = []
+    fuzzy_names: list = []
+    for name in plan_names:
+        plan = catalog_by_name.get(name)
+        markdown_ref = plan.get("markdown_ref") if plan else None
+        if not markdown_ref:
+            fuzzy_names.append(name)
+            continue
+        resolved = _read_doc_by_markdown_ref(markdown_ref)
+        if resolved is None:
+            fuzzy_names.append(name)
+            continue
+        doc_id, text = resolved
+        if doc_id in seen_ids:
+            continue
+        seen_ids.add(doc_id)
+        docs.append({"id": doc_id, "title": name, "text": text})
+
+    if len(docs) < _MAX_TARIFF_DOCS and fuzzy_names:
+        docs += _fuzzy_tariff_docs(fuzzy_names, seen_ids)
+
+    for doc in docs:
+        if len(doc["text"]) > _MAX_DOC_CHARS:
+            doc["text"] = doc["text"][:_MAX_DOC_CHARS].rstrip() + "\n…(truncated)"
+    return docs[:_MAX_TARIFF_DOCS]
+
+
+def run_briefing(
+    name: str,
+    analyst_out: dict,
+    forecaster_out: dict,
+    optimizer_out: dict,
+    pricing_catalog: list,
+) -> tuple[str, str]:
+    """Write the (english, german) memo from the already-computed engine outputs.
+
+    Every euro/CO2/trip figure is handed in verbatim from the deterministic pipeline
+    step; the only work done here is fetching the tariff documents relevant to the
+    recommended portfolio and making one grounded LLM call. Raises on malformed output
     so the caller can fall back to the template memo.
     """
-    tools = make_analysis_tools(ctx) + [
-        lookup_subscriptions,
-        list_tariff_docs,
-        read_tariff_doc,
-    ]
-    agent = create_react_agent(get_llm(), tools)
-    result = agent.invoke(
+    plan_names = sorted(
         {
-            "messages": [
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=(
-                        f"The customer is {name}. Run the full workflow with your tools, "
-                        "then write the recommendation memo as strict JSON."
-                    )
-                ),
-            ]
-        },
-        config={"recursion_limit": _RECURSION_LIMIT},
+            plan_name
+            for scenario in optimizer_out.get("scenarios", [])
+            for plan_name in scenario.get("portfolio", [])
+        }
+    )
+    catalog_by_name = {p["name"]: p for p in pricing_catalog if p.get("name")}
+    grounding = {
+        "analysis": analyst_out,
+        "forecast": forecaster_out,
+        "optimizer": optimizer_out,
+        "tariff_documents": _relevant_tariff_docs(plan_names, catalog_by_name),
+    }
+
+    response = get_llm().invoke(
+        [
+            SystemMessage(content=_SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    f"The customer is {name}. Below is the complete grounded data — the "
+                    "analysis, forecast, optimizer results and the tariff documents "
+                    "relevant to the recommended plans, all as JSON. Write the "
+                    "recommendation memo using only these figures.\n\n"
+                    + json.dumps(grounding, ensure_ascii=False, default=str)
+                )
+            ),
+        ]
     )
 
-    data = _extract_json(result["messages"][-1].content)
+    data = _extract_json(response.content)
     if not data or "english" not in data or "german" not in data:
         raise ValueError("Analyst memo response missing english/german keys")
     return data["english"], data["german"]

@@ -18,12 +18,20 @@ class _CompatCursor(RealDictCursor):
     access keeps working, and (b) accepts the legacy SQLite ``?`` placeholder by
     rewriting it to psycopg2's ``%s``.
 
-    Safe for this codebase: the only ``?`` characters live inside SQL query
-    strings here (verified), and query text contains no literal ``%``.
+    The rewrite is a blunt ``str.replace`` and would silently corrupt a query that
+    mixes ``?`` placeholders with a literal ``?`` (e.g. a JSONB ``?`` operator) or a
+    ``%`` (e.g. ``LIKE '%x%'`` — which psycopg2 would then read as a format marker).
+    No query in this codebase does either. To keep that assumption from failing
+    silently, refuse the ambiguous case loudly instead of rewriting it wrong.
     """
 
     def execute(self, query, vars=None):
         if "?" in query:
+            if "%" in query:
+                raise ValueError(
+                    "Query mixes '?' placeholders with a literal '%'; the ?->%s "
+                    "compat rewrite would corrupt it. Use native '%s' placeholders."
+                )
             query = query.replace("?", "%s")
         return super().execute(query, vars)
 

@@ -48,7 +48,7 @@ Everything runs via `docker-compose.yml` at the repo root (start with `./run.sh`
 | Concern | Choice |
 | --- | --- |
 | Web framework | FastAPI + Uvicorn (`src/main.py`) |
-| Agent orchestration | Deterministic pipeline + ReAct agents (`src/agent/pipeline.py`, `src/agent/analyst_agent.py`) |
+| Agent orchestration | Deterministic pipeline (`src/agent/pipeline.py`) + single-call grounded Analyst memo (`src/agent/analyst_agent.py`) + ReAct chat (`src/agent/communicator_agent.py`) |
 | LLM access | LangChain + `langchain-openai`, pointed at University GPT (`src/agent/llm.py`) |
 | Database driver | `psycopg2` (`src/database.py`) |
 | Database | PostgreSQL 16 (Docker service `db`, database `app_db`) |
@@ -64,6 +64,9 @@ Dependencies live in [`requirements.txt`](requirements.txt).
 backend/
 ├── dockerfile            # python:3.12-slim, runs `python src/main.py`
 ├── requirements.txt
+├── requirements-dev.txt  # test-only deps (pytest); baked into the image
+├── pytest.ini            # pythonpath = src ; testpaths = tests
+├── tests/                # fast, deterministic unit + smoke tests (no DB, no LLM) — see §11
 └── src/
     ├── main.py           # FastAPI app + all HTTP endpoints
     ├── orchestrator.py   # Session/persistence layer over the agent pipeline
@@ -73,7 +76,7 @@ backend/
         ├── schema_map.py     # Adapters: production schema  ->  agent vocabulary
         ├── context.py        # load_context(user_id): DB read shaping the agent context
         ├── pipeline.py       # deterministic /analyze driver (numbers guaranteed)
-        ├── analyst_agent.py  # Analyst: analyze->forecast->optimize workflow + RAG, writes memo
+        ├── analyst_agent.py  # Analyst: one grounded LLM call over pipeline's numbers + tariff docs, writes memo
         ├── communicator_agent.py  # customer chat advisor (ReAct + tool use)
         ├── engines/          # Deterministic compute — the authoritative numbers
         │   ├── analysis.py       # audits travel history + subscriptions
@@ -81,7 +84,6 @@ backend/
         │   ├── optimization.py   # simulates subscription portfolios
         │   └── memo.py           # drafts the EN/DE memo (template baseline)
         ├── tools/            # tools the agents call
-        │   ├── analysis_tools.py # analyze_history / forecast_demand / optimize_portfolio
         │   ├── catalog.py        # lookup_subscriptions tool (reads catalog)
         │   └── knowledge.py      # OKF tariff RAG: list_tariff_docs / read_tariff_doc
         └── prompts/          # Analyst + Communicator system prompts
@@ -491,7 +493,63 @@ curl -X POST localhost:8000/api/analyze \
 
 ---
 
-## 11. Notes / known limitations
+## 11. Testing
+
+A fast, **deterministic** pytest suite covers the engines (the authoritative numbers) plus an
+import/route smoke test. It touches **no database and no LLM** — the LLM path in `forecast()`
+is forced off with `monkeypatch.setattr("agent.llm.llm_available", lambda: False)` — so it runs
+in well under a second and needs no API key or running Postgres.
+
+```
+backend/
+├── pytest.ini            # pythonpath = src (so tests import `agent.*`, `main`, …); testpaths = tests
+├── requirements-dev.txt  # pytest — installed into the image by the dockerfile
+└── tests/
+    ├── conftest.py           # shared pure-dict fixtures shaped like load_context()'s output
+    ├── test_schema_map.py    # group_mode / category_covers_mode / preferences_from_onboarding / coercion
+    ├── test_analysis.py      # analyze_portfolio: contract keys, trip windowing, realized savings, reproducibility
+    ├── test_optimization.py  # optimize: A/B scenarios, savings == baseline − cost, empty-catalog resilience
+    ├── test_memo.py          # template_memos: keys, EN/DE non-empty, savings_potential_estimate_eur regression guard
+    ├── test_forecasting.py   # forecast (deterministic path): shape, recent-month weighting, calendar-not-analyzed note
+    └── test_imports.py       # SMOKE NET: each handler's (lazy) imported symbol exists + key routes are registered
+```
+
+**Why the smoke test matters.** `test_imports.py` asserts that every symbol the FastAPI
+handlers import — including lazy in-handler imports like `from agent.communicator_agent import
+run_chat` — still exists, and that the key routes are registered on `app`. This catches the
+class of bug where an endpoint 500s only when actually called (exactly the `/api/chat`
+regression that occurred when `run_chat` was overwritten): a plain `import main` would not
+surface a missing lazy import, but this test does.
+
+### Running the tests
+
+The dev deps are baked into the image (`dockerfile` installs `requirements-dev.txt`), so run
+them in the backend container:
+
+```bash
+docker compose exec backend pytest -q          # all tests
+docker compose exec backend pytest -q tests/test_optimization.py   # one module
+docker compose exec backend pytest --collect-only                  # list what would run
+```
+
+To run locally instead (from `backend/`, with the app deps installed):
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
+```
+
+`pythonpath = src` in `pytest.ini` is what lets the tests do `from agent.engines import …` and
+`import main` without any sys.path juggling. Importing `main` is DB-safe: `ping_db()` runs only
+inside the FastAPI lifespan, not at import time.
+
+**Scope (deliberately).** Engines + import/route smoke only. DB-integration tests for
+`load_context`/persistence (need a Postgres test fixture), FastAPI `TestClient`
+request/response tests, and CI wiring are future work.
+
+---
+
+## 12. Notes / known limitations
 
 * **Connection-per-request.** Each endpoint opens and closes its own psycopg2
   connection (`get_connection` retries while Postgres warms up). Fine for the demo;

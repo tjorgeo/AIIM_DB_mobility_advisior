@@ -7,8 +7,50 @@ and savings figure — the Analyst agent calls it as a tool but never recomputes
 """
 
 import itertools
+import re
 
 from agent.schema_map import category_covers_mode
+
+# BahnCard-style catalog rows encode their eligibility band as free text in
+# subscription_type_other, e.g. "Ages 27-64", "Youth variant; ages 6-26", "Senior
+# variant; ages 65+". Parsed so the optimizer never proposes an age-gated variant the
+# customer doesn't qualify for.
+_AGE_RANGE_RE = re.compile(r"ages?\s+(\d+)\s*-\s*(\d+)", re.IGNORECASE)
+_AGE_MIN_RE = re.compile(r"ages?\s+(\d+)\s*\+", re.IGNORECASE)
+# Discount variants gated on a condition we have no data field to verify (disability /
+# reduced earning capacity pension) — excluded outright rather than assumed, since
+# recommending a plan we can't confirm eligibility for is worse than not recommending it.
+_UNVERIFIABLE_ELIGIBILITY_RE = re.compile(r"disability|reduced earning capacity|pension", re.IGNORECASE)
+
+
+def _is_eligible(plan: dict, user_age) -> bool:
+    """Whether ``plan`` may be proposed to a customer of ``user_age`` (``None`` if
+    unknown, in which case age-gated plans are not excluded — there's nothing to check
+    them against)."""
+    text = plan.get("subscription_type_other") or ""
+    if _UNVERIFIABLE_ELIGIBILITY_RE.search(text):
+        return False
+    if user_age is None:
+        return True
+    match = _AGE_RANGE_RE.search(text)
+    if match:
+        lo, hi = int(match.group(1)), int(match.group(2))
+        return lo <= user_age <= hi
+    match = _AGE_MIN_RE.search(text)
+    if match:
+        return user_age >= int(match.group(1))
+    return True
+
+
+def _is_ongoing_candidate(plan: dict) -> bool:
+    """Excludes one-time trial cards (e.g. "Probe BahnCard") from the candidate space.
+
+    Their introductory one-time price (``billing_cycle == "one_time"``) would otherwise
+    be compared directly against other plans' *annual* cost by :func:`_plan_annual` and
+    almost always look like the cheapest option in its category — even though a 3-month
+    trial isn't a substitute for an ongoing annual subscription.
+    """
+    return plan.get("billing_cycle") != "one_time"
 
 
 def _plan_annual(plan: dict) -> float:
@@ -20,14 +62,26 @@ def _plan_annual(plan: dict) -> float:
     return float(plan.get("monthly_cost") or 0.0) * 12
 
 
-def optimize(travel_history: list, current_subscriptions: list, pricing_catalog: list, preferences: dict) -> dict:
+def optimize(
+    travel_history: list,
+    current_subscriptions: list,
+    pricing_catalog: list,
+    preferences: dict,
+    user_age: int | None = None,
+) -> dict:
     """
     Catalog-driven, flat-rate portfolio optimisation over the production
-    ``subscription_catalogs``. Every catalog plan is a candidate; a plan covers a
-    leg when its ``category`` covers the leg's ``transport_mode``
+    ``subscription_catalogs``. Every *eligible* catalog plan is a candidate; a plan
+    covers a leg when its ``category`` covers the leg's ``transport_mode``
     (``category_covers_mode``). A covered leg costs nothing; an uncovered leg keeps
     its intrinsic ``estimated_cost_eur``. There are no hardcoded product ids — the
     recommendation space is whatever the catalog contains.
+
+    Eligibility (``_is_eligible``/``_is_ongoing_candidate``) excludes plans this
+    customer can't actually hold — age-gated BahnCard variants they don't qualify for,
+    discount variants gated on a condition we can't verify, and one-time trial cards —
+    *before* the "cheapest per category" pruning runs, so those plans can never win a
+    slot just for looking cheap.
 
     Cost model: every total (including the baseline) is produced by the same
     ``simulate()``; the baseline is simply the simulation of the user's *current*
@@ -43,7 +97,11 @@ def optimize(travel_history: list, current_subscriptions: list, pricing_catalog:
             mode = leg.get("transport_mode")
             covered = any(category_covers_mode(p.get("category"), mode) for p in portfolio)
             if not covered:
-                legs_cost += leg.get("estimated_cost_eur") or 0.0
+                # Uncovered legs cost their intrinsic full fare. reference_cost_eur is
+                # the pay-as-you-go price regardless of any subscription (falls back to
+                # estimated_cost_eur), so cancelling a pass restores the real cost of the
+                # legs it covered instead of the €0 they show while the pass applies.
+                legs_cost += leg.get("reference_cost_eur") or leg.get("estimated_cost_eur") or 0.0
         return round(legs_cost + sub_annual, 2), round(sub_annual, 2), round(legs_cost, 2)
 
     def covered_count(portfolio):
@@ -71,11 +129,22 @@ def optimize(travel_history: list, current_subscriptions: list, pricing_catalog:
     baseline_total, baseline_sub, baseline_oop = simulate(current_plans)
 
     # --- candidate portfolios: pick at most one plan per category ---
+    eligible_catalog = [
+        plan
+        for plan in pricing_catalog
+        if _is_ongoing_candidate(plan) and _is_eligible(plan, user_age)
+    ]
     by_category = {}
-    for plan in pricing_catalog:
+    for plan in eligible_catalog:
         by_category.setdefault(plan.get("category"), []).append(plan)
 
-    option_lists = [[None] + plans for plans in by_category.values()]
+    # Coverage is category-based (category_covers_mode), so every plan within a
+    # category covers the exact same legs — only price differs. Only the cheapest
+    # plan per category can ever be in an optimal or balanced portfolio, so pruning
+    # to it is exact and collapses the candidate space from ~product(sizes) to
+    # 2**(#categories).
+    pruned = {cat: min(plans, key=_plan_annual) for cat, plans in by_category.items()}
+    option_lists = [[None, plan] for plan in pruned.values()]
     seen = set()
     candidates = []
     for combo in itertools.product(*option_lists) if option_lists else [()]:

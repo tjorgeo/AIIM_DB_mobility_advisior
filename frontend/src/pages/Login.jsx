@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { ArrowRight, Wallet, Leaf, Route, AlertCircle, X, Check, Ban } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { submitOnboarding } from '../api/client'
@@ -87,6 +87,14 @@ export default function Login() {
   const [activeCategory, setActiveCategory] = useState('')
   const [birthYear, setBirthYear] = useState('') 
   const [submitting, setSubmitting] = useState(false)
+  // Prioritäten als Schieberegler 1–10 (statt Ranking)
+  const [priorityScores, setPriorityScores] = useState({ time: 5, budget: 5, environmental_concerns: 5 })
+  // Optionale Freitextfelder
+  const [weekNote, setWeekNote] = useState('')
+  const [workNote, setWorkNote] = useState('')
+  // Für den „Agent denkt…"-Screen nach dem Registrieren
+  const [pendingUser, setPendingUser] = useState(null)
+  const [procMsgIndex, setProcMsgIndex] = useState(0)
 
   // Persönliche & Kontext-Daten (jeweils überspringbar)
   const [homeCity, setHomeCity] = useState('')
@@ -151,9 +159,9 @@ export default function Login() {
         bike_access: bikeAccess || null,
         preferred_transport_modes: frequentModes,
         avoided_transport_modes: avoidModes,
-        score_money: rankScore('budget'),
-        score_emission: rankScore('environmental_concerns'),
-        score_flexibility: rankScore('time'),
+        score_money: priorityScores.budget * 10,
+        score_emission: priorityScores.environmental_concerns * 10,
+        score_flexibility: priorityScores.time * 10,
         work_arrangement: workArrangement || null,
         work_city: workCity.trim() || null,
         work_postal_code: workPostalCode.trim() || null,
@@ -165,7 +173,7 @@ export default function Login() {
         typical_weekend_pattern: typicalWeekend || null,
         // NOT-NULL-Textfelder: clientseitig aus den Antworten generiert
         travel_statement: `Bevorzugt: ${frequentModes.join(', ') || 'k. A.'}. Meidet: ${avoidModes.join(', ') || 'nichts'}.`,
-        activity_statement: `Werktags: ${typicalWeekday || 'k. A.'}. Wochenende: ${typicalWeekend || 'k. A.'}.`
+        activity_statement: `Werktags: ${typicalWeekday || 'k. A.'}. Wochenende: ${typicalWeekend || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : '') + (workNote.trim() ? ` Notiz Arbeit: ${workNote.trim()}.` : '')
       },
       subscriptions: services.filter(s => s !== 'none').map(sid => ({
         service: sid,
@@ -181,9 +189,11 @@ export default function Login() {
       const res = await submitOnboarding(profile)
       setSubmitting(false)
       if (res.ok) {
-        // Direkt eingeloggt ins Dashboard, wenn das Backend das User-Objekt liefert.
+        // „Agent denkt…"-Screen zeigen, dann (per Effect) einloggen ins Dashboard.
         if (res.data?.user) {
-          setSession(res.data.user)
+          setPendingUser(res.data.user)
+          setProcMsgIndex(0)
+          setCurrentView('processing')
         } else {
           setCurrentView('login')
         }
@@ -195,6 +205,22 @@ export default function Login() {
       setError('Verbindung zum Server fehlgeschlagen.')
     }
   }
+
+  const PROC_MESSAGES = [
+    'Analysiere dein Reiseverhalten…',
+    'Vergleiche Tarife und Abos…',
+    'Berechne Kosten und CO₂…',
+    'Mische deine beste Lösung…'
+  ]
+  // Steuert den „Agent denkt…"-Screen: Texte wechseln + nach kurzer Zeit einloggen.
+  useEffect(() => {
+    if (currentView !== 'processing' || !pendingUser) return
+    const cycle = setInterval(() => {
+      setProcMsgIndex((i) => (i + 1) % PROC_MESSAGES.length)
+    }, 900)
+    const done = setTimeout(() => { setSession(pendingUser) }, 3600)
+    return () => { clearInterval(cycle); clearTimeout(done) }
+  }, [currentView, pendingUser])
 
   const handleServiceToggle = (serviceId) => {
     setServices(prev => 
@@ -305,6 +331,26 @@ export default function Login() {
       {/* =========================================================
           ANSICHT 1: ONBOARDING-START (WILLKOMMEN)
           ========================================================= */}
+      {currentView === 'processing' && (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
+          <style>{`
+            @keyframes mo-float { 0%,100% { transform: translateY(-7px) } 50% { transform: translateY(7px) } }
+            @keyframes mo-pulse { 0%,100% { transform: scale(1); opacity: .5 } 50% { transform: scale(1.18); opacity: .9 } }
+            @keyframes mo-spin { to { transform: rotate(360deg) } }
+            @keyframes mo-fade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+          `}</style>
+          <div style={{ position: 'relative', width: '220px', height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2.25rem' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: `radial-gradient(circle, ${colors.accentCyan}44 0%, transparent 70%)`, animation: 'mo-pulse 2.4s ease-in-out infinite', filter: 'blur(6px)' }} />
+            <div style={{ position: 'absolute', width: '150px', height: '150px', borderRadius: '50%', border: `2px dashed ${colors.accentCyan}55`, animation: 'mo-spin 9s linear infinite' }} />
+            <div style={{ position: 'relative', animation: 'mo-float 3s ease-in-out infinite' }}>
+              <Logo showText={false} />
+            </div>
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: '#ffffff', marginBottom: '0.6rem' }}>Dein Mobility-Agent arbeitet…</h2>
+          <p key={procMsgIndex} style={{ color: colors.accentCyan, fontSize: '1rem', fontWeight: '600', minHeight: '1.4em', animation: 'mo-fade 0.4s ease' }}>{PROC_MESSAGES[procMsgIndex]}</p>
+        </div>
+      )}
+
       {currentView === 'welcome' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1.5rem 2.5rem 1.5rem', textAlign: 'center', boxSizing: 'border-box', height: '100vh', overflow: 'hidden' }}>
           {/* Logo container */}
@@ -505,6 +551,7 @@ export default function Login() {
                 ]
                 const BILL_OPTS = [
                   { id: 'monthly', label: 'Monatlich' },
+                  { id: 'semester', label: 'Pro Semester' },
                   { id: 'yearly', label: 'Jährlich' },
                   { id: 'pay_as_you_go', label: 'Pay-per-Use' },
                   { id: 'one_time', label: 'Einmalig' },
@@ -627,25 +674,35 @@ export default function Login() {
               {/* SCHRITT 6: PRIORITÄTEN */}
               {onboardingStep === 6 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Priorisiere deine Ziele</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>Tippe die Optionen der Reihe nach an, um sie von 1 (am wichtigsten) bis 3 zu ordnen.</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie wichtig sind dir diese Ziele?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left' }}>Stell für jedes Ziel einen Wert von 1 (egal) bis 10 (sehr wichtig) ein.</p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.6rem' }}>
                       {[
                         { id: 'time', label: '⏱️ Zeit sparen (Schnelligkeit)' },
                         { id: 'budget', label: '💰 Geld sparen (Wirtschaftlichkeit)' },
                         { id: 'environmental_concerns', label: '🌱 Umwelt schützen (CO₂)' }
                       ].map((p) => {
-                        const rankIndex = priorities.indexOf(p.id);
-                        const isSelected = rankIndex !== -1;
+                        const val = priorityScores[p.id]
                         return (
-                          <button key={p.id} onClick={() => handlePriorityToggle(p.id)} style={{ ...optionButtonStyle, backgroundColor: isSelected ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span style={{ color: '#ffffff' }}>{p.label}</span><div style={{ width: '24px', height: '24px', borderRadius: '50%', border: `2px solid ${isSelected ? colors.accentPurple : colors.border}`, backgroundColor: isSelected ? colors.accentPurple : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isSelected ? '#000000' : colors.textMuted, fontSize: '0.85rem', fontWeight: '800', flexShrink: 0 }}>{isSelected ? rankIndex + 1 : ''}</div></button>
-                        );
+                          <div key={p.id} style={{ textAlign: 'left' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem' }}>
+                              <span style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '600' }}>{p.label}</span>
+                              <span style={{ minWidth: '28px', textAlign: 'center', color: '#000', backgroundColor: colors.accentPurple, borderRadius: '8px', fontWeight: '800', fontSize: '0.85rem', padding: '0.15rem 0.4rem' }}>{val}</span>
+                            </div>
+                            <input
+                              type="range" min="1" max="10" step="1" value={val}
+                              onChange={(e) => setPriorityScores((prev) => ({ ...prev, [p.id]: Number(e.target.value) }))}
+                              style={{ width: '100%', accentColor: colors.accentPurple, cursor: 'pointer' }}
+                            />
+                          </div>
+                        )
                       })}
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button onClick={() => setOnboardingStep(7)} disabled={priorities.length < 3} style={{ width: '100%', padding: '1.1rem', backgroundColor: priorities.length === 3 ? colors.accentCyan : colors.card, color: priorities.length === 3 ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: priorities.length === 3 ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1rem' }}>{priorities.length === 3 ? 'Weiter' : 'Alle 3 zum Ordnen auswählen'}</button>
+                  <button onClick={() => setOnboardingStep(7)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
                 </div>
               )}
 
@@ -675,6 +732,9 @@ export default function Login() {
                         )
                       })}
                     </div>
+
+                    <label style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas dazu? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
+                    <textarea value={weekNote} onChange={(e) => setWeekNote(e.target.value)} placeholder="z. B. „Mittwochs oft Sport am anderen Ende der Stadt.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentCyan} onBlur={(e) => e.target.style.borderColor = colors.border} />
                   </div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
@@ -684,7 +744,7 @@ export default function Login() {
                         <button onClick={() => setOnboardingStep(8)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       )
                     })()}
-                    <button onClick={() => { setTypicalWeekday(''); setTypicalWeekend(''); setOnboardingStep(8); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setTypicalWeekday(''); setTypicalWeekend(''); setWeekNote(''); setOnboardingStep(8); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
@@ -692,9 +752,16 @@ export default function Login() {
               {/* SCHRITT 8: WOHNORT */}
               {onboardingStep === 8 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div>
+                  <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
                     <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wo wohnst du?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Damit wir Strecken und Empfehlungen für deine Region berechnen können.</p>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Damit wir Strecken und Empfehlungen für deine Region berechnen können.</p>
+
+                    {/* Mid-Onboarding-Hinweis */}
+                    <div style={{ display: 'flex', gap: '0.6rem', backgroundColor: 'rgba(0, 242, 254, 0.06)', border: `1px solid rgba(0, 242, 254, 0.25)`, borderRadius: '14px', padding: '0.8rem 1rem', marginBottom: '1.75rem', textAlign: 'left' }}>
+                      <span style={{ fontSize: '1.1rem', lineHeight: '1.2' }}>💡</span>
+                      <span style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.45' }}>Wir fragen bewusst viel — je besser wir dich verstehen, desto präziser wird deine persönliche Empfehlung am Ende.</span>
+                    </div>
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
                       <div>
                         <label style={inputLabelStyle}>Stadt</label>
@@ -775,6 +842,9 @@ export default function Login() {
                         </div>
                       </div>
                     )}
+
+                    <label style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas zu deinem Arbeitsweg? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
+                    <textarea value={workNote} onChange={(e) => setWorkNote(e.target.value)} placeholder="z. B. „Freitags im anderen Büro, dann mit dem Zug.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
                   </div>
                   <div style={{ flex: 1 }} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
@@ -786,7 +856,7 @@ export default function Login() {
                         <button onClick={() => setOnboardingStep(10)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setWorkArrangement(''); setWorkCity(''); setWorkPostalCode(''); setRemoteDaysPerWeek(null); setOnboardingStep(10); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setWorkArrangement(''); setWorkCity(''); setWorkPostalCode(''); setRemoteDaysPerWeek(null); setWorkNote(''); setOnboardingStep(10); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}

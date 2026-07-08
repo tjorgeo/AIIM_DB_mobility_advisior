@@ -156,7 +156,10 @@ def load_context(user_id: str) -> dict:
     raw_calendar_entries.sort(key=lambda e: e["date"])
 
     # The optimizer's candidate catalog comes straight from subscription_catalogs,
-    # keyed by the real PK.
+    # keyed by the real PK. subscription_type_other/billing_cycle feed the optimizer's
+    # eligibility filter (age-gated BahnCard variants, one-time trial cards); markdown_ref
+    # lets the memo step cite the exact tariff doc for a recommended plan instead of
+    # guessing from its name.
     cursor.execute("SELECT * FROM subscription_catalogs")
     pricing_catalog = []
     for row in cursor.fetchall():
@@ -169,6 +172,10 @@ def load_context(user_id: str) -> dict:
                 "monthly_cost": item.get("monthly_cost_eur") or 0.0,
                 "annual_cost": item.get("annual_cost_eur"),
                 "subscription_type": item.get("subscription_type"),
+                "subscription_type_other": item.get("subscription_type_other"),
+                "billing_cycle": item.get("billing_cycle"),
+                "travel_class": item.get("travel_class"),
+                "markdown_ref": item.get("markdown_ref"),
             }
         )
 

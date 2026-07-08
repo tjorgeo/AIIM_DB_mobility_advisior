@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS users (
     home_country_code CHAR(2) NOT NULL DEFAULT 'DE'
 );
 
+-- Case-insensitive uniqueness on account identifiers. Partial (WHERE ... IS NOT NULL)
+-- so seed personas that carry no email/username (multiple NULLs allowed) still load.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_lower    ON users (lower(email))    WHERE email    IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username_lower ON users (lower(username)) WHERE username IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS user_onboardings (
     onboarding_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
