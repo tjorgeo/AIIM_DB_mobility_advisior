@@ -66,6 +66,28 @@ session:** `run_chat` (the ReAct agent with `lookup_subscriptions` + the tariff 
 grounded via `_load_user_context`) was restored from `f39404b`; endpoint verified HTTP 200
 live. The new `test_imports.py` smoke test now guards against this class of regression.
 
+### ✅ RESOLVED — point 4, Analyst memo off the tool loop; caught an unbounded tariff-doc fetch along the way
+`run_briefing` in [analyst_agent.py](backend/src/agent/analyst_agent.py) used to spin up a
+`create_react_agent` over six tools (`analyze_history`, `forecast_demand`,
+`optimize_portfolio`, `lookup_subscriptions`, `list_tariff_docs`, `read_tariff_doc`) and let
+the model re-derive, across 4-6 sequential LLM round-trips, numbers
+[pipeline.py](backend/src/agent/pipeline.py) had already computed deterministically before
+`run_briefing` was even called. **Fixed this session:** `run_briefing` now takes
+`analyst_out`/`forecaster_out`/`optimizer_out` directly and makes **one** LLM call, with those
+figures — plus the tariff docs relevant to the recommended plans — injected into the prompt as
+grounding data instead of fetched live. The now-unused tool wrappers
+(`agent/tools/analysis_tools.py`) were deleted; `communicator_agent.py`'s chat ReAct loop is
+untouched.
+
+Caught during implementation, before it shipped: the deterministic tariff-doc pre-fetch had no
+per-document or per-plan cap. Some AGB files run 40k-100k characters, and a single recommended
+plan name (e.g. "BahnCard 25") can match 6+ near-duplicate fare-class/discount variants — a naive
+"first N matches" fetch would silently burn the entire doc budget on one plan's variants (and
+blow the prompt up ~10x), starving any other recommended plan of a tariff doc and eroding the
+latency win this change was for. Fixed with a 4000-char per-document cap and a 2-doc-per-plan-name
+cap so the budget spreads across every recommended plan. Verified with a mocked-LLM dry run
+(confirmed docs for multiple recommended plans now appear together) plus the full pytest suite.
+
 ### 🟠 MEDIUM — optimizer cost model uses `estimated_cost_eur` (already-paid), not `reference_cost_eur`
 Surfaced by the empty-catalog test in the new suite. When scoring a candidate portfolio,
 [optimization.py](backend/src/agent/engines/optimization.py) sums each leg's
@@ -126,7 +148,9 @@ corrupt any future query that does. Prefer using `%s` natively, or scope the rep
 ## 4. Prioritised actions
 
 **Done this session:** ✅ Restored `/api/chat` (`run_chat`) · ✅ Added `backend/tests/`
-(37-test pytest suite: engines + reproducibility + route-import smoke test).
+(37-test pytest suite: engines + reproducibility + route-import smoke test) · ✅ Single-call
+grounded memo off the tool loop (point 4), including a per-plan tariff-doc budget fix caught
+during implementation.
 
 **Remaining:**
 1. **Fix optimizer cost model** — score portfolios on `reference_cost_eur` for uncovered legs
@@ -134,5 +158,4 @@ corrupt any future query that does. Prefer using `%s` natively, or scope the rep
 2. **Prune optimizer candidates + compute once** — fixes `/analyze` latency. (MEDIUM)
 3. **Harden `/api/register`** — UNIQUE email/username, validation, parameterise
    `_copy_user_table`, rate limit. (MEDIUM)
-4. **Single-call grounded memo** off the tool loop. (MEDIUM)
-5. **Tighten CORS**; tidy the `?`/`%s` cursor shim. (LOW)
+4. **Tighten CORS**; tidy the `?`/`%s` cursor shim. (LOW)

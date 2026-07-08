@@ -53,9 +53,6 @@ def run_analysis(user_id: str) -> dict:
     optimizer_out = optimize(
         travel_history, subscriptions, ctx["pricing_catalog"], preferences
     )
-    # Hand the already-computed result to the memo step so the Analyst agent's
-    # optimize_portfolio tool reuses it instead of re-running the optimizer.
-    ctx["optimizer_out"] = optimizer_out
 
     # --- communicate: template memo, upgraded to LLM prose when available ---
     name = ctx["user"]["name"]
@@ -66,7 +63,9 @@ def run_analysis(user_id: str) -> dict:
         try:
             from agent.analyst_agent import run_briefing
 
-            memo_en, memo_de = run_briefing(ctx, name)
+            # Every figure is already computed above; the Analyst makes one grounded
+            # LLM call instead of re-deriving them through a tool loop.
+            memo_en, memo_de = run_briefing(name, analyst_out, forecaster_out, optimizer_out)
             communicator_out["memo_english"] = memo_en
             communicator_out["memo_german"] = memo_de
             communicator_out["memo_source"] = "llm"
