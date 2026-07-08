@@ -159,3 +159,38 @@ during implementation.
 3. **Harden `/api/register`** — UNIQUE email/username, validation, parameterise
    `_copy_user_table`, rate limit. (MEDIUM)
 4. **Tighten CORS**; tidy the `?`/`%s` cursor shim. (LOW)
+5. **Analyst memo occasionally merges English/German into one field** — see addendum below. (MEDIUM)
+
+---
+
+## Addendum — 2026-07-08
+
+Items 1–4 above are now done (verified against current code on `backend_bug_fixing`):
+optimizer costs uncovered legs on `reference_cost_eur`
+([optimization.py:104](backend/src/agent/engines/optimization.py)), candidates are pruned to
+the cheapest plan per category before the `itertools.product`
+([optimization.py:146](backend/src/agent/engines/optimization.py)), `/api/register` has a
+rate limiter, parameterised `_copy_user_table` SQL and unique indexes
+([register_endpoint.py](backend/src/register_endpoint.py)), and CORS origins are env-driven
+([main.py:48](backend/src/main.py)).
+
+### 🟠 MEDIUM — Analyst memo occasionally merges English/German into one field
+While live-testing the age-aware tariff-doc retrieval change (commit `be0f295`) via
+`/api/analyze` for the seeded persona Mara Vogel, two consecutive calls showed inconsistent
+bilingual output from `run_briefing` ([analyst_agent.py](backend/src/agent/analyst_agent.py)):
+- Call 1: `memo_english` contained the English memo **and** the German memo concatenated
+  (joined by a markdown `---`); `memo_german` was a duplicate of the English text with no
+  German content at all.
+- Call 2 (same user, same request): `memo_english` and `memo_german` were correctly separated,
+  each in its own language.
+
+`_extract_json`'s JSON parsing (`json.JSONDecoder().raw_decode`) behaved identically both
+times — the LLM itself didn't reliably keep `english`/`german` single-language and confined to
+their own key, per the instruction in
+[analyst_system.md](backend/src/agent/prompts/analyst_system.md). Not a regression from
+`be0f295`: that commit only added the `pricing_catalog` argument and tariff-doc grounding to
+`run_briefing`; the JSON-parsing and prompt path for language separation is untouched.
+- **Fix:** strengthen the prompt (e.g. an explicit "do not mix languages within a single field"
+  rule plus a short example), and/or validate post-parse that `german` isn't identical to
+  `english` and doesn't read as English, re-prompting once or falling back to the deterministic
+  template memo if the check fails.
