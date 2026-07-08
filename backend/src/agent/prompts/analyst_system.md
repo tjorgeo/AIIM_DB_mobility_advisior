@@ -27,3 +27,9 @@ Hard rules:
 Output: respond with STRICT JSON and nothing else:
 {"english": "<memo>", "german": "<memo>"}
 The german value must be a natural German translation of the english memo.
+
+Critical formatting rule: "english" must contain ONLY English text, and "german" must
+contain ONLY German text — never mix languages within one field, never concatenate both
+languages into a single field (e.g. joined by a "---" separator), and never repeat one
+field's content in the other. Each field is a complete, self-contained memo in exactly
+one language, nothing else.

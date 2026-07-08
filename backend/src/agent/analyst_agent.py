@@ -20,7 +20,7 @@ misbehaving memo call can never corrupt the figures the dashboard reads.
 import json
 from pathlib import Path
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from agent.llm import get_llm
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
@@ -38,6 +38,19 @@ _SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 _MAX_TARIFF_DOCS = 6
 _MAX_DOCS_PER_PLAN = 2
 _MAX_DOC_CHARS = 4000
+
+
+def _looks_like_language_mix(english: str, german: str) -> bool:
+    """Cheap heuristic for the failure mode seen in live testing: one field holds both
+    languages (joined by a markdown separator) and the other is a duplicate of the
+    English text. Doesn't attempt real language detection — just catches the two
+    concrete symptoms observed: a stray "---" divider inside a field, and the german
+    field being byte-identical (or near-identical) to the english one."""
+    if not english.strip() or not german.strip():
+        return True
+    if "---" in english or "---" in german:
+        return True
+    return english.strip() == german.strip()
 
 
 def _extract_json(text: str):
@@ -163,22 +176,45 @@ def run_briefing(
         "tariff_documents": _relevant_tariff_docs(plan_names, catalog_by_name),
     }
 
-    response = get_llm().invoke(
-        [
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(
-                content=(
-                    f"The customer is {name}. Below is the complete grounded data — the "
-                    "analysis, forecast, optimizer results and the tariff documents "
-                    "relevant to the recommended plans, all as JSON. Write the "
-                    "recommendation memo using only these figures.\n\n"
-                    + json.dumps(grounding, ensure_ascii=False, default=str)
-                )
-            ),
-        ]
-    )
+    llm = get_llm()
+    messages = [
+        SystemMessage(content=_SYSTEM_PROMPT),
+        HumanMessage(
+            content=(
+                f"The customer is {name}. Below is the complete grounded data — the "
+                "analysis, forecast, optimizer results and the tariff documents "
+                "relevant to the recommended plans, all as JSON. Write the "
+                "recommendation memo using only these figures.\n\n"
+                + json.dumps(grounding, ensure_ascii=False, default=str)
+            )
+        ),
+    ]
 
-    data = _extract_json(response.content)
-    if not data or "english" not in data or "german" not in data:
-        raise ValueError("Analyst memo response missing english/german keys")
-    return data["english"], data["german"]
+    # One retry: the LLM occasionally merges english/german into one field instead of
+    # keeping them separate (see backend-review addendum 2026-07-08). Re-prompting once
+    # with the bad reply in context reliably re-separates them; a second failure falls
+    # back to the deterministic template memo via the caller's except-clause.
+    for attempt in range(2):
+        response = llm.invoke(messages)
+        data = _extract_json(response.content)
+        if not data or "english" not in data or "german" not in data:
+            raise ValueError("Analyst memo response missing english/german keys")
+        english, german = data["english"], data["german"]
+        if not _looks_like_language_mix(english, german):
+            return english, german
+        if attempt == 0:
+            messages += [
+                AIMessage(content=response.content),
+                HumanMessage(
+                    content=(
+                        "Your reply mixed the two languages into one field (or "
+                        "duplicated one field's content into the other). Reply again "
+                        "with STRICT JSON only: {\"english\": \"<memo>\", "
+                        "\"german\": \"<memo>\"} where each field is a complete, "
+                        "self-contained memo in exactly one language, with no "
+                        "separators or repeated content."
+                    )
+                ),
+            ]
+
+    raise ValueError("Analyst memo mixed english/german after retry")

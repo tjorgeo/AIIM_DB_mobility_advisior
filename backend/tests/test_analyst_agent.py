@@ -82,3 +82,51 @@ def test_run_briefing_grounds_multiple_recommended_plans():
     doc_ids = {d["id"] for d in payload["tariff_documents"]}
     assert "deutschlandticket_tarifbestimmungen" in doc_ids
     assert "bahncard25_2klasse" in doc_ids
+
+
+def _minimal_briefing_args():
+    return (
+        "Jane Doe",
+        {"total_trips": 10},
+        {"forecast_horizon_days": 90},
+        {"scenarios": []},
+        [],
+    )
+
+
+def test_run_briefing_retries_once_on_language_mix_then_succeeds():
+    """Reproduces the backend-review bug: first reply concatenates english+german into
+    one field (joined by '---') and duplicates it into the other. A single retry with
+    a clean, separated reply must be accepted without raising."""
+    bad = MagicMock()
+    bad.content = json.dumps(
+        {"english": "English memo\n---\nGerman memo", "german": "English memo\n---\nGerman memo"}
+    )
+    good = MagicMock()
+    good.content = json.dumps({"english": "English memo", "german": "German memo"})
+
+    with patch("agent.analyst_agent.get_llm") as mock_get_llm:
+        mock_get_llm.return_value.invoke.side_effect = [bad, good]
+        english, german = run_briefing(*_minimal_briefing_args())
+
+    assert english == "English memo"
+    assert german == "German memo"
+    assert mock_get_llm.return_value.invoke.call_count == 2
+
+
+def test_run_briefing_raises_after_second_language_mix():
+    """If the retry also mixes languages, run_briefing must raise so the caller
+    (pipeline.py) falls back to the deterministic template memo instead of shipping a
+    broken memo."""
+    bad = MagicMock()
+    bad.content = json.dumps({"english": "Same text", "german": "Same text"})
+
+    with patch("agent.analyst_agent.get_llm") as mock_get_llm:
+        mock_get_llm.return_value.invoke.side_effect = [bad, bad]
+        try:
+            run_briefing(*_minimal_briefing_args())
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    assert mock_get_llm.return_value.invoke.call_count == 2
