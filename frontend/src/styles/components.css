@@ -695,3 +695,64 @@
 @media (max-width: 420px) {
   .stats { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   moveoptimizer — Chat im dunklen Cyan-Look (Override)
+   Überschreibt das rote DB-Default-Styling des Chat-Widgets,
+   damit es zum dunklen Dashboard (#00f2fe-Akzent) passt.
+   ============================================================ */
+
+/* Schwebender Button (FAB) */
+[data-theme="dark"] .chat-launcher { background: #00f2fe; color: #04141a; box-shadow: 0 10px 28px rgba(0, 242, 254, 0.35); }
+[data-theme="dark"] .chat-launcher:hover { background: #57f5ff; }
+[data-theme="dark"] .chat-launcher svg { color: #04141a; }
+[data-theme="dark"] .chat-launcher__badge { background: #16161a; border: 1px solid #00f2fe; }
+[data-theme="dark"] .chat-launcher__count { color: #00f2fe; }
+
+/* Teaser (kleine „Neue Nachricht"-Sprechblase) */
+[data-theme="dark"] .chat-teaser { background: #16161a; border: 1px solid #26262b; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .chat-teaser__title { color: #ffffff; }
+[data-theme="dark"] .chat-teaser__text { color: #9aa3b2; }
+[data-theme="dark"] .chat-teaser__close { color: #747c82; }
+
+/* Panel */
+[data-theme="dark"] .chat-panel { background: #0e0e10; border: 1px solid #26262b; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
+[data-theme="dark"] .chat__header { background: #16161a; border-bottom: 1px solid #26262b; }
+[data-theme="dark"] .chat__avatar { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; }
+[data-theme="dark"] .chat__title { color: #ffffff; }
+[data-theme="dark"] .chat__close { color: #747c82; }
+[data-theme="dark"] .chat__close:hover { background: #1c1c1f; color: #ffffff; }
+
+/* Nachrichten */
+[data-theme="dark"] .chat__body { background: #0e0e10; }
+[data-theme="dark"] .msg--assistant { background: #1c1c1f; border: 1px solid #26262b; color: #e6e9ef; box-shadow: none; }
+[data-theme="dark"] .msg--user { background: #00f2fe; color: #04141a; }
+
+/* Quick-Replies */
+[data-theme="dark"] .quick-chip { background: #16161a; border: 1px solid #26262b; color: #cbd2dd; }
+[data-theme="dark"] .quick-chip:hover { border-color: #00f2fe; color: #00f2fe; background: rgba(0, 242, 254, 0.08); }
+
+/* Eingabe */
+[data-theme="dark"] .chat__composer { background: #16161a; border-top: 1px solid #26262b; }
+[data-theme="dark"] .chat__input { background: #1c1c1f; border: 1px solid #26262b; color: #ffffff; }
+[data-theme="dark"] .chat__input::placeholder { color: #747c82; }
+[data-theme="dark"] .chat__input:focus { border-color: #00f2fe; background: #1c1c1f; box-shadow: 0 0 0 3px rgba(0, 242, 254, 0.18); }
+[data-theme="dark"] .chat__send { background: #00f2fe; color: #04141a; }
+[data-theme="dark"] .chat__send:disabled { background: #26262b; color: #747c82; }
+[data-theme="dark"] .chat__send:not(:disabled):hover { background: #57f5ff; }
+
+/* Advisor-Avatar (falls verwendet) */
+[data-theme="dark"] .advisor__avatar { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; }
+
+/* Mobile: Chat-Panel wirklich bildschirmfüllend (max-height/-width der
+   Basisregel zurücksetzen, sonst wirkt es gedeckelt/verschoben). */
+@media (max-width: 640px) {
+  .chat-panel {
+    inset: 0;
+    top: 0; right: 0; bottom: 0; left: 0;
+    width: 100%; max-width: none;
+    height: 100%; max-height: none;
+    border: none;
+    border-radius: 0;
+  }
+}

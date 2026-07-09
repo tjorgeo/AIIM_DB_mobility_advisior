@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowRight, Wallet, Leaf, Route, AlertCircle, X, Check, Ban } from 'lucide-react'
+import { ArrowRight, Wallet, Leaf, Route, AlertCircle, X, Check, Ban, ChevronLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { submitOnboarding } from '../api/client'
 import Logo from '../components/Logo'
+import { useTheme } from '../context/ThemeContext.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const FEATURES = [
   { icon: Wallet, text: 'Sieh genau, was deine Mobilität kostet – und wo Geld verloren geht.' },
@@ -26,7 +28,6 @@ const TRANSPORT_MODES = [
   { id: 'other', label: '✨ Sonstiges' }
 ]
 
-// Lesbare Labels für die in Schritt 2 wählbaren Abos (für die Abo-Detail-Frage)
 const DEFAULT_TYPE_OPTS = [
   { id: 'subscription', label: 'Abo' },
   { id: 'employer_benefit', label: 'Über Arbeitgeber' },
@@ -54,7 +55,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   job_ticket: {
     label: 'Job-Ticket / Firmenticket',
     typeOptions: [
@@ -68,7 +68,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'employer_benefit',
     defaultBilling: 'monthly'
   },
-
   bahncard25: {
     label: 'BahnCard 25',
     typeOptions: [
@@ -82,7 +81,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultBilling: 'yearly',
     asksTravelClass: true
   },
-
   bahncard50: {
     label: 'BahnCard 50',
     typeOptions: [
@@ -96,7 +94,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultBilling: 'yearly',
     asksTravelClass: true
   },
-
   bahncard100: {
     label: 'BahnCard 100',
     typeOptions: [
@@ -111,7 +108,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultBilling: 'yearly',
     asksTravelClass: true
   },
-
   miles_pass: {
     label: 'Miles / ShareNow Pass',
     typeOptions: [
@@ -125,7 +121,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   sixt_share: {
     label: 'SIXT share Pass',
     typeOptions: [
@@ -139,7 +134,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   teilauto: {
     label: 'teilAuto',
     typeOptions: [
@@ -153,14 +147,12 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'membership',
     defaultBilling: 'monthly'
   },
-
   carsharing_regular: {
     label: 'Carsharing ohne Abo',
     skipDetails: true,
     defaultType: 'pay_as_you_go_account',
     defaultBilling: 'pay_as_you_go'
   },
-
   scooter_flat: {
     label: 'Tier / Voi Pass',
     typeOptions: [
@@ -174,7 +166,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   dott: {
     label: 'Dott Pass',
     typeOptions: [
@@ -188,7 +179,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   swapfiets: {
     label: 'Swapfiets',
     typeOptions: [
@@ -202,7 +192,6 @@ const SUBSCRIPTION_OPTIONS = {
     defaultType: 'subscription',
     defaultBilling: 'monthly'
   },
-
   nextbike: {
     label: 'nextbike',
     typeOptions: [
@@ -287,28 +276,25 @@ export default function Login() {
   const [activeCategory, setActiveCategory] = useState('')
   const [birthYear, setBirthYear] = useState('') 
   const [submitting, setSubmitting] = useState(false)
-  // Prioritäten als Schieberegler 1–10 (statt Ranking)
   const [priorityScores, setPriorityScores] = useState({ time: 5, budget: 5, environmental_concerns: 5 })
-  // Optionale Freitextfelder
   const [weekNote, setWeekNote] = useState('')
   const [workNote, setWorkNote] = useState('')
-  // Für den „Agent denkt…"-Screen nach dem Registrieren
   const [pendingUser, setPendingUser] = useState(null)
   const [procMsgIndex, setProcMsgIndex] = useState(0)
 
-  // Persönliche & Kontext-Daten (jeweils überspringbar)
+  // Persönliche & Kontext-Daten
   const [homeCity, setHomeCity] = useState('')
   const [homePostalCode, setHomePostalCode] = useState('')
-  const [workArrangement, setWorkArrangement] = useState('')      // onsite | hybrid | remote | unemployed
+  const [workArrangement, setWorkArrangement] = useState('')      
   const [workCity, setWorkCity] = useState('')
   const [workPostalCode, setWorkPostalCode] = useState('')
-  const [remoteDaysPerWeek, setRemoteDaysPerWeek] = useState(null) // 0..5 → remote_work_share
+  const [remoteDaysPerWeek, setRemoteDaysPerWeek] = useState(null) 
   const [mobilityBudget, setMobilityBudget] = useState('')
   const [householdSize, setHouseholdSize] = useState('')
   const [incomeBand, setIncomeBand] = useState('')
 
   // Abo-Details, Wochenmuster, Konto-Daten
-  const [subscriptionDetails, setSubscriptionDetails] = useState({}) // { [serviceId]: { type, billing } }
+  const [subscriptionDetails, setSubscriptionDetails] = useState({}) 
   const [typicalWorkPatterns, setTypicalWorkPatterns] = useState([])
   const [typicalLeisurePatterns, setTypicalLeisurePatterns] = useState([])
   const [homeCountry, setHomeCountry] = useState('DE')
@@ -322,13 +308,6 @@ export default function Login() {
     setSubscriptionDetails(prev => ({ ...prev, [sid]: { ...(prev[sid] || {}), [field]: value } }))
   }
 
-  // Priorität (Rang) -> Score 0..100 für die DB
-  const rankScore = (key) => {
-    const i = priorities.indexOf(key)
-    return i === -1 ? 0 : [100, 66, 33][i] ?? 0
-  }
-
-  // Baut das vollständige Profil und schickt es ans Backend (POST /api/register)
   const handleFinish = async () => {
     setError('')
     if (!firstName.trim() || !lastName.trim() || !regEmail.trim() || !regPassword) {
@@ -374,7 +353,6 @@ export default function Login() {
         income_band: incomeBand || null,
         typical_weekday_pattern: workPatternSummary || null,
         typical_weekend_pattern: leisurePatternSummary || null,
-        // NOT-NULL-Textfelder: clientseitig aus den Antworten generiert
         travel_statement: `Bevorzugt: ${frequentModes.join(', ') || 'k. A.'}. Meidet: ${avoidModes.join(', ') || 'nichts'}.`,
         activity_statement: `Arbeit/Verpflichtungen: ${workPatternSummary || 'k. A.'}. Freizeit/Wochenende: ${leisurePatternSummary || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : '') + (workNote.trim() ? ` Notiz Arbeit: ${workNote.trim()}.` : '')
       },
@@ -391,7 +369,6 @@ export default function Login() {
           travel_class: config.asksTravelClass ? (details.travel_class || null) : null
         }
       }),
-      // Passwort getrennt, falls das Backend ein Auth-Konto anlegt
       credentials: { password: regPassword || null }
     }
 
@@ -400,7 +377,6 @@ export default function Login() {
       const res = await submitOnboarding(profile)
       setSubmitting(false)
       if (res.ok) {
-        // „Agent denkt…"-Screen zeigen, dann (per Effect) einloggen ins Dashboard.
         if (res.data?.user) {
           setPendingUser(res.data.user)
           setProcMsgIndex(0)
@@ -417,58 +393,52 @@ export default function Login() {
     }
   }
 
-  const PROC_MESSAGES = [
+  const COMPONENT_MESSAGES = [
     'Analysiere dein Reiseverhalten…',
     'Vergleiche Tarife und Abos…',
     'Berechne Kosten und CO₂…',
     'Mische deine beste Lösung…'
   ]
-  // Steuert den „Agent denkt…"-Screen: Texte wechseln + nach kurzer Zeit einloggen.
+
   useEffect(() => {
     if (currentView !== 'processing' || !pendingUser) return
     const cycle = setInterval(() => {
-      setProcMsgIndex((i) => (i + 1) % PROC_MESSAGES.length)
+      setProcMsgIndex((i) => (i + 1) % COMPONENT_MESSAGES.length)
     }, 900)
     const done = setTimeout(() => { setSession(pendingUser) }, 3600)
     return () => { clearInterval(cycle); clearTimeout(done) }
   }, [currentView, pendingUser])
 
-const handleServiceToggle = (serviceId) => {
-  setServices(prev => {
-    if (serviceId === 'none') {
-      setSubscriptionDetails({})
-      return prev.includes('none') ? [] : ['none']
-    }
-
-    const withoutNone = prev.filter(s => s !== 'none')
-
-    if (withoutNone.includes(serviceId)) {
-      setSubscriptionDetails(prevDetails => {
-        const next = { ...prevDetails }
-        delete next[serviceId]
-        return next
-      })
-
-      return withoutNone.filter(s => s !== serviceId)
-    }
-
-    return [...withoutNone, serviceId]
-  })
-}
+  const handleServiceToggle = (serviceId) => {
+    setServices(prev => {
+      if (serviceId === 'none') {
+        setSubscriptionDetails({})
+        return prev.includes('none') ? [] : ['none']
+      }
+      const withoutNone = prev.filter(s => s !== 'none')
+      if (withoutNone.includes(serviceId)) {
+        setSubscriptionDetails(prevDetails => {
+          const next = { ...prevDetails }
+          delete next[serviceId]
+          return next
+        })
+        return withoutNone.filter(s => s !== serviceId)
+      }
+      return [...withoutNone, serviceId]
+    })
+  }
 
   const handleBikeAccessToggle = (id) => {
-  setBikeAccess(prev => {
-    if (id === 'none') {
-      return prev.includes('none') ? [] : ['none']
-    }
-
-    const withoutNone = prev.filter(item => item !== 'none')
-
-    return withoutNone.includes(id)
-      ? withoutNone.filter(item => item !== id)
-      : [...withoutNone, id]
-  })
-}
+    setBikeAccess(prev => {
+      if (id === 'none') {
+        return prev.includes('none') ? [] : ['none']
+      }
+      const withoutNone = prev.filter(item => item !== 'none')
+      return withoutNone.includes(id)
+        ? withoutNone.filter(item => item !== id)
+        : [...withoutNone, id]
+    })
+  }
 
   const handlePatternToggle = (setter, id) => {
     setter(prev =>
@@ -490,17 +460,6 @@ const handleServiceToggle = (serviceId) => {
     setFrequentModes(prev => prev.filter(m => m !== id))
   }
 
-  const handlePriorityToggle = (key) => {
-    setPriorities(prev => {
-      if (prev.includes(key)) {
-        return prev.filter(p => p !== key);
-      } else if (prev.length < 3) {
-        return [...prev, key];
-      }
-      return prev;
-    });
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
@@ -509,14 +468,41 @@ const handleServiceToggle = (serviceId) => {
     if (!res.ok) setError(res.error)
   }
 
-  const colors = {
+  const { isDark } = useTheme()
+  const colors = isDark ? {
     bg: '#000000',
     card: '#16161a',
     accentCyan: '#00f2fe',
     accentPurple: '#a855f7',
-    accentRed: '#f43f5e',   
     textMuted: '#747C92',
-    border: '#26262b'
+    border: '#26262b',
+    successGreen: '#22c55e',
+    accentRed: '#f43f5e',
+    text: '#ffffff',
+    onAccent: '#000000',
+    inputBg: '#1c1c1f',
+    selectFill: 'rgba(168,85,247,0.10)',
+    cyanFill: 'rgba(0,242,254,0.06)',
+    infoText: '#cbd5e1',
+    errorText: '#ff4a5a',
+    errorBg: 'rgba(255,74,90,0.10)'
+  } : {
+    bg: '#eef1f4',
+    card: '#ffffff',
+    accentCyan: '#0499ad',
+    accentPurple: '#7c3aed',
+    textMuted: '#5b6472',
+    border: '#e3e7eb',
+    successGreen: '#16a34a',
+    accentRed: '#dc2626',
+    text: '#111827',
+    onAccent: '#ffffff',
+    inputBg: '#f2f4f7',
+    selectFill: 'rgba(124,58,237,0.08)',
+    cyanFill: 'rgba(4,153,173,0.08)',
+    infoText: '#3f5a4e',
+    errorText: '#dc2626',
+    errorBg: 'rgba(220,38,38,0.08)'
   }
 
   const optionButtonStyle = {
@@ -525,7 +511,7 @@ const handleServiceToggle = (serviceId) => {
     backgroundColor: colors.card,
     border: `1px solid ${colors.border}`,
     borderRadius: '16px',
-    color: '#ffffff',
+    color: colors.text,
     fontSize: '0.95rem',
     fontWeight: '500',
     textAlign: 'left',
@@ -541,9 +527,9 @@ const handleServiceToggle = (serviceId) => {
     width: '100%',
     padding: '0.9rem 1.1rem',
     borderRadius: '14px',
-    backgroundColor: '#1c1c1f',
+    backgroundColor: colors.inputBg,
     border: `1px solid ${colors.border}`,
-    color: '#fff',
+    color: colors.text,
     fontSize: '1rem',
     fontWeight: '500',
     boxSizing: 'border-box',
@@ -574,10 +560,185 @@ const handleServiceToggle = (serviceId) => {
   }
 
   return (
-    <div style={{ backgroundColor: colors.bg, color: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+    <div style={{ backgroundColor: colors.bg, color: colors.text, fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      <ThemeToggle style={{ position: 'fixed', top: '14px', right: '14px', zIndex: 90 }} />
+      
+      {/* RESPONSIVE CSS DEFINITION MIT SPIEGEL-GRID-SCHUTZ */}
+      <style>{`
+        .welcome-layout {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 3rem 1.5rem;
+          text-align: center;
+          box-sizing: border-box;
+          min-height: 100vh;
+          width: 100%;
+          max-width: 440px;
+          margin: 0 auto;
+        }
+        .onboarding-step-layout {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-start;
+          padding: 1.5rem 1.25rem;
+          min-height: 100vh;
+          box-sizing: border-box;
+        }
+        
+        .welcome-title {
+          font-size: 1.62rem;
+          font-weight: 800;
+          color: ${colors.text};
+          margin-bottom: 1.5rem;
+          letter-spacing: -0.03em;
+          line-height: 1.3;
+        }
+
+        .welcome-card {
+          width: 100%;
+          background-color: transparent;
+          border: none;
+          padding: 0;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          margin-top: 2rem;
+        }
+
+        .onboarding-inner-card {
+          width: 100%;
+          max-width: 480px;
+          background-color: transparent;
+          border: none;
+          padding: 0;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+        }
+        .login-view-container {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          padding: 2rem 1.25rem;
+          min-height: 100vh;
+        }
+        .login-inner-card {
+          width: 100%;
+          max-width: 460px;
+          background-color: transparent;
+          border: none;
+          padding: 0;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .responsive-options-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 0.65rem;
+        }
+        .responsive-form-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 1.1rem;
+        }
+
+        .personas-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+          margin-bottom: 2rem;
+          width: 100%;
+        }
+
+        .premium-back-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          background-color: ${colors.card};
+          border: 1px solid ${colors.border};
+          border-radius: 12px;
+          color: ${colors.textMuted};
+          padding: 0.55rem 0.95rem;
+          font-size: 0.88rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          width: fit-content;
+        }
+        .premium-back-btn:hover {
+          border-color: ${colors.accentCyan};
+          color: ${colors.text};
+        }
+
+        @media (min-width: 768px) {
+          .welcome-layout {
+            max-width: 520px !important;
+            padding: 4rem 2rem !important;
+          }
+          .welcome-title {
+            font-size: 2.6rem !important;
+          }
+          .welcome-card {
+            background-color: ${colors.card} !important;
+            border: 1px solid ${colors.border} !important;
+            border-radius: 28px !important;
+            padding: 2.75rem 2.25rem !important;
+            box-shadow: ${isDark ? '0 30px 60px rgba(0,0,0,0.6)' : '0 18px 50px rgba(17,24,39,0.10)'} !important;
+          }
+
+          .onboarding-step-layout {
+            justify-content: center !important;
+            align-items: center !important;
+          }
+          .onboarding-inner-card {
+            max-width: 640px !important;
+            background-color: ${colors.card} !important;
+            border: 1px solid ${colors.border} !important;
+            border-radius: 28px !important;
+            padding: 3rem !important;
+            box-shadow: ${isDark ? '0 30px 60px rgba(0,0,0,0.6)' : '0 18px 50px rgba(17,24,39,0.10)'} !important;
+          }
+          
+          .login-inner-card {
+            max-width: 540px !important;
+            background-color: ${colors.card} !important;
+            border: 1px solid ${colors.border} !important;
+            border-radius: 28px !important;
+            padding: 3rem !important;
+            box-shadow: ${isDark ? '0 30px 60px rgba(0,0,0,0.6)' : '0 18px 50px rgba(17,24,39,0.10)'} !important;
+          }
+
+          .responsive-options-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 0.75rem !important;
+          }
+          .responsive-form-grid {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 1rem !important;
+          }
+          .full-width-desktop { grid-column: span 2 !important; }
+          
+          .personas-grid {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+            gap: 0.65rem !important;
+          }
+        }
+      `}</style>
       
       {/* =========================================================
-          ANSICHT 1: ONBOARDING-START (WILLKOMMEN)
+          ANSICHT: LOADING ENGINE / PROCESSING STATUS
           ========================================================= */}
       {currentView === 'processing' && (
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
@@ -594,50 +755,48 @@ const handleServiceToggle = (serviceId) => {
               <Logo showText={false} />
             </div>
           </div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: '#ffffff', marginBottom: '0.6rem' }}>Dein Mobility-Agent arbeitet…</h2>
-          <p key={procMsgIndex} style={{ color: colors.accentCyan, fontSize: '1rem', fontWeight: '600', minHeight: '1.4em', animation: 'mo-fade 0.4s ease' }}>{PROC_MESSAGES[procMsgIndex]}</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: colors.text, marginBottom: '0.6rem' }}>Dein Mobility-Agent arbeitet…</h2>
+          <p key={procMsgIndex} style={{ color: colors.accentCyan, fontSize: '1rem', fontWeight: '600', minHeight: '1.4em', animation: 'mo-fade 0.4s ease' }}>{COMPONENT_MESSAGES[procMsgIndex]}</p>
         </div>
       )}
 
+      {/* =========================================================
+          ANSICHT 1: ONBOARDING-START (WILLKOMMEN)
+          ========================================================= */}
       {currentView === 'welcome' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2rem 1.5rem 2.5rem 1.5rem', textAlign: 'center', boxSizing: 'border-box', height: '100vh', overflow: 'hidden' }}>
-          {/* Logo container */}
-          <div style={{ marginTop: '0.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.1rem' }}>
-            <div style={{ transform: 'scale(1.2)', transformOrigin: 'center' }}>
+        <div className="welcome-layout">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '0.1rem' }}>
+            <div style={{ transform: 'scale(1.2)', transformOrigin: 'center', display: 'inline-block' }}>
               <Logo showText={false} />
             </div>
-            <span style={{ fontSize: '1.5rem', fontWeight: '300', color: '#ffffff', letterSpacing: '-0.02em', marginTop: '0.5rem' }}>
+            <span style={{ fontSize: '1.5rem', fontWeight: '300', color: colors.text, letterSpacing: '-0.02em', marginTop: '0.5rem' }}>
               move<span style={{ fontWeight: '700', color: colors.accentCyan }}>optimizer</span>
             </span>
           </div>
 
-          {/* Headline & Features */}
-          <div style={{ width: '100%', maxWidth: '380px', marginTop: '1.5rem' }}>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', color: '#ffffff', marginBottom: '1.5rem', letterSpacing: '-0.04em', lineHeight: '1.2' }}>
+          <div style={{ width: '100%', marginTop: '2.5rem' }}>
+            <h1 className="welcome-title">
               Clever unterwegs,<br /><span style={{ color: colors.accentCyan }}>weniger zahlen.</span>
             </h1>
 
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '0.65rem', textAlign: 'left', maxWidth: '340px' }}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '0.95rem', textAlign: 'left', maxWidth: '360px' }}>
               {FEATURES.map(({ icon: Icon, text }, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'start', gap: '0.75rem', lineHeight: '1.35' }}>
-                  <span style={{ color: colors.accentPurple, display: 'flex', flexShrink: 0, marginTop: '2px' }}><Icon size={16} /></span>
-                  <span style={{ color: '#ffffff', fontSize: '0.85rem' }}>{text}</span>
+                <li key={i} style={{ display: 'flex', alignItems: 'start', gap: '0.75rem', lineHeight: '1.4' }}>
+                  <span style={{ color: colors.accentPurple, display: 'flex', flexShrink: 0, marginTop: '3px' }}><Icon size={16} /></span>
+                  <span style={{ color: colors.text, fontSize: '0.88rem' }}>{text}</span>
                 </li>
               ))}
             </ul>
           </div>
 
-          <div style={{ flex: 1 }} />
-
-          {/* Action Buttons & AGB */}
-          <div style={{ width: '100%', maxWidth: '380px', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
-            <button onClick={() => setCurrentView('onboarding')} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.15)' }}>
+          <div className="welcome-card">
+            <button onClick={() => setCurrentView('onboarding')} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.15)' }}>
               Registrieren
             </button>
-            <button onClick={() => setCurrentView('login')} style={{ width: '100%', padding: '1rem', backgroundColor: 'transparent', color: '#ffffff', borderRadius: '14px', border: `1px solid ${colors.border}`, fontSize: '1.05rem', fontWeight: '600', cursor: 'pointer' }}>
+            <button onClick={() => setCurrentView('login')} style={{ width: '100%', padding: '1.1rem', backgroundColor: 'transparent', color: colors.text, borderRadius: '14px', border: `1px solid ${colors.border}`, fontSize: '1.05rem', fontWeight: '600', cursor: 'pointer' }}>
               Anmelden
             </button>
-            <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem', lineHeight: '1.4' }}>
+            <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.6rem', lineHeight: '1.45' }}>
               Mit dem Fortfahren akzeptierst du unsere:<br />
               <span style={{ color: colors.accentCyan, cursor: 'pointer' }}>Nutzungsbedingungen</span> – <span style={{ color: colors.accentCyan, cursor: 'pointer' }}>Datenschutzrichtlinie</span>
             </p>
@@ -646,195 +805,153 @@ const handleServiceToggle = (serviceId) => {
       )}
 
       {/* =========================================================
-          ANSICHT 2: FRAGE-SCHRITTE (ONBOARDING)
+          ANSICHT 2: FRAGE-SCHRITTE (ONBOARDING KARTEN-WIZARD)
           ========================================================= */}
       {currentView === 'onboarding' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '2rem 1.5rem 2.5rem 1.5rem', height: '100vh', boxSizing: 'border-box', overflow: 'hidden' }}>
-          <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="onboarding-step-layout">
+          <div className="onboarding-inner-card">
             
-            <div 
-              onClick={() => {
-                if (onboardingStep === 1 && hasLicense !== null) {
-                  setHasLicense(null);
-                  setCarAccess('');
-                  setBikeAccess([]);
-                } else if (onboardingStep === 2) {
-                  setHasLicense(null);
-                  setCarAccess('');
-                  setBikeAccess([]);
-                  setOnboardingStep(1);
-                } else if (onboardingStep > 1) {
-                  setOnboardingStep(onboardingStep - 1);
-                } else {
-                  setCurrentView('welcome');
-                }
-              }} 
-              style={{ color: colors.accentCyan, cursor: 'pointer', fontSize: '1rem', fontWeight: '600', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-            >
-              〈 Zurück
+            {/* Visual Progress Bar (Basiert auf 14 Schritten) */}
+            <div style={{ width: '100%', height: '4px', backgroundColor: colors.border, borderRadius: '99px', marginBottom: '1.5rem', overflow: 'hidden' }}>
+              <div style={{ width: `${(onboardingStep / 14) * 100}%`, height: '100%', backgroundColor: colors.accentCyan, borderRadius: '99px', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+            </div>
+
+            {/* Header mit Zurück-Button & Schrittanzeige */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <button 
+                type="button"
+                className="premium-back-btn"
+                onClick={() => {
+                  if (onboardingStep === 1) {
+                    setCurrentView('welcome')
+                  } else if (onboardingStep === 2) {
+                    setHasLicense(null)
+                    setCarAccess('')
+                    setBikeAccess([])
+                    setOnboardingStep(1)
+                  } else {
+                    setOnboardingStep(onboardingStep - 1)
+                  }
+                }} 
+              >
+                <ChevronLeft size={16} /> Zurück
+              </button>
+
+              <span style={{ fontSize: '0.82rem', color: colors.textMuted, fontWeight: '700', letterSpacing: '0.02em' }}>
+                Schritt {onboardingStep} von 14
+              </span>
             </div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
 
-              {/* SCHRITT 1: FÜHRERSCHEIN & AUTO */}
+              {/* SCHRITT 1: FÜHRERSCHEIN (JA/NEIN) */}
               {onboardingStep === 1 && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  {hasLicense === null ? (
-                    <div>
-                      <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Hast du einen Führerschein?</h1>
-                      <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>So können wir filtern, welche Sharing-Fahrzeuge du fahren darfst.</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <button onClick={() => setHasLicense(true)} style={{ ...optionButtonStyle, backgroundColor: hasLicense === true ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: hasLicense === true ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>Ja, habe ich 🚗</span></button>
-                        <button onClick={() => { setHasLicense(false); setCarAccess('none'); }} style={{ ...optionButtonStyle, backgroundColor: hasLicense === false ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: hasLicense === false ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>Nein, habe ich nicht ❌</span></button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Worauf hast du Zugriff?</h1>
-                        <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left' }}>So wissen wir, welche Verkehrsmittel für deine Empfehlungen überhaupt in Frage kommen.</p>
-
-                        {/* AUTO — nur bei Führerschein relevant */}
-                        {hasLicense === true && (
-                          <div style={{ marginBottom: '1.5rem' }}>
-                            <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>🚗 Auto</span>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                              {[
-                                { id: 'own', label: 'Eigenes Auto' },
-                                { id: 'shared', label: 'Carsharing (z. B. Miles, SIXT)' },
-                                { id: 'occasional', label: 'Gelegentlich (z. B. Familienauto)' },
-                                { id: 'none', label: 'Gar kein Auto' }
-                              ].map((carOpt) => {
-                                const isCarSelected = carAccess === carOpt.id;
-                                return (
-                                  <button key={carOpt.id} onClick={() => setCarAccess(carOpt.id)} style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isCarSelected ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: isCarSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{carOpt.label}</span></button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* FAHRRAD — immer relevant */}
-                        <div>
-                          <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>🚲 Fahrrad</span>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                            {[
-                              { id: 'own', label: 'Eigenes Fahrrad' },
-                              { id: 'shared', label: 'Leihrad / Bike-Sharing (z. B. nextbike)' },
-                              { id: 'none', label: 'Kein Fahrrad' }
-                            ].map((bikeOpt) => {
-                              const isBikeSelected = bikeAccess.includes(bikeOpt.id)
-
-                              return (
-                                <button
-                                  key={bikeOpt.id}
-                                  onClick={() => handleBikeAccessToggle(bikeOpt.id)}
-                                  style={{
-                                    ...optionButtonStyle,
-                                    padding: '0.95rem 1.1rem',
-                                    backgroundColor: isBikeSelected ? 'rgba(168, 85, 247, 0.05)' : colors.card,
-                                    border: isBikeSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
-                                  }}
-                                >
-                                  <span>{bikeOpt.label}</span>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      width: '18px',
-                                      height: '18px',
-                                      borderRadius: '6px',
-                                      border: `2px solid ${colors.accentPurple}`,
-                                      backgroundColor: isBikeSelected ? colors.accentPurple : 'transparent',
-                                      flexShrink: 0
-                                    }}
-                                  >
-                                    {isBikeSelected && <Check size={12} strokeWidth={3} color="#000000" />}
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ flex: 1 }} />
-                      {(() => {
-                        const ready = (hasLicense === false || carAccess) && bikeAccess.length > 0;
-                        return (
-                          <button onClick={() => setOnboardingStep(2)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
-                        );
-                      })()}
-                    </div>
-                  )}
+                <div>
+                  <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3', letterSpacing: '-0.02em' }}>Hast du einen Führerschein?</h1>
+                  <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>So können wir filtern, welche Sharing-Fahrzeuge du fahren darfst.</p>
+                  <div className="responsive-options-grid">
+                    <button onClick={() => { setHasLicense(true); setOnboardingStep(2); }} style={{ ...optionButtonStyle }}><span>Ja, habe ich 🚗</span></button>
+                    <button onClick={() => { setHasLicense(false); setCarAccess('none'); setOnboardingStep(2); }} style={{ ...optionButtonStyle }}><span>Nein, habe ich nicht ❌</span></button>
+                  </div>
                 </div>
               )}
 
-              {/* SCHRITT 2: ABOS */}
+              {/* SCHRITT 2: FAHRZEUG- / FAHRRAD-ZUGRIFF */}
               {onboardingStep === 2 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ overflowY: 'auto', paddingRight: '2px' }}>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3', letterSpacing: '-0.02em' }}>Worauf hast du Zugriff?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left' }}>So wissen wir, welche Verkehrsmittel für deine Empfehlungen überhaupt in Frage kommen.</p>
+
+                    {/* AUTO (Wird nur bei Führerschein eingeblendet) */}
+                    {hasLicense === true && (
+                      <div style={{ marginBottom: '1.5rem' }}>
+                        <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>🚗 Auto</span>
+                        <div className="responsive-options-grid">
+                          {[
+                            { id: 'own', label: 'Eigenes Auto' },
+                            { id: 'shared', label: 'Carsharing (z. B. Miles, SIXT)' },
+                            { id: 'occasional', label: 'Gelegentlich (z. B. Familienauto)' },
+                            { id: 'none', label: 'Gar kein Auto' }
+                          ].map((carOpt) => {
+                            const isCarSelected = carAccess === carOpt.id;
+                            return (
+                              <button key={carOpt.id} onClick={() => setCarAccess(carOpt.id)} style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isCarSelected ? colors.selectFill : colors.card, border: isCarSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{carOpt.label}</span></button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* FAHRRAD */}
+                    <div>
+                      <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>🚲 Fahrrad</span>
+                      <div className="responsive-options-grid">
+                        {[
+                          { id: 'own', label: 'Eigenes Fahrrad' },
+                          { id: 'shared', label: 'Leihrad / Bike-Sharing (z. B. nextbike)' },
+                          { id: 'none', label: 'Kein Fahrrad' }
+                        ].map((bikeOpt) => {
+                          const isBikeSelected = bikeAccess.includes(bikeOpt.id)
+                          return (
+                            <button
+                              key={bikeOpt.id}
+                              onClick={() => handleBikeAccessToggle(bikeOpt.id)}
+                              style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isBikeSelected ? colors.selectFill : colors.card, border: isBikeSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}
+                            >
+                              <span>{bikeOpt.label}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentPurple}`, backgroundColor: isBikeSelected ? colors.accentPurple : 'transparent', flexShrink: 0 }}>
+                                {isBikeSelected && <Check size={12} strokeWidth={3} color="#000000" />}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  {(() => {
+                    const ready = (hasLicense === false || carAccess) && bikeAccess.length > 0;
+                    return (
+                      <button onClick={() => setOnboardingStep(3)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1.5rem' }}>Weiter</button>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* SCHRITT 3: ABOS */}
+              {onboardingStep === 3 && (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Welche Mobilitäts-Abos hast du?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Tippe auf eine Kategorie, um deine aktiven Tickets oder Firmenleistungen auszuwählen.</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '52vh', overflowY: 'auto', paddingRight: '2px' }}>
+                    <h1 style={{ fontSize: '1.7rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Welche Mobilitäts-Abos hast du?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Tippe auf eine Kategorie, um deine aktiven Tickets auszuwählen.</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                       {SUBSCRIPTION_CATEGORIES.map((cat) => {
                         if (cat.id === 'car' && hasLicense === false) return null
-
                         const isOpen = activeCategory === cat.id
-
                         return (
                           <div key={cat.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                             <div
                               onClick={() => setActiveCategory(isOpen ? '' : cat.id)}
-                              style={{
-                                ...optionButtonStyle,
-                                padding: '1rem 1.2rem',
-                                backgroundColor: isOpen ? 'rgba(0, 242, 254, 0.02)' : colors.card,
-                                border: isOpen ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`,
-                                fontWeight: '600'
-                              }}
+                              style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: isOpen ? 'rgba(0, 242, 254, 0.02)' : colors.card, border: isOpen ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`, fontWeight: '600' }}
                             >
-                              <span style={{ color: '#ffffff' }}>{cat.title}</span>
-                              <span
-                                style={{
-                                  color: colors.accentCyan,
-                                  fontSize: '0.8rem',
-                                  transition: 'transform 0.2s',
-                                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)'
-                                }}
-                              >
-                                ▶
-                              </span>
+                              <span style={{ color: colors.text }}>{cat.title}</span>
+                              <span style={{ color: colors.accentCyan, fontSize: '0.8rem', transition: 'transform 0.2s', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
                             </div>
 
                             {isOpen && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingLeft: '0.75rem' }}>
+                              <div className="responsive-options-grid" style={{ paddingLeft: '0.75rem' }}>
                                 {cat.services.map((sid) => {
                                   const config = SUBSCRIPTION_OPTIONS[sid]
                                   const isSelected = services.includes(sid)
-
                                   return (
                                     <div
                                       key={sid}
                                       onClick={() => handleServiceToggle(sid)}
-                                      style={{
-                                        ...optionButtonStyle,
-                                        padding: '0.85rem 1rem',
-                                        backgroundColor: isSelected ? 'rgba(168, 85, 247, 0.05)' : '#0d0d10',
-                                        border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
-                                      }}
+                                      style={{ ...optionButtonStyle, padding: '0.85rem 1rem', backgroundColor: isSelected ? colors.selectFill : colors.card, border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}
                                     >
-                                      <span style={{ color: '#ffffff', fontSize: '0.9rem' }}>{config.label}</span>
-                                      <div
-                                        style={{
-                                          width: '16px',
-                                          height: '16px',
-                                          borderRadius: '5px',
-                                          border: `2px solid ${colors.accentPurple}`,
-                                          backgroundColor: isSelected ? colors.accentPurple : 'transparent',
-                                          flexShrink: 0
-                                        }}
-                                      />
+                                      <span style={{ color: colors.text, fontSize: '0.9rem' }}>{config.label}</span>
+                                      <div style={{ width: '16px', height: '16px', borderRadius: '5px', border: `2px solid ${colors.accentPurple}`, backgroundColor: isSelected ? colors.accentPurple : 'transparent', flexShrink: 0 }} />
                                     </div>
                                   )
                                 })}
@@ -846,50 +963,20 @@ const handleServiceToggle = (serviceId) => {
 
                       <div
                         onClick={() => handleServiceToggle('none')}
-                        style={{
-                          ...optionButtonStyle,
-                          padding: '1rem 1.2rem',
-                          backgroundColor: services.includes('none') ? 'rgba(0, 242, 254, 0.05)' : colors.card,
-                          border: services.includes('none') ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
-                        }}
+                        style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: services.includes('none') ? 'rgba(0, 242, 254, 0.05)' : colors.card, border: services.includes('none') ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}
                       >
-                        <span style={{ color: '#ffffff' }}>❌ Keine Abos (Pay-per-Trip)</span>
-                        <div
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            borderRadius: '5px',
-                            border: `2px solid ${colors.accentCyan}`,
-                            backgroundColor: services.includes('none') ? colors.accentCyan : 'transparent',
-                            flexShrink: 0
-                          }}
-                        />
+                        <span style={{ color: colors.text }}>❌ Keine Abos (Pay-per-Trip)</span>
+                        <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: `2px solid ${colors.accentCyan}`, backgroundColor: services.includes('none') ? colors.accentCyan : 'transparent', flexShrink: 0 }} />
                       </div>
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button
-                    onClick={() => setOnboardingStep(3)}
-                    style={{
-                      width: '100%',
-                      padding: '1rem',
-                      backgroundColor: colors.accentCyan,
-                      color: '#000000',
-                      borderRadius: '14px',
-                      border: 'none',
-                      fontSize: '1.1rem',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      marginTop: '1rem'
-                    }}
-                  >
-                    Weiter
-                  </button>
+                  <button onClick={() => setOnboardingStep(4)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1.5rem' }}>Weiter</button>
                 </div>
               )}
 
-              {/* SCHRITT 3: ABO-DETAILS */}
-              {onboardingStep === 3 && (() => {
+              {/* SCHRITT 4: ABO-DETAILS */}
+              {onboardingStep === 4 && (() => {
                 const selected = services.filter(s => s !== 'none')
                 const selectedWithDetails = selected.filter(sid => !SUBSCRIPTION_OPTIONS[sid]?.skipDetails)
 
@@ -897,55 +984,22 @@ const handleServiceToggle = (serviceId) => {
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                       <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>
-                          Keine Abo-Details nötig
-                        </h1>
-                        <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>
-                          Für deine Auswahl brauchen wir keine weiteren Detailangaben.
-                        </p>
+                        <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Keine Abo-Details nötig</h1>
+                        <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left' }}>Für deine Auswahl brauchen wir keine weiteren Detailangaben.</p>
                       </div>
                       <div style={{ flex: 1 }} />
-                      <button
-                        onClick={() => setOnboardingStep(4)}
-                        style={{
-                          width: '100%',
-                          padding: '1.1rem',
-                          backgroundColor: colors.accentCyan,
-                          color: '#000000',
-                          borderRadius: '14px',
-                          border: 'none',
-                          fontSize: '1.1rem',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          marginTop: '1rem'
-                        }}
-                      >
-                        Weiter
-                      </button>
+                      <button onClick={() => setOnboardingStep(5)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
                     </div>
                   )
                 }
 
                 const chip = (active) => ({
-                  padding: '0.5rem 0.85rem',
-                  borderRadius: '999px',
-                  fontSize: '0.82rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  backgroundColor: active ? colors.accentPurple : colors.card,
-                  color: active ? '#000000' : '#ffffff',
-                  border: active ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`,
-                  transition: 'all 0.15s'
+                  padding: '0.5rem 0.85rem', borderRadius: '999px', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer',
+                  backgroundColor: active ? colors.accentPurple : colors.card, color: active ? colors.onAccent : colors.text,
+                  border: active ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, transition: 'all 0.15s'
                 })
 
-                const miniLabel = {
-                  color: colors.textMuted,
-                  fontSize: '0.72rem',
-                  fontWeight: '500',
-                  display: 'block',
-                  margin: '0.65rem 0 0.4rem'
-                }
+                const miniLabel = { color: colors.textMuted, fontSize: '0.72rem', fontWeight: '500', display: 'block', margin: '0.65rem 0 0.4rem' }
 
                 const detailsReady = selectedWithDetails.every((sid) => {
                   const config = SUBSCRIPTION_OPTIONS[sid]
@@ -955,50 +1009,26 @@ const handleServiceToggle = (serviceId) => {
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                      <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>
-                        Erzähl uns mehr zu deinen Abos
-                      </h1>
-                      <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>
-                        So ordnen wir Kosten, Tarifart und BahnCard-Klasse korrekt zu.
-                      </p>
+                    <div style={{ overflowY: 'auto', paddingRight: '2px' }}>
+                      <h1 style={{ fontSize: '1.7rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Erzähl uns mehr zu deinen Abos</h1>
+                      <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>So ordnen wir Kosten, Tarifart und BahnCard-Klasse korrekt zu.</p>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                         {selectedWithDetails.map((sid) => {
                           const config = SUBSCRIPTION_OPTIONS[sid]
                           const d = subscriptionDetails[sid] || {}
-
                           const typeOptions = config.typeOptions || DEFAULT_TYPE_OPTS
                           const billingOptions = config.billingOptions || DEFAULT_BILL_OPTS
-
                           const selectedType = d.type || config.defaultType || typeOptions[0]?.id
                           const selectedBilling = d.billing || config.defaultBilling || billingOptions[0]?.id
 
                           return (
-                            <div
-                              key={sid}
-                              style={{
-                                backgroundColor: '#0d0d10',
-                                border: `1px solid ${colors.border}`,
-                                borderRadius: '16px',
-                                padding: '1rem 1.1rem',
-                                textAlign: 'left'
-                              }}
-                            >
-                              <span style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '700', display: 'block' }}>
-                                {config.label}
-                              </span>
-
+                            <div key={sid} style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '16px', padding: '1rem 1.1rem', textAlign: 'left' }}>
+                              <span style={{ color: colors.text, fontSize: '0.95rem', fontWeight: '700', display: 'block' }}>{config.label}</span>
                               <span style={miniLabel}>Art</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                                 {typeOptions.map((o) => (
-                                  <span
-                                    key={o.id}
-                                    onClick={() => setSubDetail(sid, 'type', o.id)}
-                                    style={chip(selectedType === o.id)}
-                                  >
-                                    {o.label}
-                                  </span>
+                                  <span key={o.id} onClick={() => setSubDetail(sid, 'type', o.id)} style={chip(selectedType === o.id)}>{o.label}</span>
                                 ))}
                               </div>
 
@@ -1006,28 +1036,12 @@ const handleServiceToggle = (serviceId) => {
                                 <>
                                   <span style={miniLabel}>Klasse</span>
                                   <div style={{ display: 'flex', gap: '0.45rem' }}>
-                                    {[
-                                      { id: 1, label: '1. Klasse' },
-                                      { id: 2, label: '2. Klasse' }
-                                    ].map((travelClassOpt) => {
+                                    {[{ id: 1, label: '1. Klasse' }, { id: 2, label: '2. Klasse' }].map((travelClassOpt) => {
                                       const isSelected = d.travel_class === travelClassOpt.id
-
                                       return (
                                         <button
-                                          key={travelClassOpt.id}
-                                          type="button"
-                                          onClick={() => setSubDetail(sid, 'travel_class', travelClassOpt.id)}
-                                          style={{
-                                            flex: 1,
-                                            padding: '0.7rem 0.8rem',
-                                            borderRadius: '12px',
-                                            fontSize: '0.82rem',
-                                            fontWeight: '700',
-                                            cursor: 'pointer',
-                                            backgroundColor: isSelected ? colors.accentPurple : colors.card,
-                                            color: isSelected ? '#000000' : '#ffffff',
-                                            border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`
-                                          }}
+                                          key={travelClassOpt.id} type="button" onClick={() => setSubDetail(sid, 'travel_class', travelClassOpt.id)}
+                                          style={{ flex: 1, padding: '0.7rem 0.8rem', borderRadius: '12px', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', backgroundColor: isSelected ? colors.accentPurple : colors.card, color: isSelected ? colors.onAccent : colors.text, border: isSelected ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}
                                         >
                                           {travelClassOpt.label}
                                         </button>
@@ -1040,13 +1054,7 @@ const handleServiceToggle = (serviceId) => {
                               <span style={miniLabel}>Abrechnung</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                                 {billingOptions.map((o) => (
-                                  <span
-                                    key={o.id}
-                                    onClick={() => setSubDetail(sid, 'billing', o.id)}
-                                    style={chip(selectedBilling === o.id)}
-                                  >
-                                    {o.label}
-                                  </span>
+                                  <span key={o.id} onClick={() => setSubDetail(sid, 'billing', o.id)} style={chip(selectedBilling === o.id)}>{o.label}</span>
                                 ))}
                               </div>
                             </div>
@@ -1054,56 +1062,28 @@ const handleServiceToggle = (serviceId) => {
                         })}
                       </div>
                     </div>
-
                     <div style={{ flex: 1 }} />
-
-                    <button
-                      onClick={() => setOnboardingStep(4)}
-                      disabled={!detailsReady}
-                      style={{
-                        width: '100%',
-                        padding: '1.1rem',
-                        backgroundColor: detailsReady ? colors.accentCyan : colors.card,
-                        color: detailsReady ? '#000000' : colors.textMuted,
-                        borderRadius: '14px',
-                        border: 'none',
-                        fontSize: '1.1rem',
-                        fontWeight: '700',
-                        cursor: detailsReady ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.2s',
-                        marginTop: '1rem'
-                      }}
-                    >
-                      Weiter
-                    </button>
+                    <button onClick={() => setOnboardingStep(5)} disabled={!detailsReady} style={{ width: '100%', padding: '1.1rem', backgroundColor: detailsReady ? colors.accentCyan : colors.card, color: detailsReady ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: detailsReady ? 'pointer' : 'not-allowed', transition: 'all 0.2s', marginTop: '1.5rem' }}>Weiter</button>
                   </div>
                 )
               })()}
 
-              {/* SCHRITT 4: HÄUFIGSTE VERKEHRSMITTEL */}
-              {onboardingStep === 4 && (
+              {/* SCHRITT 5: HÄUFIGSTE VERKEHRSMITTEL */}
+              {onboardingStep === 5 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Welche Verkehrsmittel nutzt du hauptsächlich?</h1>
+                    <h1 style={{ fontSize: '1.7rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Welche Verkehrsmittel nutzt du hauptsächlich?</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Wähle die Optionen, die du im Alltag am häufigsten nutzt.</p>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', maxHeight: '52vh', overflowY: 'auto', paddingRight: '2px' }}>
+                    <div className="responsive-options-grid">
                       {TRANSPORT_MODES.map((mode) => {
                         if ((mode.id === 'car' || mode.id === 'car_sharing') && hasLicense === false) return null;
                         const isSelected = frequentModes.includes(mode.id);
-
                         return (
                           <div 
-                            key={mode.id}
-                            onClick={() => handleFrequentToggle(mode.id)}
-                            style={{
-                              ...optionButtonStyle,
-                              padding: '0.95rem 1.1rem',
-                              backgroundColor: isSelected ? 'rgba(0, 242, 254, 0.04)' : colors.card,
-                              border: isSelected ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
-                            }}
+                            key={mode.id} onClick={() => handleFrequentToggle(mode.id)}
+                            style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isSelected ? colors.cyanFill : colors.card, border: isSelected ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}
                           >
-                            <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>{mode.label}</span>
+                            <span style={{ color: colors.text, fontSize: '0.95rem' }}>{mode.label}</span>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentCyan}`, backgroundColor: isSelected ? colors.accentCyan : 'transparent', flexShrink: 0 }}>
                               {isSelected && <Check size={12} strokeWidth={3} color="#000000" />}
                             </div>
@@ -1113,34 +1093,26 @@ const handleServiceToggle = (serviceId) => {
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button onClick={() => setOnboardingStep(5)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1rem' }}>Weiter</button>
+                  <button onClick={() => setOnboardingStep(6)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1.5rem' }}>Weiter</button>
                 </div>
               )}
 
-              {/* SCHRITT 5: VERKEHRSMITTEL MEIDEN */}
-              {onboardingStep === 5 && (
+              {/* SCHRITT 6: VERKEHRSMITTEL MEIDEN */}
+              {onboardingStep === 6 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Gibt es Verkehrsmittel, die du vermeiden möchtest?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Diese schließen wir aus den Empfehlungen aus (z. B. wenn du Fahrrad oder Bus nicht magst).</p>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', maxHeight: '52vh', overflowY: 'auto', paddingRight: '2px' }}>
+                    <h1 style={{ fontSize: '1.7rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Gibt es Verkehrsmittel, die du vermeiden möchtest?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'left' }}>Diese schließen wir aus den Empfehlungen aus.</p>
+                    <div className="responsive-options-grid">
                       {TRANSPORT_MODES.map((mode) => {
                         if ((mode.id === 'car' || mode.id === 'car_sharing') && hasLicense === false) return null;
                         const isAvoided = avoidModes.includes(mode.id);
-
                         return (
                           <div 
-                            key={mode.id}
-                            onClick={() => handleAvoidToggle(mode.id)}
-                            style={{
-                              ...optionButtonStyle,
-                              padding: '0.95rem 1.1rem',
-                              backgroundColor: isAvoided ? 'rgba(244, 63, 94, 0.05)' : colors.card,
-                              border: isAvoided ? `1px solid ${colors.accentRed}` : `1px solid ${colors.border}`
-                            }}
+                            key={mode.id} onClick={() => handleAvoidToggle(mode.id)}
+                            style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isAvoided ? 'rgba(244, 63, 94, 0.05)' : colors.card, border: isAvoided ? `1px solid ${colors.accentRed}` : `1px solid ${colors.border}` }}
                           >
-                            <span style={{ color: isAvoided ? colors.accentRed : '#ffffff', fontSize: '0.95rem', fontWeight: isAvoided ? '600' : '500' }}>{mode.label}</span>
+                            <span style={{ color: isAvoided ? colors.accentRed : colors.text, fontSize: '0.95rem', fontWeight: isAvoided ? '600' : '500' }}>{mode.label}</span>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '50%', border: `2px solid ${isAvoided ? colors.accentRed : colors.border}`, backgroundColor: isAvoided ? colors.accentRed : 'transparent', flexShrink: 0 }}>
                               {isAvoided && <Ban size={12} strokeWidth={3} color="#000000" />}
                             </div>
@@ -1150,15 +1122,15 @@ const handleServiceToggle = (serviceId) => {
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button onClick={() => setOnboardingStep(6)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1rem' }}>Weiter</button>
+                  <button onClick={() => setOnboardingStep(7)} style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', marginTop: '1.5rem' }}>Weiter</button>
                 </div>
               )}
 
-              {/* SCHRITT 6: PRIORITÄTEN */}
-              {onboardingStep === 6 && (
+              {/* SCHRITT 7: PRIORITÄTEN */}
+              {onboardingStep === 7 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie wichtig sind dir diese Ziele?</h1>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie wichtig sind dir diese Ziele?</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left' }}>Stell für jedes Ziel einen Wert von 1 (egal) bis 10 (sehr wichtig) ein.</p>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.6rem' }}>
@@ -1171,7 +1143,7 @@ const handleServiceToggle = (serviceId) => {
                         return (
                           <div key={p.id} style={{ textAlign: 'left' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem' }}>
-                              <span style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '600' }}>{p.label}</span>
+                              <span style={{ color: colors.text, fontSize: '0.95rem', fontWeight: '600' }}>{p.label}</span>
                               <span style={{ minWidth: '28px', textAlign: 'center', color: '#000', backgroundColor: colors.accentPurple, borderRadius: '8px', fontWeight: '800', fontSize: '0.85rem', padding: '0.15rem 0.4rem' }}>{val}</span>
                             </div>
                             <input
@@ -1185,32 +1157,25 @@ const handleServiceToggle = (serviceId) => {
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <button onClick={() => setOnboardingStep(7)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1rem' }}>Weiter</button>
+                  <button onClick={() => setOnboardingStep(8)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', marginTop: '1.5rem' }}>Weiter</button>
                 </div>
               )}
 
-              {/* SCHRITT 7: TYPISCHE WOCHE */}
-              {onboardingStep === 7 && (
+              {/* SCHRITT 8: TYPISCHE WOCHE */}
+              {onboardingStep === 8 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie sieht deine typische Woche aus?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Wähle alles aus, was regelmäßig auf dich zutrifft — beruflich, privat oder im Alltag.</p>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie sieht deine typische Woche aus?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Wähle alles aus, was regelmäßig auf dich zutrifft.</p>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Arbeit & Verpflichtungen</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', marginBottom: '1.5rem' }}>
+                    <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Arbeit & Verpflichtungen</span>
+                    <div className="responsive-options-grid" style={{ marginBottom: '1.5rem' }}>
                       {TYPICAL_WORK_PATTERNS.map((p) => {
                         const isSel = typicalWorkPatterns.includes(p)
                         return (
                           <button
-                            key={p}
-                            type="button"
-                            onClick={() => handlePatternToggle(setTypicalWorkPatterns, p)}
-                            style={{
-                              ...optionButtonStyle,
-                              padding: '0.95rem 1.1rem',
-                              backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card,
-                              border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
-                            }}
+                            key={p} type="button" onClick={() => handlePatternToggle(setTypicalWorkPatterns, p)}
+                            style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isSel ? colors.cyanFill : colors.card, border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}
                           >
                             <span>{p}</span>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentCyan}`, backgroundColor: isSel ? colors.accentCyan : 'transparent', flexShrink: 0 }}>
@@ -1221,21 +1186,14 @@ const handleServiceToggle = (serviceId) => {
                       })}
                     </div>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Freizeit & Wochenende</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                    <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Freizeit & Wochenende</span>
+                    <div className="responsive-options-grid">
                       {TYPICAL_LEISURE_PATTERNS.map((p) => {
                         const isSel = typicalLeisurePatterns.includes(p)
                         return (
                           <button
-                            key={p}
-                            type="button"
-                            onClick={() => handlePatternToggle(setTypicalLeisurePatterns, p)}
-                            style={{
-                              ...optionButtonStyle,
-                              padding: '0.95rem 1.1rem',
-                              backgroundColor: isSel ? 'rgba(0, 242, 254, 0.04)' : colors.card,
-                              border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`
-                            }}
+                            key={p} type="button" onClick={() => handlePatternToggle(setTypicalLeisurePatterns, p)}
+                            style={{ ...optionButtonStyle, padding: '0.95rem 1.1rem', backgroundColor: isSel ? colors.cyanFill : colors.card, border: isSel ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}` }}
                           >
                             <span>{p}</span>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '6px', border: `2px solid ${colors.accentCyan}`, backgroundColor: isSel ? colors.accentCyan : 'transparent', flexShrink: 0 }}>
@@ -1246,36 +1204,35 @@ const handleServiceToggle = (serviceId) => {
                       })}
                     </div>
 
-                    <label style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas dazu? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
-                    <textarea value={weekNote} onChange={(e) => setWeekNote(e.target.value)} placeholder="z. B. „Dienstags Sport am anderen Ende der Stadt oder alle zwei Wochen Familie im Umland.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentCyan} onBlur={(e) => e.target.style.borderColor = colors.border} />
+                    <label style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas dazu? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
+                    <textarea value={weekNote} onChange={(e) => setWeekNote(e.target.value)} placeholder="z. B. „Dienstags Sport am anderen Ende der Stadt.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text, fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentCyan} onBlur={(e) => e.target.style.borderColor = colors.border} />
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
                     {(() => {
                       const ready = typicalWorkPatterns.length > 0 || typicalLeisurePatterns.length > 0
                       return (
-                        <button onClick={() => setOnboardingStep(8)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(9)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       )
                     })()}
-                    <button onClick={() => { setTypicalWorkPatterns([]); setTypicalLeisurePatterns([]); setWeekNote(''); setOnboardingStep(8); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setTypicalWorkPatterns([]); setTypicalLeisurePatterns([]); setWeekNote(''); setOnboardingStep(9); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 8: WOHNORT */}
-              {onboardingStep === 8 && (
+              {/* SCHRITT 9: WOHNORT */}
+              {onboardingStep === 9 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wo wohnst du?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Damit wir Strecken und Empfehlungen für deine Region berechnen können.</p>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wo wohnst du?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.5rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Damit wir Strecken für deine Region berechnen können.</p>
 
-                    {/* Mid-Onboarding-Hinweis */}
-                    <div style={{ display: 'flex', gap: '0.6rem', backgroundColor: 'rgba(0, 242, 254, 0.06)', border: `1px solid rgba(0, 242, 254, 0.25)`, borderRadius: '14px', padding: '0.8rem 1rem', marginBottom: '1.75rem', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', gap: '0.6rem', backgroundColor: colors.cyanFill, border: `1px solid rgba(0, 242, 254, 0.25)`, borderRadius: '14px', padding: '0.8rem 1rem', marginBottom: '1.75rem', textAlign: 'left' }}>
                       <span style={{ fontSize: '1.1rem', lineHeight: '1.2' }}>💡</span>
-                      <span style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.45' }}>Wir fragen bewusst viel — je besser wir dich verstehen, desto präziser wird deine persönliche Empfehlung am Ende.</span>
+                      <span style={{ fontSize: '0.82rem', color: colors.infoText, lineHeight: '1.45' }}>Wir fragen bewusst viel — je besser wir dich verstehen, desto präziser wird deine Empfehlung.</span>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                    <div className="responsive-form-grid">
                       <div>
                         <label style={inputLabelStyle}>Stadt</label>
                         <input type="text" placeholder="z. B. Frankfurt" value={homeCity} onChange={(e) => setHomeCity(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
@@ -1284,52 +1241,52 @@ const handleServiceToggle = (serviceId) => {
                         <label style={inputLabelStyle}>Postleitzahl</label>
                         <input type="text" inputMode="numeric" placeholder="z. B. 60311" value={homePostalCode} onChange={(e) => setHomePostalCode(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
                       </div>
-                      <div>
+                      <div className="full-width-desktop">
                         <label style={inputLabelStyle}>Land</label>
                         <select value={homeCountry} onChange={(e) => setHomeCountry(e.target.value)} style={{ ...textInputStyle, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border}>
                           {COUNTRY_OPTIONS.map((c) => (
-                            <option key={c.code} value={c.code} style={{ backgroundColor: '#1c1c1f', color: '#fff' }}>{c.label}</option>
+                            <option key={c.code} value={c.code} style={{ backgroundColor: colors.inputBg, color: colors.text }}>{c.label}</option>
                           ))}
                         </select>
                       </div>
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
                     {(() => {
                       const ready = homeCity.trim() && homePostalCode.trim();
                       return (
-                        <button onClick={() => setOnboardingStep(9)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(10)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setHomeCity(''); setHomePostalCode(''); setOnboardingStep(9); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setHomeCity(''); setHomePostalCode(''); setOnboardingStep(10); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 9: ARBEIT & HYBRID */}
-              {onboardingStep === 9 && (
+              {/* SCHRITT 10: ARBEIT & HYBRID */}
+              {onboardingStep === 10 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie arbeitest du?</h1>
+                  <div>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Wie arbeitest du?</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Dein Pendelmuster bestimmt einen großen Teil deiner Mobilität.</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <div className="responsive-options-grid">
                       {[
                         { id: 'onsite', label: '🏢 Vor Ort im Büro' },
-                        { id: 'hybrid', label: '🔄 Hybrid (Büro & Homeoffice)' },
+                        { id: 'hybrid', label: '🔄 Hybrid (Büro & HO)' },
                         { id: 'remote', label: '🏠 Komplett remote' },
-                        { id: 'unemployed', label: '🚫 Aktuell nicht berufstätig' }
+                        { id: 'unemployed', label: '🚫 Nicht berufstätig' }
                       ].map((opt) => {
                         const isSel = workArrangement === opt.id;
                         return (
-                          <button key={opt.id} onClick={() => { setWorkArrangement(opt.id); if (opt.id === 'remote' || opt.id === 'unemployed') { setWorkCity(''); setWorkPostalCode(''); } if (opt.id !== 'hybrid') setRemoteDaysPerWeek(null); }} style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: isSel ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{opt.label}</span></button>
+                          <button key={opt.id} onClick={() => { setWorkArrangement(opt.id); if (opt.id === 'remote' || opt.id === 'unemployed') { setWorkCity(''); setWorkPostalCode(''); } if (opt.id !== 'hybrid') setRemoteDaysPerWeek(null); }} style={{ ...optionButtonStyle, padding: '1rem 1.2rem', backgroundColor: isSel ? colors.selectFill : colors.card, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{opt.label}</span></button>
                         );
                       })}
                     </div>
 
-                    {/* Arbeitsort nur bei Büro/Hybrid */}
+                    {/* Arbeitsort */}
                     {(workArrangement === 'onsite' || workArrangement === 'hybrid') && (
-                      <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                      <div className="responsive-form-grid" style={{ marginTop: '1.5rem' }}>
                         <div>
                           <label style={inputLabelStyle}>Arbeitsort — Stadt</label>
                           <input type="text" placeholder="z. B. Frankfurt" value={workCity} onChange={(e) => setWorkCity(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
@@ -1341,7 +1298,7 @@ const handleServiceToggle = (serviceId) => {
                       </div>
                     )}
 
-                    {/* Homeoffice-Tage nur bei Hybrid */}
+                    {/* Homeoffice-Tage */}
                     {workArrangement === 'hybrid' && (
                       <div style={{ marginTop: '1.5rem' }}>
                         <label style={{ ...inputLabelStyle, marginBottom: '0.65rem' }}>Tage pro Woche im Homeoffice</label>
@@ -1349,132 +1306,130 @@ const handleServiceToggle = (serviceId) => {
                           {[0, 1, 2, 3, 4, 5].map((d) => {
                             const isSel = remoteDaysPerWeek === d;
                             return (
-                              <button key={d} onClick={() => setRemoteDaysPerWeek(d)} style={{ flex: 1, padding: '0.85rem 0', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? '#000000' : '#ffffff', border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>{d}</button>
+                              <button key={d} onClick={() => setRemoteDaysPerWeek(d)} style={{ flex: 1, padding: '0.85rem 0', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? colors.onAccent : colors.text, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>{d}</button>
                             );
                           })}
                         </div>
                       </div>
                     )}
 
-                    <label style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas zu deinem Arbeitsweg? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
-                    <textarea value={workNote} onChange={(e) => setWorkNote(e.target.value)} placeholder="z. B. „Freitags im anderen Büro, dann mit dem Zug.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
+                    <label style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', margin: '1.5rem 0 0.5rem', textAlign: 'left' }}>Noch etwas zu deinem Arbeitsweg? <span style={{ color: colors.textMuted, fontWeight: '400' }}>(optional)</span></label>
+                    <textarea value={workNote} onChange={(e) => setWorkNote(e.target.value)} placeholder="z. B. „Freitags im anderen Büro.“" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, color: colors.text, fontSize: '0.95rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
                     {(() => {
                       const needsLocation = workArrangement === 'onsite' || workArrangement === 'hybrid';
                       const needsDays = workArrangement === 'hybrid';
                       const ready = workArrangement && (!needsLocation || (workCity.trim() && workPostalCode.trim())) && (!needsDays || remoteDaysPerWeek !== null);
                       return (
-                        <button onClick={() => setOnboardingStep(10)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(11)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setWorkArrangement(''); setWorkCity(''); setWorkPostalCode(''); setRemoteDaysPerWeek(null); setWorkNote(''); setOnboardingStep(10); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setWorkArrangement(''); setWorkCity(''); setWorkPostalCode(''); setRemoteDaysPerWeek(null); setWorkNote(''); setOnboardingStep(11); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 10: MOBILITÄTSBUDGET */}
-              {onboardingStep === 10 && (
+              {/* SCHRITT 11: MOBILITÄTSBUDGET */}
+              {onboardingStep === 11 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Was gibst du monatlich für Mobilität aus?</h1>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Was gibst du monatlich für Mobilität aus?</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Eine grobe Schätzung reicht — wir verfeinern das später mit deinen echten Daten.</p>
-                    <div style={{ position: 'relative', backgroundColor: '#1c1c1f', borderRadius: '14px', border: mobilityBudget ? `2px solid #ffffff` : `1px solid ${colors.border}`, padding: '0.6rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ position: 'relative', backgroundColor: colors.inputBg, borderRadius: '14px', border: mobilityBudget ? `2px solid #ffffff` : `1px solid ${colors.border}`, padding: '0.6rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <div style={{ flex: 1, textAlign: 'left' }}>
                         <label style={{ display: 'block', color: colors.textMuted, fontSize: '0.75rem', marginBottom: '0.15rem' }}>Budget pro Monat</label>
-                        <input type="number" inputMode="numeric" placeholder="z. B. 150" value={mobilityBudget} onChange={(e) => setMobilityBudget(e.target.value)} style={{ width: '100%', backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', fontWeight: '600', outline: 'none', padding: 0 }} />
+                        <input type="number" inputMode="numeric" placeholder="z. B. 150" value={mobilityBudget} onChange={(e) => setMobilityBudget(e.target.value)} style={{ width: '100%', backgroundColor: 'transparent', border: 'none', color: colors.text, fontSize: '1.2rem', fontWeight: '600', outline: 'none', padding: 0 }} />
                       </div>
                       <span style={{ color: colors.textMuted, fontSize: '1.2rem', fontWeight: '600' }}>€</span>
                       {mobilityBudget && <X size={18} onClick={() => setMobilityBudget('')} style={{ color: colors.textMuted, cursor: 'pointer' }} />}
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
                     {(() => {
                       const ready = mobilityBudget !== '' && Number(mobilityBudget) >= 0;
                       return (
-                        <button onClick={() => setOnboardingStep(11)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(12)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setMobilityBudget(''); setOnboardingStep(11); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setMobilityBudget(''); setOnboardingStep(12); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 11: FINANZ-KONTEXT */}
-              {onboardingStep === 11 && (
+              {/* SCHRITT 12: FINANZ-KONTEXT */}
+              {onboardingStep === 12 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ overflowY: 'auto', maxHeight: '72vh', paddingRight: '2px' }}>
-                    <h1 style={{ fontSize: '1.7rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Ein bisschen Kontext zu deinem Haushalt</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>Hilft uns, Empfehlungen realistisch auf dein Budget abzustimmen.</p>
+                  <div>
+                    <h1 style={{ fontSize: '1.7rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.3' }}>Ein bisschen Kontext zu deinem Haushalt</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.9rem', textAlign: 'left', lineHeight: '1.4' }}>Hilft uns, Empfehlungen auf dein Budget abzustimmen.</p>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Personen im Haushalt</span>
+                    <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Personen im Haushalt</span>
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
                       {['1', '2', '3', '4', '5+'].map((h) => {
                         const isSel = householdSize === h;
                         return (
-                          <button key={h} onClick={() => setHouseholdSize(h)} style={{ flex: 1, padding: '0.85rem 0', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? '#000000' : '#ffffff', border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>{h}</button>
+                          <button key={h} onClick={() => setHouseholdSize(h)} style={{ flex: 1, padding: '0.85rem 0', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? colors.onAccent : colors.text, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, borderRadius: '12px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>{h}</button>
                         );
                       })}
                     </div>
 
-                    <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Monatliches Nettoeinkommen</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                    <span style={{ color: colors.text, fontSize: '0.9rem', fontWeight: '600', display: 'block', marginBottom: '0.65rem', textAlign: 'left' }}>Monatliches Nettoeinkommen</span>
+                    <div className="responsive-options-grid">
                       {[
-                        { id: 'under_1500', label: 'Unter 1.500 €' },
-                        { id: '1500_3000', label: '1.500 – 3.000 €' },
-                        { id: '3000_4500', label: '3.000 – 4.500 €' },
-                        { id: 'over_4500', label: 'Über 4.500 €' },
+                        { id: 'under_1500', label: 'Unter 1.500 €' }, { id: '1500_3000', label: '1.500 – 3.000 €' },
+                        { id: '3000_4500', label: '3.000 – 4.500 €' }, { id: 'over_4500', label: 'Über 4.500 €' },
                         { id: 'prefer_not_say', label: 'Keine Angabe' }
                       ].map((band) => {
                         const isSel = incomeBand === band.id;
                         return (
-                          <button key={band.id} onClick={() => setIncomeBand(band.id)} style={{ ...optionButtonStyle, padding: '0.9rem 1.1rem', backgroundColor: isSel ? 'rgba(168, 85, 247, 0.05)' : colors.card, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{band.label}</span></button>
+                          <button key={band.id} onClick={() => setIncomeBand(band.id)} style={{ ...optionButtonStyle, padding: '0.9rem 1.1rem', backgroundColor: isSel ? colors.selectFill : colors.card, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}` }}><span>{band.label}</span></button>
                         );
                       })}
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
                     {(() => {
                       const ready = householdSize && incomeBand;
                       return (
-                        <button onClick={() => setOnboardingStep(12)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(13)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setHouseholdSize(''); setIncomeBand(''); setOnboardingStep(12); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setHouseholdSize(''); setIncomeBand(''); setOnboardingStep(13); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 12: GEBURTSJAHR */}
-              {onboardingStep === 12 && (
+              {/* SCHRITT 13: GEBURTSJAHR */}
+              {onboardingStep === 13 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.9rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.75rem', textAlign: 'left', lineHeight: '1.25' }}>In welchem Jahr bist du geboren?</h1>
-                    <p style={{ color: colors.textMuted, marginBottom: '2.5rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Basierend auf deinem Alter erhältst du passende Finanztipps.</p>
-                    <div style={{ position: 'relative', backgroundColor: '#1c1c1f', borderRadius: '14px', border: birthYear ? `2px solid #ffffff` : `1px solid ${colors.border}`, padding: '0.6rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ flex: 1, textAlign: 'left' }}><label style={{ display: 'block', color: colors.textMuted, fontSize: '0.75rem', marginBottom: '0.15rem' }}>Geburtsjahr</label><input type="number" placeholder="z.B. 2002" value={birthYear} onChange={(e) => setBirthYear(e.target.value)} style={{ width: '100%', backgroundColor: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', fontWeight: '600', outline: 'none', padding: 0 }} /></div>
+                    <h1 style={{ fontSize: '1.9rem', fontWeight: '800', color: colors.text, marginBottom: '0.75rem', textAlign: 'left', lineHeight: '1.25' }}>In welchem Jahr bist du geboren?</h1>
+                    <p style={{ color: colors.textMuted, marginBottom: '2.5rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Basierend auf deinem Alter erhältst du passende Tipps.</p>
+                    <div style={{ position: 'relative', backgroundColor: colors.inputBg, borderRadius: '14px', border: birthYear ? `2px solid #ffffff` : `1px solid ${colors.border}`, padding: '0.6rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ flex: 1, textAlign: 'left' }}><label style={{ display: 'block', color: colors.textMuted, fontSize: '0.75rem', marginBottom: '0.15rem' }}>Geburtsjahr</label><input type="number" placeholder="z.B. 2002" value={birthYear} onChange={(e) => setBirthYear(e.target.value)} style={{ width: '100%', backgroundColor: 'transparent', border: 'none', color: colors.text, fontSize: '1.2rem', fontWeight: '600', outline: 'none', padding: 0 }} /></div>
                       {birthYear && <X size={18} onClick={() => setBirthYear('')} style={{ color: colors.textMuted, cursor: 'pointer' }} />}
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1rem' }}>
-                    <button onClick={() => setOnboardingStep(13)} disabled={!birthYear || birthYear.length < 4} style={{ width: '100%', padding: '1.1rem', backgroundColor: (birthYear && birthYear.length >= 4) ? colors.accentCyan : colors.card, color: (birthYear && birthYear.length >= 4) ? '#000000' : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: (birthYear && birthYear.length >= 4) ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
-                    <button onClick={() => { setBirthYear(''); setOnboardingStep(13); }} style={{ width: '100%', padding: '0.8rem', backgroundColor: 'transparent', color: colors.accentCyan, borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '600', cursor: 'pointer' }}>Überspringen</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
+                    <button onClick={() => setOnboardingStep(14)} disabled={!birthYear || birthYear.length < 4} style={{ width: '100%', padding: '1.1rem', backgroundColor: (birthYear && birthYear.length >= 4) ? colors.accentCyan : colors.card, color: (birthYear && birthYear.length >= 4) ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: (birthYear && birthYear.length >= 4) ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                    <button onClick={() => { setBirthYear(''); setOnboardingStep(14); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
 
-              {/* SCHRITT 13: KONTO ERSTELLEN */}
-              {onboardingStep === 13 && (
+              {/* SCHRITT 14: KONTO ERSTELLEN */}
+              {onboardingStep === 14 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.9rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.25' }}>Konto erstellen</h1>
+                    <h1 style={{ fontSize: '1.9rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.25' }}>Konto erstellen</h1>
                     <p style={{ color: colors.textMuted, marginBottom: '2rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Lege deine Zugangsdaten fest, um dein Profil abzuschließen.</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div className="responsive-form-grid">
                         <div style={{ flex: 1, textAlign: 'left' }}>
                           <label style={inputLabelStyle}>Vorname</label>
                           <input type="text" placeholder="Max" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} />
@@ -1486,28 +1441,28 @@ const handleServiceToggle = (serviceId) => {
                       </div>
                       <div style={{ textAlign: 'left' }}>
                         <label style={inputLabelStyle}>Geschlecht</label>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div className="responsive-options-grid" style={{ gap: '0.4rem' }}>
                           {[{ id: 'female', label: 'Weiblich' }, { id: 'male', label: 'Männlich' }, { id: 'diverse', label: 'Divers' }, { id: 'not_specified', label: 'Keine Angabe' }].map((g) => {
                             const isSel = gender === g.id
-                            return (<button key={g.id} type="button" onClick={() => setGender(g.id)} style={{ flex: 1, padding: '0.7rem 0.3rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? '#000000' : '#ffffff', border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, transition: 'all 0.15s' }}>{g.label}</button>)
+                            return (<button key={g.id} type="button" onClick={() => setGender(g.id)} style={{ flex: 1, padding: '0.7rem 0.3rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', backgroundColor: isSel ? colors.accentPurple : colors.card, color: isSel ? colors.onAccent : colors.text, border: isSel ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, transition: 'all 0.15s' }}>{g.label}</button>)
                           })}
                         </div>
                       </div>
-                      <div style={{ textAlign: 'left' }}><label style={{ color: colors.textMuted, fontSize: '0.78rem', fontWeight: '500', display: 'block', marginBottom: '0.3rem', paddingLeft: '4px' }}>E-Mail-Adresse</label><input type="email" placeholder="name@example.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} style={{ width: '100%', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '1rem', fontWeight: '500', boxSizing: 'border-box', outline: 'none', transition: 'border-color 0.2s ease-in-out' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} /></div>
-                      <div style={{ textAlign: 'left' }}><label style={{ color: colors.textMuted, fontSize: '0.78rem', fontWeight: '500', display: 'block', marginBottom: '0.3rem', paddingLeft: '4px' }}>Passwort erstellen</label><input type="password" placeholder="••••••••" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} style={{ width: '100%', padding: '0.9rem 1.1rem', borderRadius: '14px', backgroundColor: '#1c1c1f', border: `1px solid ${colors.border}`, color: '#fff', fontSize: '1rem', fontWeight: '500', boxSizing: 'border-box', outline: 'none', transition: 'border-color 0.2s ease-in-out' }} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} /></div>
+                      <div style={{ textAlign: 'left' }}><label style={{ color: colors.textMuted, fontSize: '0.78rem', fontWeight: '500', display: 'block', marginBottom: '0.3rem', paddingLeft: '4px' }}>E-Mail-Adresse</label><input type="email" placeholder="name@example.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} /></div>
+                      <div style={{ textAlign: 'left' }}><label style={{ color: colors.textMuted, fontSize: '0.78rem', fontWeight: '500', display: 'block', marginBottom: '0.3rem', paddingLeft: '4px' }}>Passwort erstellen</label><input type="password" placeholder="••••••••" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} style={textInputStyle} onFocus={(e) => e.target.style.borderColor = colors.accentPurple} onBlur={(e) => e.target.style.borderColor = colors.border} /></div>
                     </div>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <div style={{ marginTop: '1rem' }}>
+                  <div style={{ marginTop: '1.5rem' }}>
                     {error && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ff4a5a', backgroundColor: 'rgba(255, 74, 90, 0.1)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: colors.errorText, backgroundColor: colors.errorBg, padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '0.85rem' }}>
                         <AlertCircle size={16} /><span>{error}</span>
                       </div>
                     )}
                     <p style={{ fontSize: '0.72rem', color: colors.textMuted, lineHeight: '1.45', textAlign: 'left', marginBottom: '0.85rem' }}>
-                      🔒 Deine Angaben werden DSGVO-konform und verschlüsselt verarbeitet, ausschließlich zur Optimierung deiner Mobilität genutzt und nicht an Dritte verkauft. Du kannst sie jederzeit einsehen oder löschen lassen. Mehr in unserer <span style={{ color: colors.accentCyan, cursor: 'pointer' }}>Datenschutzrichtlinie</span>.
+                      🔒 Deine Angaben werden DSGVO-konform verarbeitet. Mehr in unserer <span style={{ color: colors.accentCyan, cursor: 'pointer' }}>Datenschutzrichtlinie</span>.
                     </p>
-                    <button onClick={handleFinish} disabled={submitting} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1, boxShadow: '0 4px 25px rgba(0, 242, 254, 0.25)', transition: 'all 0.2s' }}>{submitting ? 'Speichern…' : 'Abschließen & Anmelden'}</button>
+                    <button onClick={handleFinish} disabled={submitting} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1, boxShadow: '0 4px 25px rgba(0, 242, 254, 0.25)', transition: 'all 0.2s' }}>{submitting ? 'Speichern…' : 'Abschließen & Anmelden'}</button>
                   </div>
                 </div>
               )}
@@ -1521,28 +1476,40 @@ const handleServiceToggle = (serviceId) => {
           ANSICHT 3: ANMELDUNG & DEMO-PROFILE
           ========================================================= */}
       {currentView === 'login' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '2rem 1.5rem' }}>
-          <div style={{ width: '100%', maxWidth: '400px' }}>
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#ffffff', marginBottom: '0.5rem', textAlign: 'center' }}>Willkommen zurück</h2>
+        <div className="login-view-container">
+          <div className="login-inner-card">
+            
+            {/* Perfekt ausgerichteter Zurück-Button jetzt auch beim Login oben links */}
+            <div style={{ alignSelf: 'flex-start', marginBottom: '2rem' }}>
+              <button 
+                type="button"
+                className="premium-back-btn"
+                onClick={() => setCurrentView('welcome')}
+              >
+                <ChevronLeft size={16} /> Zurück
+              </button>
+            </div>
+
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'center', letterSpacing: '-0.02em' }}>Willkommen zurück</h2>
             <p style={{ color: colors.textMuted, marginBottom: '2.5rem', textAlign: 'center', fontSize: '0.95rem' }}>Melde dich an, um deinen persönlichen Mobilitätsplan zu sehen.</p>
 
             <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                <label style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: '500', textAlign: 'left' }} htmlFor="email">E-Mail</label>
-                <input id="email" style={{ width: '100%', padding: '0.85rem', borderRadius: '12px', backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: '#fff', fontSize: '1rem', boxSizing: 'border-box' }} type="email" placeholder="you@dbmove.de" value={identifier} onChange={(e) => { setIdentifier(e.target.value); setError('') }} />
+                <label style={{ color: colors.text, fontSize: '0.85rem', fontWeight: '500', textAlign: 'left' }} htmlFor="email">E-Mail</label>
+                <input id="email" style={{ width: '100%', padding: '0.85rem', borderRadius: '12px', backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: colors.text, fontSize: '1rem', boxSizing: 'border-box' }} type="email" placeholder="you@dbmove.de" value={identifier} onChange={(e) => { setIdentifier(e.target.value); setError('') }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                <label style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: '500', textAlign: 'left' }} htmlFor="password">Passwort</label>
-                <input id="password" style={{ width: '100%', padding: '0.85rem', borderRadius: '12px', backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: '#fff', fontSize: '1rem', boxSizing: 'border-box' }} type="password" placeholder="••••••••" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} />
+                <label style={{ color: colors.text, fontSize: '0.85rem', fontWeight: '500', textAlign: 'left' }} htmlFor="password">Passwort</label>
+                <input id="password" style={{ width: '100%', padding: '0.85rem', borderRadius: '12px', backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: colors.text, fontSize: '1rem', boxSizing: 'border-box' }} type="password" placeholder="••••••••" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} />
               </div>
 
               {error && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ff4a5a', backgroundColor: 'rgba(255, 74, 90, 0.1)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: colors.errorText, backgroundColor: colors.errorBg, padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}>
                   <AlertCircle size={16} /><span>{error}</span>
                 </div>
               )}
 
-              <button style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: '#000000', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '0.5rem', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.2)' }} type="submit" disabled={submitting}>
+              <button style={{ width: '100%', padding: '1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', marginTop: '0.5rem', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.2)' }} type="submit" disabled={submitting}>
                 {submitting ? 'Anmelden…' : 'Anmelden'}
               </button>
             </form>
@@ -1553,17 +1520,43 @@ const handleServiceToggle = (serviceId) => {
               <div style={{ flex: 1, height: '1px', backgroundColor: colors.border }}></div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '2rem' }}>
+            <div className="personas-grid">
               {personas && personas.map((p) => (
-                <button key={p.id} type="button" onClick={() => loginAs(p.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', width: '100%', padding: '0.85rem', backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '14px', color: '#fff', cursor: 'pointer' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: colors.border, color: colors.accentCyan, fontWeight: '700' }}>{p.initials}</span>
-                  <span style={{ flex: 1, textAlign: 'left' }}><span style={{ fontWeight: '600' }}>{p.name}</span><br /><span style={{ fontSize: '0.8rem', color: colors.textMuted }}>{p.tagline}</span></span>
-                  <ArrowRight style={{ color: colors.accentCyan }} size={16} />
+                <button 
+                  key={p.id} 
+                  type="button" 
+                  onClick={() => loginAs(p.id)} 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.6rem', 
+                    width: '100%', 
+                    padding: '0.6rem 0.75rem', 
+                    backgroundColor: colors.card, 
+                    border: `1px solid ${colors.border}`, 
+                    borderRadius: '12px', 
+                    color: colors.text, 
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    minWidth: 0 
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '50%', backgroundColor: colors.border, color: colors.accentCyan, fontWeight: '700', fontSize: '0.78rem', flexShrink: 0 }}>
+                    {p.initials}
+                  </span>
+                  <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                    <span style={{ fontWeight: '600', fontSize: '0.88rem', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: colors.textMuted, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.tagline}
+                    </span>
+                  </span>
+                  <ArrowRight style={{ color: colors.accentCyan, flexShrink: 0 }} size={14} />
                 </button>
               ))}
             </div>
 
-            <div onClick={() => setCurrentView('welcome')} style={{ color: colors.textMuted, cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem', fontWeight: '500' }}>← Zurück zum Start</div>
           </div>
         </div>
       )}
