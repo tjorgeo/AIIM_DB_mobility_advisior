@@ -184,7 +184,6 @@ class AnalystSummary(BaseModel):         # forwarded to ForecasterAgent
     dominant_patterns: List[DominantPattern]
     detected_seasonality: str            # human-readable description of seasonal pattern
     current_contracts: List[str]         # ["Deutschlandticket (€58/mo)", ...]
-    detected_inefficiencies: List[str]   # short human-readable strings for each inefficiency
 ```
 
 **Section B — full output consumed by the Optimizer** (superset of Section A):

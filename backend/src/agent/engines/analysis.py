@@ -717,7 +717,6 @@ def analyze_portfolio(
         "dominant_patterns": dominant_patterns,
         "detected_seasonality": detected_seasonality,
         "current_contracts": current_contracts,
-        "detected_inefficiencies": [i["details"] for i in inefficiencies],
         "monthly_mode_breakdown": monthly_mode_breakdown,
     }
 

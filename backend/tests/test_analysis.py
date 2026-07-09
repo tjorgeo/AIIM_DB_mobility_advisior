@@ -48,7 +48,6 @@ def test_forecaster_summary_is_shaped_for_the_forecaster(travel_history, subscri
         "dominant_patterns",
         "detected_seasonality",
         "current_contracts",
-        "detected_inefficiencies",
         "monthly_mode_breakdown",
     }
     assert isinstance(fs["dominant_patterns"], list)

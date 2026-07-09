@@ -83,7 +83,6 @@ def test_full_window_average_smooths_a_short_recent_spike():
         "dominant_patterns": [{"mode": "commute", "avg_trips_per_month": 17.14, "avg_distance_km": 5.0}],
         "detected_seasonality": "no significant seasonal variation detected",
         "current_contracts": [],
-        "detected_inefficiencies": [],
         "monthly_mode_breakdown": monthly,
     }
     # Window Aug-Oct: doesn't match any month above, so no seasonal override applies.
@@ -114,7 +113,6 @@ def test_strong_seasonal_signal_overrides_full_window_average():
         "dominant_patterns": [{"mode": "e_scooter", "avg_trips_per_month": 10.6, "avg_distance_km": 3.0}],
         "detected_seasonality": "peak travel in August/September/October",
         "current_contracts": [],
-        "detected_inefficiencies": [],
         "monthly_mode_breakdown": monthly,
     }
     out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
@@ -143,7 +141,6 @@ def test_mild_seasonal_variation_does_not_override():
         "dominant_patterns": [{"mode": "bike", "avg_trips_per_month": 20.4, "avg_distance_km": 2.0}],
         "detected_seasonality": "no significant seasonal variation detected",
         "current_contracts": [],
-        "detected_inefficiencies": [],
         "monthly_mode_breakdown": monthly,
     }
     out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")

@@ -41,7 +41,6 @@ class AnalystSummary(BaseModel):
     dominant_patterns: List[DominantPattern]
     detected_seasonality: str
     current_contracts: List[str]
-    detected_inefficiencies: List[str]
     # month ("YYYY-MM") -> raw transport_mode -> stats for that month. Same raw
     # transport_mode granularity as dominant_patterns (regional_train and
     # long_distance_train stay distinct), but split by month instead of
@@ -512,9 +511,6 @@ MOCK_ANALYST_SUMMARY = {
     ],
     "detected_seasonality": "Higher bike usage in spring/summer, more public transport in winter",
     "current_contracts": ["Deutschlandticket (€49/mo)", "CallABike subscription"],
-    "detected_inefficiencies": [
-        "E-scooter trips without subscription coverage (€45/year out-of-pocket)"
-    ],
     "monthly_mode_breakdown": {
         "2026-05": {
             "public_transport": {"trips": 40, "distance_km": 340.0, "co2_kg": 12.0, "intrinsic_cost_eur": 120.0, "effective_cost_eur": 49.0},

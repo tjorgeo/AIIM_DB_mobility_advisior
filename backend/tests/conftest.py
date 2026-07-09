@@ -105,7 +105,6 @@ def analyst_summary():
         ],
         "detected_seasonality": "no significant seasonal variation detected",
         "current_contracts": ["Deutschlandticket (€49/mo)"],
-        "detected_inefficiencies": [],
         "monthly_mode_breakdown": {
             "2026-01": {"public_transport": {"trips": 6, "distance_km": 48.0, "co2_kg": 3.0, "intrinsic_cost_eur": 0.0, "effective_cost_eur": 0.0}},
             "2026-02": {"public_transport": {"trips": 12, "distance_km": 96.0, "co2_kg": 6.0, "intrinsic_cost_eur": 0.0, "effective_cost_eur": 0.0}},
