@@ -21,10 +21,26 @@ actually covered by that persona's held subscription. Regenerate with
 same UUIDv5 namespace, always produces byte-identical output).
 
 Calendars are deliberately split: Julia and Simone only have local,
-routine-life events with no bearing on their subscription mix; Jonas and Elif
-each have a life event (an apartment move; a home-renovation project) plus
-recurring trips in their calendar that explain — and, looking forward, keep
-driving — the pattern seen in their trip history.
+routine-life events with no bearing on their subscription mix (only their
+recurring weekly/monthly items ever reach the forecaster — see the note
+below); Jonas and Elif each have an **upcoming** life event (an apartment
+move; a home-renovation project) dated ahead of the trip-history window's
+end, not reflected in their historical baseline at all, that the forecaster
+picks up as a forward-looking signal.
+
+> **Calendar life-events must be dated in the future.** The forecaster only
+> ever sees calendar entries whose next occurrence falls within
+> `[now, now+180 days]` (`agent/context.py::_CALENDAR_LOOKAHEAD_DAYS`) — it's
+> a "known future plans" signal, not a historical one. A one-off event dated
+> in the past (even last month) never reaches it at all, no matter how
+> relevant it would be to explain the trip history. Recurring events (RRULE)
+> are the exception: `_next_occurrence` expands the rule forward from its
+> `dtstart` regardless of how long ago that `dtstart` was, so a weekly/monthly
+> series keeps surfacing as long as it has occurrences left in the window.
+> Jonas's and Elif's one-off life-event entries are deliberately dated after
+> `WINDOW_END` (2026-06-30) for this reason — regenerating the dataset much
+> later than mid-2026 will eventually need those dates bumped forward again,
+> or the life events will silently stop reaching the forecaster.
 
 ---
 
@@ -70,35 +86,39 @@ pay-as-you-go would be `€7,204.17/yr`). `detected_seasonality`: peak in March
 
 `e1eb9483-d268-57cf-9b5f-0ef5e1a7fed2` · Hamburg · 28 · Junior Data Analyst, in-office
 
-**Story:** Never bothered with a pass because he used to live close to the
-office — single-ticket public transport was cheap enough. Then he moved
-farther out partway through the window, which lengthened and increased the
-frequency of his commute; the single-ticket spend that follows now clearly
-justifies a Deutschlandticket.
+**Story:** Never bothered with a pass because he lives close to the office —
+single-ticket public transport has been cheap enough. His trip history alone
+already justifies a Deutschlandticket; on top of that, his calendar has an
+*upcoming* move to a farther-out apartment that will make single tickets
+noticeably more expensive still — a forward-looking signal the historical
+baseline doesn't even need in order to make the case.
 
 **Subscriptions:** none.
 
-**Trip pattern:** short in-city bus/S-Bahn commute (`public_transport`,
-~80% of weekdays) through 2026-01-09; from the 2026-01-10 move onward, a
-longer `regional_train` commute (~90% of weekdays) from the new, farther-out
-address — both pay-as-you-go, single tickets; occasional weekend
-`public_transport` errands; biweekly `regional_train` weekend visit to his
-parents in Lüneburg.
+**Trip pattern:** short in-city bus/S-Bahn commute (`public_transport`, ~85%
+of weekdays), unchanged across the full 12-month window — pay-as-you-go,
+single tickets; occasional weekend `public_transport` errands; biweekly
+`regional_train` weekend visit to his parents in Lüneburg.
 
 **Onboarding:** `score_emission=50, score_money=70, score_flexibility=45` —
-cost-conscious, framed around the move making single tickets add up fast.
+cost-conscious, framed around the upcoming move making single tickets about
+to get a lot more expensive.
 
-**Calendar (life-event/trip-affecting):** an apartment viewing
-(2025-12-20) and the move itself (2026-01-10, "Umzug - neue Wohnung in
-Norderstedt"), plus the recurring biweekly Lüneburg family visit and a
-full-day in-office event — all reinforcing that his (now longer) commute
-pattern is ongoing, not a one-off.
+**Calendar (life-event/trip-affecting):** *upcoming* — not yet reflected in
+the trip history above — apartment viewing in Norderstedt, a packing weekend,
+and the move itself ("Umzug - neue Wohnung in Norderstedt"), plus the
+recurring biweekly Lüneburg family visit. Only calendar entries whose next
+occurrence falls within the forecaster's 180-day lookahead are ever surfaced
+to it (see `agent/context.py::_CALENDAR_LOOKAHEAD_DAYS`), so these are
+deliberately dated ahead of the trip-history window's end, not behind it —
+this is what lets the forecaster flag the relocation as a life event even
+though it isn't in the historical baseline yet.
 
 **Verified analyst output:** no `subscription_coverage` entries.
-`public_transport` category: `no_subscription_annual_cost_eur=€2,481.78`,
+`public_transport` category: `no_subscription_annual_cost_eur=€1,670.01`,
 recommendation **`consider_subscribing`**, cheapest alternative
-Deutschlandticket at `€756.00/yr`. `detected_seasonality`: peak in June (1.3×
-monthly average), lowest in July (0.3×).
+Deutschlandticket at `€756.00/yr`. `detected_seasonality`: peak in October
+(1.4× monthly average), lowest in July (0.3×).
 
 ---
 
@@ -129,16 +149,16 @@ rides/year, each free under the membership's 30-free-minutes allowance.
 low money-priority is the narrative reason she hasn't noticed/cancelled the
 two unused subscriptions.
 
-**Verified analyst output:** Deutschlandticket `net=+€348.60` — not flagged,
+**Verified analyst output:** Deutschlandticket `net=+€366.72` — not flagged,
 `public_transport` recommendation `keep_current`. BahnCard 25
-`cost=€62.90/yr`, `realized_savings=€49.38/yr`, **`net=-€13.52`** — flagged
+`cost=€62.90/yr`, `realized_savings=€51.08/yr`, **`net=-€11.82`** — flagged
 `overpaid_subscription`; `long_distance_rail` recommendation
-`cancel_current_go_pay_as_you_go` (pay-as-you-go `€197.49/yr` beats both her
-current `€211.01/yr` and a BahnCard 50 upgrade at `€342.75/yr`). Call a Bike
-Member Plus `cost=€96.00/yr`, `realized_savings=€44.80/yr`,
-**`net=-€51.20`** — also flagged `overpaid_subscription`;
+`cancel_current_go_pay_as_you_go` (pay-as-you-go `€204.26/yr` beats both her
+current `€216.09/yr` and a BahnCard 50 upgrade at `€346.13/yr`). Call a Bike
+Member Plus `cost=€96.00/yr`, `realized_savings=€46.34/yr`,
+**`net=-€49.66`** — also flagged `overpaid_subscription`;
 `bike_sharing` recommendation `cancel_current_go_pay_as_you_go`.
-`detected_seasonality`: peak in March (1.5×), lowest in August (0.1×).
+`detected_seasonality`: peak in March (1.5×), lowest in August (0.2×).
 
 ---
 
@@ -148,10 +168,10 @@ Member Plus `cost=€96.00/yr`, `realized_savings=€44.80/yr`,
 
 **Story:** Gave up owning a car years ago. A heavily-used car-sharing
 membership covers client visits and supply runs; pay-as-you-go e-scooter and
-bike-share cover everything shorter. Currently mid-way through a home-studio
-renovation, which is driving a visible burst of extra car-sharing hauling
-trips in both the calendar and the trip history — a forward-looking signal,
-not just a historical one.
+bike-share cover everything shorter. Her trip history is her ordinary
+baseline — but her calendar has an *upcoming* home-studio renovation that
+will drive a burst of extra car-sharing hauling trips ahead, not yet reflected
+in that baseline at all.
 
 **Subscriptions:**
 - teilAuto Vielfahrertarif (`x1111111-...`), held since 2024-03-01, primary
@@ -161,29 +181,29 @@ No bike-sharing, e-scooter, or public-transport subscription — those stay
 pay-as-you-go by design.
 
 **Trip pattern:** frequent teilAuto-covered car-sharing trips for client
-visits/supply runs (several times/week, +35pp during the Apr–May 2026
-renovation window for hardware-store runs); pay-as-you-go e-scooter for
-quick last-mile hops; occasional pay-as-you-go bike-share leisure rides;
-monthly pay-as-you-go regional-train visit to her parents in Oldenburg.
+visits/supply runs (several times/week), unchanged across the full 12-month
+window; pay-as-you-go e-scooter for quick last-mile hops; occasional
+pay-as-you-go bike-share leisure rides; monthly pay-as-you-go regional-train
+visit to her parents in Oldenburg.
 
 **Onboarding:** `score_emission=45, score_money=60, score_flexibility=80` —
 flexibility weighted highest, reflecting a deliberately car-free, contract-
 light lifestyle.
 
-**Calendar (life-event/trip-affecting):** a contractor walkthrough
-(2026-03-25) and a two-month "Studio renovation project" block
-(2026-04-01 → 2026-05-31) that matches the extra car-sharing trips in the
-history, plus a recurring monthly Oldenburg family visit and a one-off client
-design-fair booth.
+**Calendar (life-event/trip-affecting):** *upcoming* — not yet reflected in
+the trip history above — a contractor walkthrough (2026-07-20) and a
+two-month "Studio renovation project" block (2026-08-01 → 2026-09-30) that
+will start driving extra hardware-store car-sharing trips, plus a recurring
+monthly Oldenburg family visit that's already part of her routine.
 
 **Verified analyst output:** teilAuto Vielfahrertarif `cost=€360.00/yr`,
-`realized_savings=€894.01/yr`, **`net_savings=+€534.01`** — not flagged,
+`realized_savings=€763.81/yr`, **`net_savings=+€403.81`** — not flagged,
 `car_sharing` recommendation `keep_current` (pay-as-you-go would cost
-`€1,424.12/yr` vs. her actual `€890.11/yr`). `bike_sharing` (`€166.48/yr`),
-`e_scooter` (`€414.08/yr`), and `public_transport` (`€162.07/yr`, cheapest
+`€1,215.66/yr` vs. her actual `€811.85/yr`). `bike_sharing` (`€178.44/yr`),
+`e_scooter` (`€422.54/yr`), and `public_transport` (`€210.55/yr`, cheapest
 alternative Deutschlandticket at `€756.00/yr` — not worth it at this volume)
 all correctly resolve to `no_subscription_needed`. `detected_seasonality`:
-peak in May (1.8×), lowest in August (0.2×).
+peak in September (1.4×), lowest in August (0.3×).
 
 ---
 

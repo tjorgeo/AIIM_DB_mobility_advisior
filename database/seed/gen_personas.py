@@ -340,48 +340,49 @@ print(f"Julia trips so far: {len(trip_rows)}")
 
 # ===========================================================================
 # Persona 2: Jonas Keller — holds no subscription at all, pure pay-as-you-go.
-# Moved apartment further from the office partway through the window, which
-# increased his commute distance/frequency from that point on - a calendar
-# life-event that explains the trip-history trend and reinforces that a
-# Deutschlandticket would pay off going forward, not just in hindsight.
+# His trip history is a plain, unchanging short in-city commute (no
+# subscription needed to make DT worth it even on that alone) - the twist is
+# an *upcoming* move to a farther-out apartment on his calendar, which the
+# forecaster picks up as a life event and factors into the forward-looking
+# forecast even though it isn't reflected in the historical baseline yet.
+#
+# NOTE: the forecaster only ever sees calendar entries whose next occurrence
+# falls within [now, now+180 days] (see _CALENDAR_LOOKAHEAD_DAYS in
+# agent/context.py) - it's a forward-looking "known future plans" signal, not
+# a historical one. Keep MOVE_DATE / VIEWING_DATE below in the future relative
+# to whenever this dataset is loaded, or the forecaster will never see them.
 # ===========================================================================
 JONAS = uid("user:jonas.keller")
 add_user(JONAS, "jonas.keller@example.com", "jonaskeller28", "Jonas", "Keller",
-          "1998-03-14", 28, "male", "single", "Hamburg", "22850")
+          "1998-03-14", 28, "male", "single", "Hamburg", "20095")
 add_onboarding(
     JONAS, "employed_full_time", "Junior Data Analyst", "Hamburg", "20095", "in_office", 0.05,
     1, "single", "medium", 90.0, True, "none", "none",
     ["public_transport", "regional_train"], ["car"],
-    ["recently_relocated", "no_fixed_pass"],
+    ["upcoming_relocation", "no_fixed_pass"],
     50, 70, 45,
     "Commutes into the Hamburg office by bus/S-Bahn most days, buying single tickets each time.",
     "Occasional single-ticket trips into the city, biweekly regional-train visit to his parents.",
-    "I've never bothered with a pass since I used to live close to the office - now that I've moved "
-    "further out the single tickets are adding up fast.",
-    "Regular commuter footprint that recently got noticeably longer after a move.",
+    "I've never bothered with a pass since I live close to the office - but I'm moving further out "
+    "soon, so the single tickets are about to get a lot more expensive.",
+    "Regular commuter footprint about to get noticeably longer once he moves.",
 )
 # No subscriptions at all for Jonas.
 
-MOVE_DATE = date(2026, 1, 10)
+VIEWING_DATE = date(2026, 7, 25)
+MOVE_DATE = date(2026, 8, 22)
 PARENTS_TOWN = ("Lüneburg", 55)
 
 for d in daterange(WINDOW_START, WINDOW_END):
     sf = season_factor(d)
     weekday = d.weekday()
-    moved = d >= MOVE_DATE
     if weekday < 5:
-        commute_prob = (0.90 if moved else 0.80) * sf
-        if random.random() < commute_prob:
-            if moved:
-                # Longer commute post-move: regional train from the new, farther-out address.
-                dist = round(random.uniform(16.0, 19.0), 2)
-                dur = round(dist / 0.65)
-                mode = "regional_train"
-            else:
-                # Short in-city commute pre-move: bus/S-Bahn within Hamburg.
-                dist = round(random.uniform(4.0, 6.0), 2)
-                dur = round(dist / 0.45)
-                mode = "public_transport"
+        # Short in-city commute, unchanged throughout the whole 12-month history
+        # (he hasn't moved yet - the move is still ahead, see calendar below).
+        if random.random() < 0.85 * sf:
+            dist = round(random.uniform(4.0, 6.0), 2)
+            dur = round(dist / 0.45)
+            mode = "public_transport"
             add_trip_and_leg(JONAS, d, datetime.min.time().replace(hour=7, minute=random.randint(35, 55)),
                               dur, "home", "Hamburg", "office", "Hamburg", "commute",
                               mode, dist, True, True, "")
@@ -412,19 +413,24 @@ while d <= WINDOW_END:
                           "regional_train", dist, False, False, "")
     d += timedelta(days=14)
 
-# Life-event + trip-affecting calendar: the move itself, plus recurring items
-# that explain/forecast the post-move commute pattern.
-add_calendar(JONAS, datetime(2026, 1, 10, 9, 0, tzinfo=TZ), datetime(2026, 1, 10, 18, 0, tzinfo=TZ),
-             "Umzug - neue Wohnung in Norderstedt", "Moving day into the new, farther-out apartment.",
-             "Hamburg", "")
-add_calendar(JONAS, datetime(2025, 12, 20, 12, 0, tzinfo=TZ), datetime(2025, 12, 20, 13, 0, tzinfo=TZ),
-             "Wohnungsbesichtigung Norderstedt", "Apartment viewing ahead of the move.", "Hamburg", "")
+# Life-event + trip-affecting calendar: an *upcoming* move (both events dated
+# ahead of WINDOW_END/today so the forecaster's forward-looking calendar scan
+# actually picks them up - see the NOTE above), plus a recurring item that's
+# already part of his routine.
+add_calendar(JONAS, datetime(VIEWING_DATE.year, VIEWING_DATE.month, VIEWING_DATE.day, 12, 0, tzinfo=TZ_SUMMER),
+             datetime(VIEWING_DATE.year, VIEWING_DATE.month, VIEWING_DATE.day, 13, 0, tzinfo=TZ_SUMMER),
+             "Wohnungsbesichtigung Norderstedt", "Apartment viewing in Norderstedt - noticeably farther "
+             "from the office than his current place.", "Hamburg", "")
+add_calendar(JONAS, datetime(MOVE_DATE.year, MOVE_DATE.month, MOVE_DATE.day, 9, 0, tzinfo=TZ_SUMMER),
+             datetime(MOVE_DATE.year, MOVE_DATE.month, MOVE_DATE.day, 18, 0, tzinfo=TZ_SUMMER),
+             "Umzug - neue Wohnung in Norderstedt", "Moving day into the new, farther-out apartment - "
+             "commute to the Hamburg office gets noticeably longer from here on.", "Hamburg", "")
 add_calendar(JONAS, datetime(2025, 7, 13, 9, 0, tzinfo=TZ_SUMMER), datetime(2025, 7, 13, 19, 0, tzinfo=TZ_SUMMER),
              "Besuch bei den Eltern", "Biweekly weekend visit to parents in Lüneburg by regional train.",
              "Lüneburg", "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU")
-add_calendar(JONAS, datetime(2026, 2, 2, 9, 0, tzinfo=TZ), datetime(2026, 2, 2, 17, 30, tzinfo=TZ),
-             "Team onboarding new office wing", "Full-day in-office event, no working from home that day.",
-             "Hamburg", "")
+add_calendar(JONAS, datetime(MOVE_DATE.year, MOVE_DATE.month, MOVE_DATE.day - 7, 10, 0, tzinfo=TZ_SUMMER),
+             datetime(MOVE_DATE.year, MOVE_DATE.month, MOVE_DATE.day - 7, 17, 0, tzinfo=TZ_SUMMER),
+             "Packing weekend", "Packing up the old apartment ahead of next week's move.", "Hamburg", "")
 
 print(f"After Jonas: {len(trip_rows)}")
 
@@ -525,9 +531,11 @@ print(f"After Simone: {len(trip_rows)}")
 # ===========================================================================
 # Persona 4: Elif Yildiz — car-free freelancer whose mobility centers on a
 # heavily-used car-sharing membership, topped up with pay-as-you-go e-scooter
-# and bike-share for short hops. Currently mid-way through a home renovation,
-# which is driving a burst of extra car-sharing hauling trips visible in both
-# the calendar and the trip history.
+# and bike-share for short hops. Her trip history is her ordinary baseline;
+# an *upcoming* home-renovation project on her calendar (not yet reflected in
+# that history) will drive a burst of extra car-sharing hauling trips ahead -
+# a forward-looking signal for the forecaster (see the NOTE in Jonas's
+# section above about why calendar life-events must be dated in the future).
 # ===========================================================================
 ELIF = uid("user:elif.yildiz")
 add_user(ELIF, "elif.yildiz@example.com", "elifyildiz33", "Elif", "Yildiz",
@@ -547,23 +555,22 @@ add_onboarding(
 )
 elif_teilauto = add_subscription(ELIF, SUB_TEILAUTO_VIELFAHRER, "2024-03-01", True, "several_times_per_week")
 
-RENOVATION_START, RENOVATION_END = date(2026, 4, 1), date(2026, 5, 31)
+RENOVATION_START, RENOVATION_END = date(2026, 8, 1), date(2026, 9, 30)
 PARENTS_TOWN_2 = ("Oldenburg", 45)
 
 for d in daterange(WINDOW_START, WINDOW_END):
     sf = season_factor(d)
     weekday = d.weekday()
-    in_renovation = RENOVATION_START <= d <= RENOVATION_END
+    # NOTE: RENOVATION_START/END are both after WINDOW_END - the renovation is
+    # upcoming, not yet reflected in this trip history (see calendar below).
 
     # Car-sharing trips for client visits/supply runs, several times/week.
     base_prob = 0.55 if weekday < 5 else 0.35
-    if in_renovation:
-        base_prob += 0.35  # extra hardware-store / hauling runs during the renovation
     if random.random() < base_prob * sf:
         dist = round(random.uniform(5.0, 14.0), 2)
         dur = round(dist / 0.35 + random.uniform(5, 15))
-        purpose = "errands" if in_renovation else random.choice(["business", "shopping", "errands"])
-        dest = "hardware store" if in_renovation else random.choice(["client studio", "supplier", "print shop"])
+        purpose = random.choice(["business", "shopping", "errands"])
+        dest = random.choice(["client studio", "supplier", "print shop"])
         add_trip_and_leg(ELIF, d, datetime.min.time().replace(hour=random.randint(9, 17)),
                           dur, "home", "Bremen", dest, "Bremen", purpose,
                           "car_sharing", dist, False, weekday < 5,
@@ -601,13 +608,16 @@ while d <= WINDOW_END:
                           "regional_train", dist, False, False, "")
     d += timedelta(days=30)
 
-# Life-event / trip-affecting calendar: the renovation project plus a recurring
-# family visit, both of which show up as extra trips in the history above.
-add_calendar(ELIF, datetime(2026, 4, 1, 8, 0, tzinfo=TZ_SUMMER), datetime(2026, 5, 31, 18, 0, tzinfo=TZ_SUMMER),
-             "Studio renovation project", "Home studio renovation - frequent hardware-store runs by "
-             "car-sharing for the next two months.", "Bremen", "")
-add_calendar(ELIF, datetime(2026, 3, 25, 14, 0, tzinfo=TZ_SUMMER), datetime(2026, 3, 25, 15, 0, tzinfo=TZ_SUMMER),
-             "Contractor walkthrough", "Meeting the contractor to scope the studio renovation.", "Bremen", "")
+# Life-event / trip-affecting calendar: an *upcoming* renovation project (see
+# the NOTE above - dated ahead of WINDOW_END/today, not behind it, so the
+# forecaster's forward-looking calendar scan actually picks it up) plus a
+# recurring family visit that's already part of her routine.
+add_calendar(ELIF, datetime(2026, 8, 1, 8, 0, tzinfo=TZ_SUMMER), datetime(2026, 9, 30, 18, 0, tzinfo=TZ_SUMMER),
+             "Studio renovation project", "Home studio renovation starting soon - expect frequent "
+             "hardware-store runs by car-sharing for about two months.", "Bremen", "")
+add_calendar(ELIF, datetime(2026, 7, 20, 14, 0, tzinfo=TZ_SUMMER), datetime(2026, 7, 20, 15, 0, tzinfo=TZ_SUMMER),
+             "Contractor walkthrough", "Meeting the contractor to scope the upcoming studio renovation.",
+             "Bremen", "")
 add_calendar(ELIF, datetime(2025, 7, 20, 10, 0, tzinfo=TZ_SUMMER), datetime(2025, 7, 20, 18, 0, tzinfo=TZ_SUMMER),
              "Family visit - Oldenburg", "Monthly weekend visit to parents in Oldenburg.", "Oldenburg",
              "FREQ=MONTHLY")
