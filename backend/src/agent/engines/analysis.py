@@ -17,7 +17,7 @@ import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from agent.schema_map import group_mode, category_covers_mode
+from agent.schema_map import category_covers_mode
 
 
 _MONTH_NAMES = {
@@ -269,12 +269,11 @@ def analyze_portfolio(
     total_distance = 0.0
     total_co2 = 0.0
 
-    # raw_mode_stats: production transport_mode (for uncovered-category checks)
+    # raw_mode_stats: production transport_mode (for uncovered-category checks,
+    # mode_breakdown, and dominant_patterns — every mode-keyed output reports the
+    # raw production transport_mode individually, e.g. regional_train and
+    # long_distance_train are never merged into one "train" figure)
     raw_mode_stats: dict[str, dict] = defaultdict(
-        lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
-    )
-    # disp_mode_stats: grouped display mode (for mode_breakdown output)
-    disp_mode_stats: dict[str, dict] = defaultdict(
         lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
     )
     # sub_stats: per-subscription attribution, keyed by user_subscription_id.
@@ -308,7 +307,6 @@ def analyze_portfolio(
         dist = float(leg.get("estimated_distance_km") or 0.0)
         co2 = float(leg.get("estimated_co2_emissions") or 0.0)
         raw_mode = (leg.get("transport_mode") or "other").lower()
-        disp = group_mode(raw_mode)
 
         leg_sub_id = leg.get("user_subscription_id")
         attributed = leg_sub_id in active_subs_by_id
@@ -332,12 +330,6 @@ def analyze_portfolio(
         raw_mode_stats[raw_mode]["distance"] += dist
         raw_mode_stats[raw_mode]["co2"] += co2
 
-        disp_mode_stats[disp]["trips"] += 1
-        disp_mode_stats[disp]["intrinsic"] += intrinsic
-        disp_mode_stats[disp]["effective"] += effective
-        disp_mode_stats[disp]["distance"] += dist
-        disp_mode_stats[disp]["co2"] += co2
-
         dt = _parse_dt(leg.get("started_at"))
         if dt:
             monthly_total[(dt.year, dt.month)] += 1
@@ -353,11 +345,16 @@ def analyze_portfolio(
     # ------------------------------------------------------------------ #
     # 4. Mode breakdown                                                    #
     #                                                                      #
+    # Keyed on the raw production transport_mode, same granularity as     #
+    # dominant_patterns/monthly_mode_breakdown below — regional_train and  #
+    # long_distance_train are reported as separate entries, never merged   #
+    # into one "train" figure.                                            #
+    #                                                                      #
     # All "_total" fields are sums over the last 12-month window.         #
     # "_per_month" fields are the average monthly rate over that window.  #
     # ------------------------------------------------------------------ #
     mode_breakdown: dict[str, dict] = {}
-    for mode, st in disp_mode_stats.items():
+    for mode, st in raw_mode_stats.items():
         n = st["trips"]
         trips_pm = round(n / months_of_data, 2)
         avg_dist_per_trip = round(st["distance"] / max(n, 1), 2)
@@ -375,10 +372,8 @@ def analyze_portfolio(
 
     # ------------------------------------------------------------------ #
     # 4b. Monthly mode breakdown — same per-mode fields as mode_breakdown,#
-    #     but split by calendar month over the 12-month window, keyed on #
-    #     the raw production transport_mode (regional_train and          #
-    #     long_distance_train stay distinct here, unlike mode_breakdown).#
-    #     Only modes actually used in a given month appear under it.     #
+    #     but split by calendar month over the 12-month window. Only     #
+    #     modes actually used in a given month appear under it.          #
     # ------------------------------------------------------------------ #
     monthly_mode_breakdown: dict[str, dict] = {}
     for (year, month), stats_by_mode in sorted(monthly_mode_stats.items()):
@@ -396,11 +391,9 @@ def analyze_portfolio(
 
     # ------------------------------------------------------------------ #
     # 5. Dominant patterns (sorted by trips/month desc)                   #
-    #    Keyed on the raw production transport_mode (not group_mode()'s   #
-    #    display bucket) so e.g. regional_train and long_distance_train   #
-    #    are reported as separate patterns instead of merged into "train".#
-    #    mode_breakdown above stays grouped — the frontend's TravelModes  #
-    #    component reads it and expects those display buckets.           #
+    #    Same raw-mode granularity as mode_breakdown/monthly_mode_breakdown#
+    #    above — regional_train and long_distance_train stay distinct     #
+    #    patterns instead of being merged into one "train" figure.        #
     # ------------------------------------------------------------------ #
     dominant_patterns = sorted(
         [

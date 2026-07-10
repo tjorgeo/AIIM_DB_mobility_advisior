@@ -491,8 +491,12 @@
 .mode--bus .mode__fill { background: var(--amber); }
 .mode--car .mode__icon { background: var(--db-red-light); color: var(--db-red); }
 .mode--car .mode__fill { background: var(--db-red); }
-.mode--scooter .mode__icon { background: var(--green-light); color: var(--green); }
-.mode--scooter .mode__fill { background: var(--green); }
+.mode--bike .mode__icon { background: var(--green-light); color: var(--green); }
+.mode--bike .mode__fill { background: var(--green); }
+.mode--scooter .mode__icon { background: var(--violet-light); color: var(--violet); }
+.mode--scooter .mode__fill { background: var(--violet); }
+.mode--neutral .mode__icon { background: var(--slate-100); color: var(--slate-600); }
+.mode--neutral .mode__fill { background: var(--slate-400); }
 
 /* Insights */
 .insights { display: flex; flex-direction: column; gap: var(--space-3); }

@@ -4,10 +4,6 @@ The deterministic agents compute over the production data model directly (full
 transport-mode taxonomy, trips/legs, and the generic ``subscription_catalogs``).
 This module holds the small amount of shared domain knowledge they need:
 
-* ``group_mode`` — collapse the 11 production transport modes into the handful of
-  display buckets the frontend's ``TravelModes`` component knows about. Grouping
-  happens only at the *output* boundary; the agents keep full-fidelity modes
-  internally.
 * ``category_covers_mode`` — the coverage assumption that replaces the old
   hardcoded product logic: which transport modes a subscription category pays for.
 * ``clean_row`` / ``jsonable`` — coerce psycopg2 scalars into JSON/arithmetic
@@ -16,31 +12,6 @@ This module holds the small amount of shared domain knowledge they need:
 
 from datetime import date, datetime
 from decimal import Decimal
-
-# Production ``transport_mode`` / ``main_transport_mode`` -> the display bucket the
-# frontend's TravelModes MODE_META renders (train/bus/car/scooter known; bike/walk/
-# other fall back to a generic icon + raw label).
-_DISPLAY_MODE = {
-    "walking": "walk",
-    "bicycle": "bike",
-    "bike_sharing": "bike",
-    "public_transport": "public_transport",
-    "regional_train": "train",
-    "long_distance_train": "train",
-    "car": "car",
-    "car_sharing": "car",
-    "ride_hailing": "car",
-    "taxi": "car",
-    "e_scooter": "scooter",
-    "mixed": "other",
-    "other": "other",
-}
-
-
-def group_mode(transport_mode) -> str:
-    """Group a production transport mode into a frontend display bucket."""
-    return _DISPLAY_MODE.get((transport_mode or "").lower(), "other")
-
 
 # Which transport modes a subscription category pays for. This is the project's
 # coverage assumption — the generic replacement for the old hardcoded product
