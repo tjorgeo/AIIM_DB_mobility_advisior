@@ -43,7 +43,7 @@ ON CONFLICT (onboarding_id) DO NOTHING;
 CREATE TEMP TABLE tmp_subscription_catalogs (LIKE subscription_catalogs);
 
 COPY tmp_subscription_catalogs
-FROM '/seed/subscription_catalogs_v1.csv'
+FROM '/seed/subscription_catalogs_v2.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO subscription_catalogs

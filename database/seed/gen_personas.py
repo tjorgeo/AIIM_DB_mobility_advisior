@@ -113,7 +113,7 @@ REF_FN = {
 }
 
 # ---------------------------------------------------------------------------
-# Subscription catalog references (subscription_catalogs_v1.csv, unchanged)
+# Subscription catalog references (subscription_catalogs_v2.csv)
 # ---------------------------------------------------------------------------
 SUB_DT = "a1111111-1111-1111-1111-111111111111"          # Deutschlandticket, 63/mo, flat
 SUB_BC25_2KL = "a3333333-3333-3333-3333-333333333333"     # BahnCard 25, 2. Klasse, 62.90/yr

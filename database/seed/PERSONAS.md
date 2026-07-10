@@ -3,8 +3,10 @@
 This is the seed dataset loaded by `database/init/02_insert_data.sql`:
 `user_profiles_v4.csv`, `user_onboardings_v4.csv`, `user_subscriptions_v5.csv`,
 `user_trips_v5.csv`, `trip_legs_v8.csv`, `user_calendars_v2.csv`
-(`subscription_catalogs_v1.csv` is unchanged — it's the product catalog, not
-persona data).
+(`subscription_catalogs_v2.csv` is the product catalog, not persona data — it
+adds structured per-unit-rate columns for consumption-based bike-/car-sharing/
+e-scooter plans on top of the unchanged `v1` product list; see "Cost / CO₂
+model" below).
 
 4 personas, each constructed to exercise one distinct subscription-decision
 path through the analyst/optimizer logic in `backend/src/agents/analyst_spec.md`,
@@ -156,9 +158,12 @@ two unused subscriptions.
 `cancel_current_go_pay_as_you_go` (pay-as-you-go `€204.26/yr` beats both her
 current `€216.09/yr` and a BahnCard 50 upgrade at `€346.13/yr`). Call a Bike
 Member Plus `cost=€96.00/yr`, `realized_savings=€46.34/yr`,
-**`net=-€49.66`** — also flagged `overpaid_subscription`;
-`bike_sharing` recommendation `cancel_current_go_pay_as_you_go`.
-`detected_seasonality`: peak in March (1.5×), lowest in August (0.2×).
+**`net=-€49.66`** — also flagged `overpaid_subscription`; `bike_sharing`
+recommendation is **`switch_to_alternative`**, not just "cancel" — nextbike
+Basic's own pay-as-you-go rate (`€17.05/yr` simulated from its per-minute rate)
+beats both her current membership and plain pay-as-you-go (`€46.34/yr`) for
+how rarely she actually rides. `detected_seasonality`: peak in March (1.5×),
+lowest in August (0.2×).
 
 ---
 
@@ -197,13 +202,22 @@ will start driving extra hardware-store car-sharing trips, plus a recurring
 monthly Oldenburg family visit that's already part of her routine.
 
 **Verified analyst output:** teilAuto Vielfahrertarif `cost=€360.00/yr`,
-`realized_savings=€763.81/yr`, **`net_savings=+€403.81`** — not flagged,
-`car_sharing` recommendation `keep_current` (pay-as-you-go would cost
-`€1,215.66/yr` vs. her actual `€811.85/yr`). `bike_sharing` (`€178.44/yr`),
-`e_scooter` (`€422.54/yr`), and `public_transport` (`€210.55/yr`, cheapest
-alternative Deutschlandticket at `€756.00/yr` — not worth it at this volume)
-all correctly resolve to `no_subscription_needed`. `detected_seasonality`:
-peak in September (1.4×), lowest in August (0.3×).
+`realized_savings=€763.81/yr`, **`net_savings=+€403.81`** — not flagged (it
+does beat plain pay-as-you-go, `€1,215.66/yr`), but `car_sharing`'s
+recommendation is **`switch_to_alternative`**: Sixt Share Minutentarif, priced
+from its own per-minute rate, comes out at `€612.95/yr` — cheaper than her
+actual `€811.85/yr` — a comparison the analyst could only make once
+consumption-based plans (per-km/per-hour/per-minute rates, not just flat-rate
+passes and BahnCard-style discounts) became priceable at all; teilAuto's own
+Rahmentarif (`€636.78/yr`) and cityflitzer (`€667.15/yr`) tariffs also beat her
+current Vielfahrertarif, all ranked in `alternatives`. `bike_sharing`
+(`€178.44/yr`) now has real alternatives too — nextbike Jahresabo at
+`€60.00/yr` makes it `consider_subscribing` rather than a dead end. `e_scooter`
+(`€422.54/yr`, cheapest alternative Dott Pro at `€204.86/yr`) is
+`consider_subscribing` for the same reason. `public_transport` (`€210.55/yr`,
+cheapest alternative Deutschlandticket at `€756.00/yr` — not worth it at this
+volume) stays `no_subscription_needed`. `detected_seasonality`: peak in
+September (1.4×), lowest in August (0.3×).
 
 ---
 
@@ -234,3 +248,16 @@ rental), so personal walking/cycling isn't logged as a trip at all.
 Reduced ~65% activity during summer holidays (Jul/Aug) and the Dec 20–Jan 5
 lull applies to every persona, giving `detected_seasonality` real signal
 across the single 12-month window.
+
+Note this table is the *generator's* cost model for pricing each persona's
+actual historical legs — a separate thing from `subscription_catalogs_v2.csv`'s
+`unlock_fee_eur`/`per_km_eur`/`per_hour_eur`/`per_minute_eur`/
+`free_minutes_included`/`daily_cap_eur` columns, which the analyst engine uses
+to evaluate *untried* car-/bike-sharing/e-scooter alternatives against those
+same legs (see `agent/engines/analysis.py`'s `_simulate_consumption_annual_cost`).
+The two happen to agree for teilAuto Vielfahrertarif and Call a Bike Member
+Plus (this file's numbers were the source for those catalog rates), but the
+generator's table only covers the products these 4 personas actually hold —
+the catalog now has structured rates for most other bike-/car-sharing/
+e-scooter products too, which is what lets the analyst propose switching to a
+provider none of the personas have ever used.

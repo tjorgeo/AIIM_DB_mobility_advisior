@@ -9,8 +9,8 @@ It also evaluates, per travel category, whether the currently-held subscription
 (if any), a cheaper catalog alternative, or no subscription at all (pure
 pay-as-you-go) would have been cheapest for how the user actually traveled —
 see ``category_subscription_analysis`` in :func:`analyze_portfolio`'s return
-value and ``_pricing_basis`` for exactly which catalog plans can be priced this
-way and which can't.
+value and ``_estimate_alternative_remainder`` for exactly which catalog plans
+can be priced this way and which can't.
 """
 
 import re
@@ -151,26 +151,96 @@ def _plan_annual(plan: dict) -> float:
     return float(plan.get("monthly_cost") or 0.0) * 12
 
 
-def _pricing_basis(plan: dict) -> tuple[float, str] | None:
-    """How confidently we can price ``plan``'s effect on a leg's cost.
+def _simulate_consumption_annual_cost(
+    plan: dict, legs: list[dict], months_of_data: float
+) -> float | None:
+    """Annualized pay-as-you-go cost of ``plan`` simulated leg-by-leg from each leg's
+    actual distance/duration, for consumption-based plans (per-minute/per-km/
+    per-km-and-time/hybrid) that carry a linear rate in the catalog (``per_km_eur``/
+    ``per_hour_eur``/``per_minute_eur``). Returns ``None`` when none of those is set —
+    e.g. a tiered plan like Lime Prime (a flat price per ride-duration *band*, not a
+    linear rate) or a plan whose tariff doc gives no exploitable number at all (MILES
+    Pass' "varies by tier", Bolt's bare pay-as-you-go with no published rate) — these
+    stay "not comparable" rather than being approximated by a formula they don't
+    actually follow.
 
-    Returns ``(fraction_of_intrinsic_still_paid, basis_label)``: 0.0 for a true
-    flat-rate pass (``pricing_model == "flat_monthly"`` — the trip costs nothing),
-    or ``1 - discount`` for a recognized percentage-discount card (BahnCard 25/50/100,
-    matched by name). Returns ``None`` for everything else — car-/bike-sharing and
-    e-scooter plans are almost all consumption-based (per-minute/per-km/hybrid) and
-    the catalog has no per-unit rate field, only prose tariff docs, so we cannot
-    honestly simulate what an untried plan like that would have cost on a specific
-    historical leg. Plans this returns ``None`` for are surfaced as "not comparable"
-    rather than silently guessed at.
+    Legs are grouped by calendar day first so an optional ``daily_cap_eur`` (e.g. Call
+    a Bike Starter's "max 13 EUR/day") caps each day's total before summing, instead of
+    capping (or not capping) each leg independently.
+    """
+    per_km = plan.get("per_km_eur")
+    per_hour = plan.get("per_hour_eur")
+    per_minute = plan.get("per_minute_eur")
+    if not any(v not in (None, 0, 0.0) for v in (per_km, per_hour, per_minute)):
+        return None
+
+    unlock = float(plan.get("unlock_fee_eur") or 0.0)
+    per_km = float(per_km or 0.0)
+    per_hour = float(per_hour or 0.0)
+    per_minute = float(per_minute or 0.0)
+    free_minutes = float(plan.get("free_minutes_included") or 0.0)
+    daily_cap = plan.get("daily_cap_eur")
+    daily_cap = float(daily_cap) if daily_cap not in (None, "") else None
+
+    by_day: dict = defaultdict(float)
+    for leg in legs:
+        distance = leg.get("distance") or 0.0
+        duration = leg.get("duration") or 0.0
+        billed_minutes = max(0.0, duration - free_minutes)
+        cost = unlock + per_km * distance + per_hour * (duration / 60.0) + per_minute * billed_minutes
+        by_day[leg.get("day")] += cost
+
+    total = sum(
+        min(cost, daily_cap) if daily_cap is not None else cost
+        for cost in by_day.values()
+    )
+    return round(total / months_of_data * 12, 2)
+
+
+def _estimate_alternative_remainder(
+    plan: dict,
+    no_subscription_annual_cost: float,
+    category_legs: list[dict],
+    months_of_data: float,
+) -> tuple[float, str] | None:
+    """The annualized pay-as-you-go remainder ``plan`` would leave the user paying —
+    i.e. the part of ``estimated_annual_cost_eur`` not covered by the plan's own fixed
+    price. Returns ``(annual_remainder_eur, basis_label)``, or ``None`` when the plan
+    can't be honestly priced this way (surfaced as "not comparable" rather than
+    silently guessed at). Three cases, in order of confidence:
+
+    1. Flat-rate pass (``pricing_model == "flat_monthly"``) — remainder is 0, the
+       trip costs nothing beyond the plan's own price.
+    2. Recognized %-discount card (BahnCard 25/50/100, matched by name) — remainder is
+       a fixed fraction of ``no_subscription_annual_cost``. This only works because
+       both figures are denominated in the *same* fare basis (this category's own
+       reference pricing).
+    3. Linear consumption-based plan (a per-km/per-hour/per-minute rate is on file) —
+       remainder is simulated leg-by-leg from ``category_legs``' actual distance/
+       duration (see ``_simulate_consumption_annual_cost``), *not* derived as a
+       fraction of a cost that was priced under a different provider's benchmark rate
+       — car-/bike-sharing and e-scooter reference prices are anchored to one specific
+       provider's PAYG rate, so a percentage of that number wouldn't mean anything for
+       a different provider's own rate structure.
+
+    Returns ``None`` for tiered or undocumented pricing that can't be honestly
+    reconstructed from the catalog's structured fields.
     """
     if (plan.get("pricing_model") or "").lower() == "flat_monthly":
         return 0.0, "flat-rate pass (fully covered)"
+
     match = _BAHNCARD_DISCOUNT_RE.search(plan.get("name") or "")
     if match:
         pct = int(match.group(1))
         if 0 < pct <= 100:
-            return round(1 - pct / 100, 4), f"{pct}% discount card (estimated from plan name)"
+            fraction = round(1 - pct / 100, 4)
+            remainder = round(no_subscription_annual_cost * fraction, 2)
+            return remainder, f"{pct}% discount card (estimated from plan name)"
+
+    simulated = _simulate_consumption_annual_cost(plan, category_legs, months_of_data)
+    if simulated is not None:
+        return simulated, "simulated from the plan's per-km/per-hour/per-minute rate on file"
+
     return None
 
 
@@ -295,6 +365,12 @@ def analyze_portfolio(
             lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
         )
     )
+    # legs_by_raw_mode[raw_mode] = [{"distance", "duration", "day"}, ...] — the raw
+    # per-leg inputs _simulate_consumption_annual_cost needs to price an untried
+    # consumption-based alternative (a per-km/per-hour/per-minute rate can't be
+    # applied to an aggregate total the way a flat-rate or %-discount card can; it
+    # needs each leg's own distance/duration, and calendar day for daily-cap grouping).
+    legs_by_raw_mode: dict[str, list[dict]] = defaultdict(list)
 
     for leg in travel_history:
         # reference_cost_eur is the pay-as-you-go price for this leg regardless
@@ -305,6 +381,7 @@ def analyze_portfolio(
         )
         paid = float(leg.get("estimated_cost_eur") or 0.0)
         dist = float(leg.get("estimated_distance_km") or 0.0)
+        duration = float(leg.get("duration_minutes") or 0.0)
         co2 = float(leg.get("estimated_co2_emissions") or 0.0)
         raw_mode = (leg.get("transport_mode") or "other").lower()
 
@@ -331,6 +408,9 @@ def analyze_portfolio(
         raw_mode_stats[raw_mode]["co2"] += co2
 
         dt = _parse_dt(leg.get("started_at"))
+        legs_by_raw_mode[raw_mode].append({
+            "distance": dist, "duration": duration, "day": dt.date() if dt else None,
+        })
         if dt:
             monthly_total[(dt.year, dt.month)] += 1
             mst = monthly_mode_stats[(dt.year, dt.month)][raw_mode]
@@ -526,11 +606,12 @@ def analyze_portfolio(
     # modeling that overlap correctly needs knowing which product covers a     #
     # given regional trip, so it's scoped out rather than guessed at).         #
     #                                                                      #
-    # alternatives only ever includes plans _pricing_basis() can actually    #
-    # price (flat-rate passes, or a recognized %-discount card) — see that   #
-    # function's docstring for exactly why most car-/bike-sharing and        #
-    # e-scooter plans can't be evaluated this way and land in                #
-    # non_comparable_alternatives instead. A BahnCard in a different travel   #
+    # alternatives only ever includes plans _estimate_alternative_remainder() can    #
+    # actually price (flat-rate passes, a recognized %-discount card, or a           #
+    # consumption-based plan with a linear per-km/per-hour/per-minute rate on file)  #
+    # — see that function's docstring for exactly which car-/bike-sharing/e-scooter  #
+    # plans still can't be evaluated this way (tiered or undocumented pricing) and   #
+    # land in non_comparable_alternatives instead. A BahnCard in a different travel  #
     # class than the one already held (or, with none held, any 1st-class      #
     # card) lands there too — see _TRAVEL_CLASS_RE above. The full ranked     #
     # list is exposed (not just the cheapest) so a rejected alternative like  #
@@ -546,6 +627,13 @@ def analyze_portfolio(
             return None  # nothing to evaluate — no trips in this bucket this window
 
         no_subscription_annual_cost = stats["annual_cost_eur"]
+        # Raw per-leg distance/duration/day for this bucket's modes — the input
+        # _simulate_consumption_annual_cost needs to price a consumption-based
+        # alternative (see _estimate_alternative_remainder below).
+        category_legs = [
+            leg for raw_mode, legs in legs_by_raw_mode.items() if mode_filter(raw_mode)
+            for leg in legs
+        ]
         held_subs = [
             s for s in held_subs_by_category.get(db_category, [])
             if plan_filter(s.get("provider_plan_name"))
@@ -595,13 +683,14 @@ def analyze_portfolio(
             if plan_class is not None and plan_class != (held_travel_class or 2):
                 non_comparable_alternatives.append(plan.get("name"))
                 continue
-            pricing = _pricing_basis(plan)
+            pricing = _estimate_alternative_remainder(
+                plan, no_subscription_annual_cost, category_legs, months_of_data
+            )
             if pricing is None:
                 non_comparable_alternatives.append(plan.get("name"))
                 continue
-            multiplier, basis = pricing
+            pay_as_you_go_remainder, basis = pricing
             plan_annual_cost = round(_plan_annual(plan), 2)
-            pay_as_you_go_remainder = round(no_subscription_annual_cost * multiplier, 2)
             estimated_annual_cost = round(plan_annual_cost + pay_as_you_go_remainder, 2)
             alternatives.append({
                 "provider_plan_name": plan.get("name"),

@@ -102,15 +102,18 @@ def load_context(user_id: str) -> dict:
         sub["monthly_cost_eur"] = sub.get("monthly_cost_eur") or 0.0
         subscriptions.append(sub)
 
-    # Travel history is leg-level (legs carry distance, cost, CO2 and mode),
+    # Travel history is leg-level (legs carry distance, duration, cost, CO2 and mode),
     # ordered chronologically for the forecaster's monthly grouping.
     # reference_cost_eur is the pay-as-you-go price for a leg regardless of any
     # subscription held; the analysis engine uses it to compute discount-card
     # (e.g. BahnCard) realized savings, falling back to estimated_cost_eur when NULL.
+    # duration_minutes feeds the consumption-based alternative simulator (per-minute/
+    # per-hour car-/bike-sharing and e-scooter plans) alongside estimated_distance_km —
+    # see agent/engines/analysis.py's _simulate_consumption_annual_cost.
     cursor.execute(
         """
         SELECT leg_id, trip_id, user_subscription_id, started_at, transport_mode, ticket_type, ticket_class,
-               estimated_distance_km, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
+               estimated_distance_km, duration_minutes, estimated_cost_eur, reference_cost_eur, estimated_co2_emissions
         FROM trip_legs
         WHERE user_id = ?
         ORDER BY started_at ASC
@@ -161,7 +164,11 @@ def load_context(user_id: str) -> dict:
     # which plans are true flat-rate passes it can safely price as "trip costs nothing"
     # (see agent/engines/analysis.py's category_subscription_analysis); markdown_ref lets
     # the memo step cite the exact tariff doc for a recommended plan instead of guessing
-    # from its name.
+    # from its name. unlock_fee_eur/per_km_eur/per_hour_eur/per_minute_eur/
+    # free_minutes_included/daily_cap_eur feed the consumption-based alternative
+    # simulator for car-/bike-sharing and e-scooter plans that aren't flat-rate passes —
+    # NULL (absent) for plans whose tariff doc gives no exploitable linear rate (tiered
+    # per-ride pricing, "varies by tier/city" with no representative number).
     cursor.execute("SELECT * FROM subscription_catalogs")
     pricing_catalog = []
     for row in cursor.fetchall():
@@ -178,6 +185,12 @@ def load_context(user_id: str) -> dict:
                 "pricing_model": item.get("pricing_model"),
                 "billing_cycle": item.get("billing_cycle"),
                 "travel_class": item.get("travel_class"),
+                "unlock_fee_eur": item.get("unlock_fee_eur"),
+                "per_km_eur": item.get("per_km_eur"),
+                "per_hour_eur": item.get("per_hour_eur"),
+                "per_minute_eur": item.get("per_minute_eur"),
+                "free_minutes_included": item.get("free_minutes_included"),
+                "daily_cap_eur": item.get("daily_cap_eur"),
                 "markdown_ref": item.get("markdown_ref"),
             }
         )
