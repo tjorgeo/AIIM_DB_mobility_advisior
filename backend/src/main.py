@@ -326,13 +326,11 @@ def test_analyst(user_id: str):
     subscription coverage, and detected inefficiencies without going through
     the full pipeline.
 
-    Try one of the six personas with travel data:
-      - 38bb9fdb-7d90-55a0-98d8-f9935f1aec70  (Mara Vogel — flat-pass commuter, well covered)
-      - be6f3d9a-713a-5a56-bd77-5b27feea6827  (Tobias Hahn — BahnCard 50, frequent business traveler)
-      - d90794d2-efac-5b8d-b1cd-01244a890cb2  (Nina Schröder — pure pay-as-you-go, no subscriptions)
-      - 671fbc5b-99f1-505f-aaaa-1c682f552803  (Lukas Weber — over-subscribed, barely uses any of it)
-      - b31247a7-eb90-533a-bff7-1f0d37d28adc  (Petra Sommer — thin data, joined ~6 weeks ago)
-      - 99cb2bd6-228b-566d-a250-16290da30521  (Sandra Hoffmann — family, car-sharing + flat pass)
+    Try one of the four personas with travel data (see database/seed/PERSONAS.md):
+      - ce92d8e0-065e-589b-a60e-c692ef2d2ff9  (Julia Berger — BahnCard 25 should become BahnCard 50, Deutschlandticket pays off)
+      - e1eb9483-d268-57cf-9b5f-0ef5e1a7fed2  (Jonas Keller — no subscription, should pick up a Deutschlandticket)
+      - 725be174-ba53-516d-8beb-a4056cbac517  (Simone Wagner — three subscriptions, two should be cancelled)
+      - 932d3626-708a-596b-a1fc-99c2fa1ce9b3  (Elif Yildiz — car-free, car-sharing-centric multi-modal freelancer)
     """
     from agent.context import load_context
     from agent.engines import analyze_portfolio

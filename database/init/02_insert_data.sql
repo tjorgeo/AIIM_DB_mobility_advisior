@@ -17,7 +17,7 @@
 CREATE TEMP TABLE tmp_users (LIKE users);
 
 COPY tmp_users (user_id, email, username, external_auth_id, first_name, last_name, date_of_birth, age, gender, life_stage, home_city, home_postal_code, home_country_code)
-FROM '/seed/user_profiles_v3.csv'
+FROM '/seed/user_profiles_v4.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO users
@@ -30,7 +30,7 @@ ON CONFLICT (user_id) DO NOTHING;
 CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings);
 
 COPY tmp_user_onboardings
-FROM '/seed/user_onboardings_v3.csv'
+FROM '/seed/user_onboardings_v4.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO user_onboardings
@@ -56,7 +56,7 @@ ON CONFLICT (subscription_id) DO NOTHING;
 CREATE TEMP TABLE tmp_user_subscriptions (LIKE user_subscriptions);
 
 COPY tmp_user_subscriptions
-FROM '/seed/user_subscriptions_v4.csv'
+FROM '/seed/user_subscriptions_v5.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO user_subscriptions
@@ -69,7 +69,7 @@ ON CONFLICT (user_subscription_id) DO NOTHING;
 CREATE TEMP TABLE tmp_user_trips (LIKE user_trips);
 
 COPY tmp_user_trips
-FROM '/seed/user_trips_v4.csv'
+FROM '/seed/user_trips_v5.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO user_trips
@@ -82,7 +82,7 @@ ON CONFLICT (trip_id) DO NOTHING;
 CREATE TEMP TABLE tmp_trip_legs (LIKE trip_legs);
 
 COPY tmp_trip_legs
-FROM '/seed/trip_legs_v7.csv'
+FROM '/seed/trip_legs_v8.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO trip_legs
@@ -95,7 +95,7 @@ ON CONFLICT (leg_id) DO NOTHING;
 CREATE TEMP TABLE tmp_user_calendars (LIKE user_calendars);
 
 COPY tmp_user_calendars
-FROM '/seed/user_calendars_v1.csv'
+FROM '/seed/user_calendars_v2.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
 INSERT INTO user_calendars
