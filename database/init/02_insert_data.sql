@@ -28,10 +28,18 @@ ON CONFLICT (user_id) DO NOTHING;
 -- user_onboardings
 -- ----------------------------------------------------------------------------
 CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings);
+ALTER TABLE tmp_user_onboardings ALTER COLUMN bike_access TYPE TEXT;
 
 COPY tmp_user_onboardings
 FROM '/seed/user_onboardings_v3.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
+
+ALTER TABLE tmp_user_onboardings
+    ALTER COLUMN bike_access TYPE TEXT[]
+    USING CASE
+        WHEN bike_access IS NULL OR bike_access = '' THEN '{}'::TEXT[]
+        ELSE string_to_array(bike_access, ',')
+    END;
 
 INSERT INTO user_onboardings
 SELECT * FROM tmp_user_onboardings

@@ -338,7 +338,7 @@ export default function Login() {
       onboarding: {
         has_driving_license: hasLicense,
         car_access: carAccess || null,
-        bike_access: bikeAccess.length > 0 ? bikeAccess.join(',') : null,
+        bike_access: bikeAccess,
         preferred_transport_modes: frequentModes,
         avoided_transport_modes: avoidModes,
         score_money: priorityScores.budget * 10,

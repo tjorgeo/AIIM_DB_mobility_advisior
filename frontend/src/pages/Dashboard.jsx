@@ -144,16 +144,26 @@ export default function Dashboard() {
   const langKey = lang.toLowerCase()
   const analyst = analysis?.raw_agent_payloads?.analyst?.output || null
   const summary = analysis?.summary || null
-  const scenarios = summary?.scenarios || []
-  const recommended = scenarios.find((s) => s.id === summary?.recommended_scenario) || scenarios[0] || null
+  const communicator = analysis?.raw_agent_payloads?.communicator?.output || null
+  const recommended = summary || null
 
   const busy = (v) => (loadingData ? '…' : v)
-  const annualSpendStr = analyst ? euro(analyst.current_annual_spend, { lang: langKey }) : busy('—')
+  const annualSpendStr = analyst ? euro(analyst.current_annual_spend_eur, { lang: langKey }) : busy('—')
   const distanceStr = analyst ? `${number(analyst.total_distance_km, langKey)} km` : busy('—')
-  const co2Str = analyst ? `${number(analyst.co2_total_kg, langKey)} kg` : busy('—')
-  const recPriceStr = recommended ? euro(recommended.annual_cost, { lang: langKey }) : annualSpendStr
-  const recSavings = recommended?.annual_savings || 0
-  const recChanges = recommended?.changes || []
+  const co2Str = analyst ? `${number(analyst.total_co2_kg, langKey)} kg` : busy('—')
+  const recSavings = summary?.total_estimated_savings_eur || 0
+  // Recommended annual cost = what you pay today minus the estimated savings if you
+  // follow every suggested action (category_subscription_analysis contract).
+  const recPriceStr = summary
+    ? euro(Math.max((summary.total_actual_annual_cost_eur || 0) - recSavings, 0), { lang: langKey })
+    : annualSpendStr
+  // One "+/−" line per suggested subscription change from the communicator agent.
+  const recChanges = (communicator?.actions_required || []).flatMap((a) => {
+    const lines = []
+    if (a.from && a.from !== 'no subscription') lines.push({ action: 'remove', item: a.from })
+    if (a.to) lines.push({ action: 'add', item: a.to })
+    return lines
+  })
 
   const palette = ['#00f2fe', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f43f5e']
   const derivedTravelStats = analyst?.mode_breakdown
@@ -419,7 +429,7 @@ export default function Dashboard() {
               <TrendingUp size={12} /> PERSONALIZED
             </div>
 
-            <h2 style={{ fontSize: '1.8rem', fontWeight: '800', letterSpacing: '-0.03em', marginBottom: '0.5rem', lineHeight: '1.2' }}>
+            <h2 style={{ color: colors.text, fontSize: '1.8rem', fontWeight: '800', letterSpacing: '-0.03em', marginBottom: '0.5rem', lineHeight: '1.2' }}>
               {t.optimized}
             </h2>
             <p style={{ color: colors.textMuted, fontSize: '0.9rem', lineHeight: '1.4', marginBottom: '1.25rem' }}>
@@ -523,7 +533,7 @@ export default function Dashboard() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginTop: '0.25rem', marginBottom: '1rem' }}>
               <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.portfolioTitle}</h3>
+                <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.portfolioTitle}</h3>
                 <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.recommended}</span>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -568,7 +578,7 @@ export default function Dashboard() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <div>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
+              <h3 style={{ color: colors.text, fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
               <span style={{ fontSize: '0.78rem', color: colors.textMuted }}>{modes[0] ? `${lang === 'DE' ? 'Meist' : 'Mostly'} ${modes[0].name}` : t.mostlyWalk}</span>
             </div>
             <BarChart3 size={18} style={{ color: colors.accentPurple }} />
@@ -603,7 +613,7 @@ export default function Dashboard() {
         }}>
           <div style={{ color: colors.accentCyan }}><ArrowUpRight size={20} /></div>
           <div style={{ textAlign: 'left' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.1rem' }}>{t.savingOpp}</h4>
+            <h4 style={{ color: colors.text, fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.1rem' }}>{t.savingOpp}</h4>
             <p style={{ fontSize: '0.8rem', color: colors.textMuted, margin: 0 }}>{t.perfectMix}</p>
           </div>
         </div>
@@ -616,7 +626,7 @@ export default function Dashboard() {
           lang={lang.toLowerCase()}
           advisorMemo={summary?.memos?.[lang === 'DE' ? 'german' : 'english']}
           getContext={() => ({ recommendation: recommended, analysis })}
-          actions={{ optimize: async () => scenarios, approve: async () => true }}
+          actions={{ optimize: async () => summary?.category_subscription_analysis || [], approve: async () => true }}
         />
       )}
     </div>

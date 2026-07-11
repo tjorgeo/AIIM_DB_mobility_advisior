@@ -53,12 +53,6 @@ class Orchestrator:
         forecaster_out = state["forecaster_out"]
         communicator_out = state["communicator_out"]
 
-        memos = {
-            "english": communicator_out["memo_english"],
-            "german": communicator_out["memo_german"],
-        }
-        memo_source = communicator_out.get("memo_source", "template")
-
         # --- STATE MANAGEMENT & PERSISTENCE ---
         rec_id = str(uuid.uuid4())
         created_at_str = datetime.now().isoformat()
@@ -123,12 +117,10 @@ class Orchestrator:
             preferences=user_preferences,
             subscriptions=subscriptions,
             travel_history_len=len(travel_history),
+            pricing_catalog_size=len(state["pricing_catalog"]),
             analyst_out=analyst_out,
             forecaster_out=forecaster_out,
-            optimizer_out=optimizer_out,
-            memos=memos,
-            memo_source=memo_source,
-            annual_savings_eur=communicator_out.get("annual_savings_eur", 0.0),
+            communicator_out=communicator_out,
         )
         # Signals main.py to schedule the background LLM memo. Popped before the
         # response is returned to the client.
@@ -168,7 +160,10 @@ class Orchestrator:
             stored = json.loads(row["optimizer_scenarios"]) if row["optimizer_scenarios"] else {}
         except (TypeError, json.JSONDecodeError):
             return None
-        if "scenarios" not in stored:
+        # Rows written before the per-category refactor stored portfolio "scenarios";
+        # they can't be shaped into the current contract → treat as cache miss so a
+        # fresh run replaces them.
+        if "category_subscription_analysis" not in stored:
             return None
 
         ctx = load_context(user_id)
@@ -176,9 +171,13 @@ class Orchestrator:
             return None
 
         memos = stored.get("memos", {})
-        optimizer_out = {k: v for k, v in stored.items() if k not in ("memos", "memo_source")}
-        best = optimizer_out.get("best_recommendation_id")
-        scen = next((s for s in optimizer_out.get("scenarios", []) if s.get("id") == best), None)
+        communicator_out = {
+            "total_estimated_savings_eur": stored.get("total_estimated_savings_eur", 0.0),
+            "actions_required": stored.get("actions_required", []),
+            "memo_english": memos.get("english"),
+            "memo_german": memos.get("german"),
+            "memo_source": stored.get("memo_source", "template"),
+        }
 
         return self._shape_payload(
             rec_id=row["recommendation_id"],
@@ -188,12 +187,10 @@ class Orchestrator:
             preferences=ctx["user_preferences"],
             subscriptions=ctx["subscriptions"],
             travel_history_len=len(ctx["travel_history"]),
+            pricing_catalog_size=len(ctx.get("pricing_catalog", [])),
             analyst_out=analyst_out,
             forecaster_out=forecaster_out,
-            optimizer_out=optimizer_out,
-            memos=memos,
-            memo_source=stored.get("memo_source", "template"),
-            annual_savings_eur=(scen or {}).get("annual_savings", 0.0),
+            communicator_out=communicator_out,
         )
 
     def _shape_payload(
@@ -206,21 +203,25 @@ class Orchestrator:
         preferences,
         subscriptions,
         travel_history_len,
+        pricing_catalog_size,
         analyst_out,
         forecaster_out,
-        optimizer_out,
-        memos,
-        memo_source,
-        annual_savings_eur,
+        communicator_out,
     ) -> dict:
         """The exact response contract the frontend consumes. Shared by the fresh-run
-        and cache paths so they can never drift."""
-        communicator_out = {
-            "memo_english": memos.get("english"),
-            "memo_german": memos.get("german"),
-            "memo_source": memo_source,
-            "annual_savings_eur": annual_savings_eur,
-        }
+        and cache paths so they can never drift.
+
+        ``communicator_out`` must carry ``total_estimated_savings_eur``,
+        ``actions_required``, ``memo_english``, ``memo_german`` and ``memo_source`` —
+        exactly what :func:`template_memos` returns (the cache path rebuilds the same
+        shape from the stored row).
+        """
+        category_analysis = analyst_out.get("category_subscription_analysis", [])
+        # Sum of what the user is actually paying today across every category we
+        # analyzed (each category's own current sub cost + out-of-pocket spend).
+        total_actual_annual_cost = round(
+            sum(c.get("actual_annual_cost_eur", 0.0) for c in category_analysis), 2
+        )
         return {
             "session_id": rec_id,
             "status": status,
@@ -232,8 +233,8 @@ class Orchestrator:
             "current_subscriptions": subscriptions,
             "summary": {
                 "total_actual_annual_cost_eur": total_actual_annual_cost,
-                "total_co2_kg": analyst_out["total_co2_kg"],
-                "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
+                "total_co2_kg": analyst_out.get("total_co2_kg", 0.0),
+                "total_estimated_savings_eur": communicator_out.get("total_estimated_savings_eur", 0.0),
                 "category_subscription_analysis": category_analysis,
                 "memos": {
                     "english": communicator_out["memo_english"],
@@ -249,7 +250,7 @@ class Orchestrator:
                             for s in subscriptions
                             if s.get("subscription_status") == "active"
                         ],
-                        "pricing_catalog_size": len(pricing_catalog),
+                        "pricing_catalog_size": pricing_catalog_size,
                     },
                     "output": analyst_out,
                 },
@@ -262,7 +263,7 @@ class Orchestrator:
                 },
                 "communicator": {
                     "input": {
-                        "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
+                        "total_estimated_savings_eur": communicator_out.get("total_estimated_savings_eur", 0.0),
                         "memo_source": communicator_out.get("memo_source", "template"),
                     },
                     "output": communicator_out,

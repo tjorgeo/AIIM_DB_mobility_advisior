@@ -125,10 +125,9 @@ CREATE TABLE IF NOT EXISTS user_onboardings (
             OR car_access IN ('none', 'occasional', 'shared', 'own')
         ),
 
-    bike_access TEXT
+    bike_access TEXT[] NOT NULL DEFAULT '{}'
         CHECK (
-            bike_access IS NULL
-            OR bike_access IN ('none', 'occasional', 'own', 'shared')
+            bike_access <@ ARRAY['none', 'occasional', 'own', 'shared']::TEXT[]
         ),
 
     -- Mobility Preferences

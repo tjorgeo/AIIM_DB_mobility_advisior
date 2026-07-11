@@ -68,7 +68,7 @@ class RegisterUser(BaseModel):
 class RegisterOnboarding(BaseModel):
     has_driving_license: Optional[bool] = None
     car_access: Optional[str] = None
-    bike_access: Optional[str] = None
+    bike_access: List[str] = []
     preferred_transport_modes: List[str] = []
     avoided_transport_modes: List[str] = []
     score_money: Optional[int] = None
