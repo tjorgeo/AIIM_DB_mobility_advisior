@@ -2,70 +2,137 @@
 
 import pytest
 
-from agent.engines import analyze_portfolio, optimize, template_memos
+from agent.engines import analyze_portfolio, template_memos
 
 
 @pytest.fixture
-def analysis_and_optimizer(travel_history, subscriptions, pricing_catalog, preferences):
-    analysis = analyze_portfolio(travel_history, subscriptions)
-    analysis["preferences"] = preferences  # the pipeline attaches this before the memo
-    optimizer = optimize(travel_history, subscriptions, pricing_catalog, preferences)
-    return analysis, optimizer
+def analysis(travel_history, subscriptions, pricing_catalog, preferences):
+    out = analyze_portfolio(travel_history, subscriptions, pricing_catalog)
+    out["preferences"] = preferences  # the pipeline attaches this before the memo
+    return out
 
 
-def test_returns_expected_keys(analysis_and_optimizer):
-    analysis, optimizer = analysis_and_optimizer
-    memo = template_memos("Alex Keller", analysis, optimizer)
+def test_returns_expected_keys(analysis):
+    memo = template_memos("Alex Keller", analysis)
     assert {
         "memo_english",
         "memo_german",
-        "annual_savings_eur",
-        "co2_savings_kg",
+        "total_estimated_savings_eur",
         "actions_required",
-        "recommended_scenario_id",
     } <= set(memo)
 
 
-def test_both_memos_nonempty_and_name_scenario_present(analysis_and_optimizer):
-    analysis, optimizer = analysis_and_optimizer
-    best = next(s for s in optimizer["scenarios"] if s["id"] == optimizer["best_recommendation_id"])
-    memo = template_memos("Alex Keller", analysis, optimizer)
+def test_both_memos_nonempty_and_mention_customer(analysis):
+    memo = template_memos("Alex Keller", analysis)
     for text in (memo["memo_english"], memo["memo_german"]):
         assert text.strip()
         assert "Alex Keller" in text
-        assert best["label"] in text
 
 
-def test_reads_savings_potential_estimate_eur_key(analysis_and_optimizer):
-    """Regression guard: the memo must read ``savings_potential_estimate_eur`` (the
-    exact key mismatch that once broke it). Drop every other analysis key and confirm
-    it still renders from just that field + preferences."""
-    _, optimizer = analysis_and_optimizer
-    minimal_analysis = {"savings_potential_estimate_eur": 123.45, "preferences": {}}
-    memo = template_memos("Test User", minimal_analysis, optimizer)
-    assert "123.45" in memo["memo_english"]
+def test_every_category_gets_a_line_in_both_languages(analysis):
+    memo = template_memos("Alex Keller", analysis)
+    for entry in analysis["category_subscription_analysis"]:
+        label_en = {
+            "public_transport": "Public transport",
+            "bike_sharing": "Bike sharing",
+            "car_sharing": "Car sharing",
+            "e_scooter": "E-scooter",
+        }[entry["category"]]
+        assert label_en in memo["memo_english"]
 
 
-def test_no_change_scenario_reads_cleanly():
-    """A recommended scenario with no add/cancel changes should render the
-    'no contract changes' wording in both languages."""
-    optimizer = {
-        "best_recommendation_id": "A",
-        "baseline_annual_cost": 600.0,
-        "scenarios": [
+def test_no_categories_renders_cleanly():
+    """No travel history in any subscribable category should still produce a valid,
+    non-crashing memo rather than an empty/broken one."""
+    analysis = {"category_subscription_analysis": []}
+    memo = template_memos("Test User", analysis)
+    assert memo["total_estimated_savings_eur"] == 0.0
+    assert memo["actions_required"] == []
+    assert "Test User" in memo["memo_english"]
+    assert "Test User" in memo["memo_german"]
+
+
+def test_switch_to_alternative_reports_positive_savings_and_action():
+    analysis = {
+        "category_subscription_analysis": [
             {
-                "id": "A",
-                "label": "Cost-Optimized Portfolio",
-                "annual_cost": 600.0,
-                "annual_savings": 0.0,
-                "co2_savings_kg": 0.0,
-                "changes": [],
-                "explanation": "Your current setup is already optimal.",
-                "portfolio": [],
+                "category": "public_transport",
+                "annual_trips": 20.0,
+                "no_subscription_annual_cost_eur": 300.0,
+                "actual_annual_cost_eur": 588.0,
+                "current_subscriptions": [
+                    {"provider_plan_name": "Deutschlandticket", "annual_cost_eur": 588.0, "annual_net_savings_eur": -400.0}
+                ],
+                "cheapest_alternative": {
+                    "provider_plan_name": "BahnCard 25, 2. Klasse",
+                    "estimated_annual_cost_eur": 287.9,
+                    "pricing_basis": "25% discount card (estimated from plan name)",
+                },
+                "non_comparable_alternatives": [],
+                "recommendation": "switch_to_alternative",
             }
-        ],
+        ]
     }
-    analysis = {"savings_potential_estimate_eur": 0.0, "preferences": {}}
-    memo = template_memos("Test User", analysis, optimizer)
-    assert "No contract changes required." in memo["memo_english"]
-    assert "Keine Vertragsänderungen erforderlich." in memo["memo_german"]
+    memo = template_memos("Test User", analysis)
+    assert memo["total_estimated_savings_eur"] == round(588.0 - 287.9, 2)
+    assert len(memo["actions_required"]) == 1
+    action = memo["actions_required"][0]
+    assert action["action"] == "switch_to_alternative"
+    assert action["from"] == "Deutschlandticket"
+    assert action["to"] == "BahnCard 25, 2. Klasse"
+    assert "BahnCard 25, 2. Klasse" in memo["memo_english"]
+    assert "Deutschlandticket" in memo["memo_english"]
+
+
+def test_category_line_names_which_modes_it_covers():
+    """applies_to_modes is now an entry-level field (one bucket, one scope) — the memo
+    must name which specific modes a category's figures cover, so a long_distance_rail
+    line never reads as if it were about the same trips as public_transport."""
+    analysis = {
+        "category_subscription_analysis": [
+            {
+                "category": "long_distance_rail",
+                "annual_trips": 40.0,
+                "no_subscription_annual_cost_eur": 900.0,
+                "actual_annual_cost_eur": 588.0,
+                "applies_to_modes": ["long_distance_train"],
+                "current_subscriptions": [
+                    {"provider_plan_name": "BahnCard 50, 2. Klasse", "annual_cost_eur": 244.0,
+                     "annual_net_savings_eur": -100.0}
+                ],
+                "cheapest_alternative": {
+                    "provider_plan_name": "BahnCard 25, 2. Klasse",
+                    "estimated_annual_cost_eur": 400.0,
+                    "pricing_basis": "25% discount card (estimated from plan name)",
+                },
+                "non_comparable_alternatives": [],
+                "recommendation": "switch_to_alternative",
+            }
+        ]
+    }
+    memo = template_memos("Test User", analysis)
+    assert "long-distance trains" in memo["memo_english"]
+    assert "Long-distance rail" in memo["memo_english"]
+
+
+def test_keep_current_reports_no_action_and_no_savings():
+    analysis = {
+        "category_subscription_analysis": [
+            {
+                "category": "public_transport",
+                "annual_trips": 200.0,
+                "no_subscription_annual_cost_eur": 900.0,
+                "actual_annual_cost_eur": 588.0,
+                "current_subscriptions": [
+                    {"provider_plan_name": "Deutschlandticket", "annual_cost_eur": 588.0, "annual_net_savings_eur": 312.0}
+                ],
+                "cheapest_alternative": None,
+                "non_comparable_alternatives": [],
+                "recommendation": "keep_current",
+            }
+        ]
+    }
+    memo = template_memos("Test User", analysis)
+    assert memo["actions_required"] == []
+    assert memo["total_estimated_savings_eur"] == 0.0
+    assert "keep it" in memo["memo_english"]

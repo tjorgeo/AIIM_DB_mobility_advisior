@@ -62,11 +62,28 @@ def _plan_annual(plan: dict) -> float:
     return float(plan.get("monthly_cost") or 0.0) * 12
 
 
+def _has_flat_price(plan: dict) -> bool:
+    """Whether a plan can be costed by this flat-rate model at all.
+
+    Pay-as-you-go plans (``per_minute`` / ``per_km`` MILES, Dott, Voi, Lime, Sixt,
+    teilAuto cityflitzer, JobRad) carry no flat fee, so ``_plan_annual`` is 0. Without
+    this guard such a plan is picked as the "cheapest" in its category and treated as
+    *free coverage at €0* — it would zero out every leg in that category for nothing.
+    A plan whose only price is usage-based cannot be represented as flat coverage
+    (usage-based pricing is deferred, see backend/README.md), so it must not enter the
+    flat-rate candidate space at all.
+    """
+    return _plan_annual(plan) > 0
+
+
 def optimize(
     travel_history: list,
     current_subscriptions: list,
     pricing_catalog: list,
-    preferences: dict,
+    preferences: dict,  # AMB-03: intentionally NOT consumed by ranking in Phase 1.
+    #                     Ranking is (cost, -coverage) only; onboarding preference
+    #                     scores (cost/co2/convenience) are accepted but unused here.
+    #                     A weighted score is Phase-2 work. Kept for a stable signature.
     user_age: int | None = None,
 ) -> dict:
     """
@@ -132,7 +149,9 @@ def optimize(
     eligible_catalog = [
         plan
         for plan in pricing_catalog
-        if _is_ongoing_candidate(plan) and _is_eligible(plan, user_age)
+        if _is_ongoing_candidate(plan)
+        and _has_flat_price(plan)
+        and _is_eligible(plan, user_age)
     ]
     by_category = {}
     for plan in eligible_catalog:

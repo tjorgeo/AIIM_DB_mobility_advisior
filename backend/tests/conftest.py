@@ -10,6 +10,8 @@ latest leg date (not "now"), so these stay deterministic whenever the suite runs
 
 import pytest
 
+from agent.engines import analyze_portfolio
+
 
 @pytest.fixture
 def subscriptions():
@@ -63,11 +65,15 @@ def travel_history():
 
 @pytest.fixture
 def pricing_catalog():
-    """A handful of catalog plans across three categories (the optimizer's candidate
-    space). ``id`` matches the active sub's subscription_id so 'keep current' is a
-    candidate."""
+    """A handful of catalog plans across three categories (the candidate space for
+    category_subscription_analysis). ``id`` matches the active sub's subscription_id
+    so it's correctly excluded from its own category's alternatives. Car Sharing Basic
+    and E-Scooter Pass deliberately carry no pricing_model (like most real car-sharing/
+    e-scooter catalog rows) so they land in non_comparable_alternatives, not
+    cheapest_alternative — there's no per-minute/per-km rate on file to price them by."""
     return [
-        {"id": "s1", "name": "Deutschlandticket", "category": "public_transport", "monthly_cost": 49.0, "annual_cost": None},
+        {"id": "s1", "name": "Deutschlandticket", "category": "public_transport",
+         "monthly_cost": 49.0, "annual_cost": None, "pricing_model": "flat_monthly"},
         {"id": "s2", "name": "Car Sharing Basic", "category": "car_sharing", "monthly_cost": 0.0, "annual_cost": 0.0},
         {"id": "s3", "name": "E-Scooter Pass", "category": "e_scooter", "monthly_cost": 5.0, "annual_cost": 60.0},
     ]
@@ -76,6 +82,14 @@ def pricing_catalog():
 @pytest.fixture
 def preferences():
     return {"cost_priority": 80, "co2_priority": 50, "convenience_priority": 50, "class_preference": "2nd"}
+
+
+@pytest.fixture
+def analyst_out(travel_history, subscriptions, pricing_catalog):
+    """analyze_portfolio's full output for the shared fixtures, including
+    category_subscription_analysis (the current-vs-alternative-vs-no-subscription
+    verdict per travel category)."""
+    return analyze_portfolio(travel_history, subscriptions, pricing_catalog)
 
 
 @pytest.fixture

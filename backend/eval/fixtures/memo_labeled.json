@@ -1,0 +1,34 @@
+[
+  {
+    "case": "grounded-clean",
+    "judge": "memo-groundedness",
+    "expected": 1,
+    "memo_english": "Switching to the BahnCard 50 lands your annual mobility cost at €1,240, saving €310 per year versus your current €1,550. It also cuts about 84 kg of CO2.",
+    "grounding": {
+      "optimizer": {"baseline_annual_cost": 1550, "scenarios": [{"label": "BahnCard 50", "annual_cost": 1240, "annual_savings": 310, "co2_savings_kg": 84}]}
+    }
+  },
+  {
+    "case": "ungrounded-invented-number",
+    "judge": "memo-groundedness",
+    "expected": 0,
+    "memo_english": "Switching to the BahnCard 50 saves you €900 per year and cuts 500 kg of CO2 — a huge win.",
+    "grounding": {
+      "optimizer": {"baseline_annual_cost": 1550, "scenarios": [{"label": "BahnCard 50", "annual_cost": 1240, "annual_savings": 310, "co2_savings_kg": 84}]}
+    }
+  },
+  {
+    "case": "bilingual-faithful",
+    "judge": "memo-bilingual-complete",
+    "expected": 1,
+    "memo_english": "You save €310 per year with the BahnCard 50, cutting 84 kg of CO2.",
+    "memo_german": "Mit der BahnCard 50 sparst du €310 pro Jahr und vermeidest 84 kg CO2."
+  },
+  {
+    "case": "bilingual-dropped-figure",
+    "judge": "memo-bilingual-complete",
+    "expected": 0,
+    "memo_english": "You save €310 per year with the BahnCard 50, cutting 84 kg of CO2.",
+    "memo_german": "Mit der BahnCard 50 sparst du Geld pro Jahr."
+  }
+]

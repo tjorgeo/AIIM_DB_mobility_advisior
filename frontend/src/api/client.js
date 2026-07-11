@@ -61,11 +61,13 @@ export async function submitOnboarding(profile) {
   return { ok: false, error }
 }
 
-export async function analyze(userId) {
+// force=true bypasses the backend read-through cache and recomputes the analysis
+// (e.g. after the user changes something and wants a fresh recommendation).
+export async function analyze(userId, { force = false } = {}) {
   const res = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId }),
+    body: JSON.stringify({ user_id: userId, force }),
   })
   return parseJson(res, 'Analysis')
 }
@@ -88,4 +90,19 @@ export async function chat(userId, messages) {
     body: JSON.stringify({ user_id: userId, messages }),
   })
   return parseJson(res, 'Chat')
+}
+
+// Records a thumbs up/down on a chat reply as a Langfuse score. Best-effort:
+// resolves to false on any failure so feedback UI never disrupts the chat.
+export async function submitFeedback(traceId, value, comment) {
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trace_id: traceId, value, comment }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }

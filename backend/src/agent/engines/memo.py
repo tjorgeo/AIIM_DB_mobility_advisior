@@ -3,80 +3,192 @@
 Pure function, no LLM. When an LLM is configured the pipeline replaces the prose
 with an LLM-written version, but this template always produces a valid memo (and
 the structured fields the frontend reads) so the app works without a key.
+
+Built entirely from ``analyze_portfolio``'s ``category_subscription_analysis`` —
+one line per travel category, saying whether the currently-held subscription (if
+any) pays off, whether a cheaper alternative exists, or whether pay-as-you-go is
+already the cheapest option. No portfolio scenarios, no combined recommendation:
+each category stands on its own, since that's the level at which the underlying
+numbers are actually comparable (see analysis.py's ``_pricing_basis``).
 """
 
+_CATEGORY_LABEL_EN = {
+    "public_transport": "Public transport",
+    "long_distance_rail": "Long-distance rail",
+    "bike_sharing": "Bike sharing",
+    "car_sharing": "Car sharing",
+    "e_scooter": "E-scooter",
+}
+_CATEGORY_LABEL_DE = {
+    "public_transport": "Öffentlicher Nahverkehr",
+    "long_distance_rail": "Fernverkehr",
+    "bike_sharing": "Bike-Sharing",
+    "car_sharing": "Car-Sharing",
+    "e_scooter": "E-Scooter",
+}
 
-def template_memos(persona_name: str, analysis_result: dict, optimizer_result: dict) -> dict:
+# "public_transport" (local buses/trams + regional trains — Deutschlandticket
+# territory) and "long_distance_rail" (long-distance trains only — BahnCard
+# territory) are two independent categories that happen to share a DB catalog
+# category (see analysis.py's category_subscription_analysis docstring). Both are
+# genuinely worth holding at once — naming which modes each one's price covers
+# keeps the memo from implying one replaces the other.
+_MODE_LABEL_EN = {
+    "public_transport": "local buses/trams",
+    "regional_train": "regional trains",
+    "long_distance_train": "long-distance trains",
+}
+_MODE_LABEL_DE = {
+    "public_transport": "lokale Busse/Bahnen",
+    "regional_train": "Regionalzüge",
+    "long_distance_train": "Fernzüge",
+}
+_MODES_WORTH_NAMING = {"public_transport", "long_distance_rail"}
+
+
+def _current_names(entry: dict) -> str:
+    names = [c["provider_plan_name"] for c in entry["current_subscriptions"] if c.get("provider_plan_name")]
+    return " + ".join(names) if names else "no subscription"
+
+
+def _coverage_note(entry: dict, lang: str) -> str:
+    """A short parenthetical naming exactly which trip legs this category's plans
+    apply to. Only shown for public_transport/long_distance_rail (see module comment
+    above) — other categories map 1:1 to a single raw mode, nothing to disambiguate."""
+    if entry["category"] not in _MODES_WORTH_NAMING:
+        return ""
+    applies_to_modes = entry.get("applies_to_modes") or []
+    if not applies_to_modes:
+        return ""
+    labels = _MODE_LABEL_EN if lang == "en" else _MODE_LABEL_DE
+    joined = ", ".join(labels.get(m, m) for m in applies_to_modes)
+    return f" (covers {joined})" if lang == "en" else f" (deckt ab: {joined})"
+
+
+def _category_line(entry: dict, lang: str) -> tuple[str, float]:
+    """One sentence describing the verdict for a single category, plus the
+    estimated annual savings implied by that verdict (0.0 if the verdict is
+    "nothing to change")."""
+    en = lang == "en"
+    label = (_CATEGORY_LABEL_EN if en else _CATEGORY_LABEL_DE)[entry["category"]]
+    rec = entry["recommendation"]
+    current = _current_names(entry)
+    note = _coverage_note(entry, lang)
+    alt = entry.get("cheapest_alternative")
+    alt_name = alt["provider_plan_name"] if alt else None
+
+    if rec == "keep_current":
+        savings = 0.0
+        text = (
+            f"**{label}{note}:** {current} pays off — it's cheaper than paying as you go, so keep it."
+            if en else
+            f"**{label}{note}:** {current} lohnt sich — günstiger als Einzelfahrscheine, also behalten."
+        )
+    elif rec == "switch_to_alternative":
+        savings = round(entry["actual_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
+        text = (
+            f"**{label}{note}:** switching from {current} to {alt_name} could save an "
+            f"estimated €{savings:.2f}/year ({alt['pricing_basis']})."
+            if en else
+            f"**{label}{note}:** ein Wechsel von {current} zu {alt_name} könnte geschätzt "
+            f"€{savings:.2f}/Jahr sparen ({alt['pricing_basis']})."
+        )
+    elif rec == "cancel_current_go_pay_as_you_go":
+        savings = round(entry["actual_annual_cost_eur"] - entry["no_subscription_annual_cost_eur"], 2)
+        text = (
+            f"**{label}{note}:** {current} isn't paying off — cancelling and paying as you go would "
+            f"save an estimated €{savings:.2f}/year."
+            if en else
+            f"**{label}{note}:** {current} lohnt sich nicht — eine Kündigung zugunsten von "
+            f"Einzelfahrscheinen würde geschätzt €{savings:.2f}/Jahr sparen."
+        )
+    elif rec == "consider_subscribing":
+        savings = round(entry["no_subscription_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
+        text = (
+            f"**{label}{note}:** a {alt_name} could save an estimated €{savings:.2f}/year compared to "
+            f"paying as you go ({alt['pricing_basis']})."
+            if en else
+            f"**{label}{note}:** ein {alt_name} könnte geschätzt €{savings:.2f}/Jahr im Vergleich zu "
+            f"Einzelfahrscheinen sparen ({alt['pricing_basis']})."
+        )
+    else:  # no_subscription_needed
+        savings = 0.0
+        text = (
+            f"**{label}:** paying as you go remains your cheapest option — no subscription needed."
+            if en else
+            f"**{label}:** Einzelfahrscheine bleiben die günstigste Option — kein Abo nötig."
+        )
+    return text, max(savings, 0.0)
+
+
+def template_memos(persona_name: str, analysis_result: dict) -> dict:
     """
     Drafts a context-aware, personalized mobility consultation memo in German and
-    English from the deterministic analysis + optimizer outputs. Explains why the
-    recommended scenario makes sense based on historical data.
+    English purely from ``analysis_result["category_subscription_analysis"]`` —
+    one verdict line per travel category, plus the actions that follow from it.
     """
-    best_rec_id = optimizer_result["best_recommendation_id"]
-    scenario = next(
-        (s for s in optimizer_result["scenarios"] if s["id"] == best_rec_id),
-        optimizer_result["scenarios"][0],
+    categories = analysis_result.get("category_subscription_analysis", [])
+
+    actions_required = []
+    total_savings = 0.0
+    lines_en, lines_de = [], []
+
+    for entry in categories:
+        line_en, savings_en = _category_line(entry, "en")
+        line_de, _ = _category_line(entry, "de")
+        lines_en.append(line_en)
+        lines_de.append(line_de)
+        total_savings += savings_en
+
+        rec = entry["recommendation"]
+        if rec in ("switch_to_alternative", "cancel_current_go_pay_as_you_go", "consider_subscribing"):
+            actions_required.append({
+                "category": entry["category"],
+                "action": rec,
+                "from": _current_names(entry) if entry["current_subscriptions"] else None,
+                "to": entry["cheapest_alternative"]["provider_plan_name"] if entry.get("cheapest_alternative") else None,
+                "estimated_annual_savings_eur": savings_en,
+            })
+
+    total_savings = round(total_savings, 2)
+    body_en = "\n\n".join(lines_en) if lines_en else "No travel history in a subscribable category was found."
+    body_de = "\n\n".join(lines_de) if lines_de else "Es wurde kein Reiseverhalten in einer abonnierbaren Kategorie gefunden."
+
+    savings_line_en = (
+        f"Across all categories, following these suggestions could save an estimated total of "
+        f"**€{total_savings:.2f}/year**."
+        if total_savings > 0 else
+        "Your current setup already looks cost-effective across the categories you use."
     )
-
-    annual_savings = scenario["annual_savings"]
-    co2_savings = scenario["co2_savings_kg"]
-    changes = scenario["changes"]
-    explanation_base = scenario["explanation"]
-
-    adds = [c["item"] for c in changes if c["action"] == "add"]
-    cancels = [c["item"] for c in changes if c["action"] == "cancel"]
-
-    adjustments_en = []
-    adjustments_de = []
-    if adds:
-        adjustments_en.append(f"Add subscription(s): {', '.join(adds)}")
-        adjustments_de.append(f"Abonnement(s) hinzufügen: {', '.join(adds)}")
-    if cancels:
-        adjustments_en.append(f"Cancel subscription(s): {', '.join(cancels)}")
-        adjustments_de.append(f"Abonnement(s) kündigen: {', '.join(cancels)}")
-
-    adjustments_str_en = "; ".join(adjustments_en) if adjustments_en else "No contract changes required."
-    adjustments_str_de = "; ".join(adjustments_de) if adjustments_de else "Keine Vertragsänderungen erforderlich."
+    savings_line_de = (
+        f"Insgesamt könnten diese Vorschläge geschätzt **€{total_savings:.2f}/Jahr** sparen."
+        if total_savings > 0 else
+        "Ihr aktuelles Setup ist in den von Ihnen genutzten Kategorien bereits kosteneffizient."
+    )
 
     text_en = (
         f"Dear {persona_name},\n\n"
-        f"I have completed a thorough strategic audit of your mobility portfolio for DB MoveOptimizer. "
-        f"Based on your past 12 months of travel behavior, we detected an inefficiency overhead of €{analysis_result['savings_potential_estimate_eur']}/year, "
-        f"including under-utilized subscriptions and mismatched fare tiers.\n\n"
-        f"### Recommended Strategy: {scenario['label']} (Scenario {scenario['id']})\n"
-        f"* **Annual Net Cost:** €{scenario['annual_cost']} (representing **€{annual_savings} in savings** compared to your baseline of €{optimizer_result['baseline_annual_cost']}).\n"
-        f"* **Sustainability Footprint:** Saved **{co2_savings} kg of CO₂** annually through optimized travel modes.\n"
-        f"* **Required Operations:** {adjustments_str_en}\n\n"
-        f"### Why This Works:\n"
-        f"{explanation_base} "
-        f"This recommendation directly aligns with your preferred cost priority of {analysis_result.get('preferences', {}).get('cost_priority', 80)}% "
-        f"and carbon reduction threshold of {analysis_result.get('preferences', {}).get('co2_priority', 50)}%.\n\n"
-        f"Would you like me to execute these changes and log them in your DB Account?\n\n"
+        f"I reviewed your travel history over the past year, category by category — comparing "
+        f"what you're currently paying against paying as you go and any comparable subscription "
+        f"alternative.\n\n"
+        f"{body_en}\n\n"
+        f"{savings_line_en}\n\n"
         f"Best regards,\n"
         f"DB MoveOptimizer Strategy Advisor"
     )
-
     text_de = (
         f"Sehr geehrte(r) {persona_name},\n\n"
-        f"ich habe eine detaillierte strategische Analyse Ihres Mobilitätsportfolios für den DB MoveOptimizer durchgeführt. "
-        f"Auf Basis Ihres Reiseverhaltens der letzten 12 Monate haben wir ein Einsparpotenzial von €{analysis_result['savings_potential_estimate_eur']}/Jahr identifiziert, "
-        f"hauptsächlich verursacht durch ungenutzte Abonnements und ungeeignete Tarifklassen.\n\n"
-        f"### Empfohlene Strategie: {scenario['label']} (Szenario {scenario['id']})\n"
-        f"* **Jährliche Gesamtkosten:** €{scenario['annual_cost']} (das bedeutet eine **Ersparnis von €{annual_savings}** im Vergleich zu Ihren aktuellen Kosten von €{optimizer_result['baseline_annual_cost']}).\n"
-        f"* **CO₂-Reduktion:** Einsparung von **{co2_savings} kg CO₂** pro Jahr durch optimierte Verkehrsmittelwahl.\n"
-        f"* **Notwendige Schritte:** {adjustments_str_de}\n\n"
-        f"### Begründung:\n"
-        f"{explanation_base.replace('This plan minimizes your financial outlays to the absolute limit. By making', 'Dieser Plan minimiert Ihre finanziellen Ausgaben auf das absolute Minimum. Durch').replace('contract adjustments, you can retain', 'Vertragsanpassungen sparen Sie jährlich').replace('in savings yearly.', 'ein.').replace('This plan blends significant cost reductions with high regional/long-distance coverage, supporting spontaneity and reducing carbon emissions by shifting short trips to rail.', 'Dieser Plan verbindet signifikante Kosteneinsparungen mit einer hohen regionalen und überregionalen Abdeckung. Er unterstützt Spontaneität und reduziert CO₂-Emissionen durch die Verkehrsverlagerung auf die Schiene.')}\n\n"
-        f"Möchten Sie, dass ich diese Vertragsanpassungen direkt in Ihrem DB-Konto ausführe?\n\n"
+        f"ich habe Ihr Reiseverhalten des letzten Jahres kategorienweise überprüft — im Vergleich "
+        f"zwischen Ihren aktuellen Kosten, Einzelfahrscheinen und vergleichbaren Abo-Alternativen.\n\n"
+        f"{body_de}\n\n"
+        f"{savings_line_de}\n\n"
         f"Mit freundlichen Grüßen,\n"
         f"Ihr DB MoveOptimizer Strategieberater"
     )
 
     return {
-        "recommended_scenario_id": best_rec_id,
-        "annual_savings_eur": annual_savings,
-        "co2_savings_kg": co2_savings,
-        "actions_required": changes,
+        "total_estimated_savings_eur": total_savings,
+        "actions_required": actions_required,
         "memo_english": text_en,
         "memo_german": text_de,
     }

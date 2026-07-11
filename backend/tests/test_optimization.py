@@ -136,6 +136,33 @@ def test_one_time_trial_plan_excluded_from_candidates(travel_history, subscripti
     assert "Probe BahnCard 25" not in recommended
 
 
+def test_zero_priced_payg_plan_is_not_free_coverage(preferences):
+    """Regression: a pay-as-you-go plan with no flat fee (monthly/annual 0/NULL) must
+    not be selected as 'free coverage'. Otherwise it would be the cheapest row in its
+    category (annual cost €0) and zero out every leg it covers for nothing — proposing
+    it as a subscription that eliminates all car-sharing cost at no charge."""
+    history = [
+        {"leg_id": f"l{i}", "transport_mode": "car_sharing",
+         "estimated_cost_eur": 12.0, "reference_cost_eur": 12.0, "estimated_co2_emissions": 1.0}
+        for i in range(10)
+    ]
+    subs = []
+    catalog = [
+        # per-minute PAYG: no flat price → must be excluded from candidates
+        {"id": "miles", "name": "MILES Pay-as-you-go", "category": "car_sharing",
+         "monthly_cost": 0.0, "annual_cost": None},
+    ]
+    out = optimize(history, subs, catalog, preferences)
+
+    recommended = {name for s in out["scenarios"] for name in s["portfolio"]}
+    assert "MILES Pay-as-you-go" not in recommended
+    # With no cost-able plan, the car-sharing legs stay out-of-pocket (10 * €12 = €120),
+    # not zeroed for free.
+    for s in out["scenarios"]:
+        assert s["annual_cost"] == 120.0
+        assert s["annual_savings"] == 0.0
+
+
 def test_no_user_age_does_not_filter_by_age(travel_history, subscriptions, preferences):
     """Without a known age (user_age=None, the default), age-gated plans aren't
     excluded — there's nothing to check them against."""

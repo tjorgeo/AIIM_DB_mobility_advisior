@@ -4,9 +4,18 @@
 
 **Project Scope:** Phase 1 high-fidelity functional prototype covering 14 user stories in the Scrum backlog,
 **Partnership:** University AIIM & **BCG Platinion** (Strategy IT Data Consulting Review)  
-**Duration:** May 20 - Aug 31, 2026 (15 Weeks Remaining)  
+**Duration:** May 20 - Aug 31, 2026  
 **Team:** 5 Consultant Data Scientists  
 **Goal:** Deliver a working 4-Agent prototype, a 10-page management report, and a 3-minute professional demo video.
+
+> **Reconciliation note (2026-07-08, ~Week 8).** The phase structure still frames the work, but
+> two June-16 "locked" decisions were overtaken by implementation: **Decision 1.2** (weighted
+> scenario rubric) and **Decision 1.3** (Prophet forecasting baseline) no longer describe the
+> system — scenario ranking was removed in favour of a per-category subscription analysis, and
+> the forecaster is a 90-day calendar-aware model with a deterministic seasonal fallback, not
+> Prophet. The LLM is **University GPT** (not Claude 3.5), the store is **Postgres-only** (Redis
+> deferred), and the "100-profile pilot" presupposes a profile generator that doesn't exist
+> (6 seeded personas today). These deviations are annotated inline below.
 
 ---
 
@@ -18,7 +27,7 @@
 * **Deliverables:**
   * ✅ Technical Architecture Blueprint with complete ADRs (Architecture Decision Records)
   * ✅ Mock API Gateway endpoints (FastAPI) and target JSON schemas defined
-  * ✅ Synthetic Profile Generator loaded with 5 core traveler personas
+  * ✅ Synthetic seed dataset loaded with 6 core traveler personas
   * ✅ Pricing catalog loaded (Deutschlandticket, Bahncard tiers, regional rates)
 * **Steering Gate (June 16 BCG Progress Meeting):** Formal phase gate review with BCG Platinion. Obtain sign-off on the **Phase 1 Decision Package** to authorize the kickoff of Phase 2 core agent development.
 
@@ -27,7 +36,7 @@
 To ensure maximum decision-making velocity during the June 16 progress meeting, the consulting team will compile and distribute a 3-page "Steering Memo" covering:
 
 1. **Mock Schema Specifications:** Target JSON contracts for DB Navigator and partner APIs.
-2. **Persona Catalog:** 5 synthetic user profiles representing DB's customer demographics.
+2. **Persona Catalog:** 6 synthetic user profiles representing DB's customer demographics.
 3. **Solver Rule Engine Specs:** Mathematical formulation of the greedy optimization heuristic.
 4. **Resilience & Failure Matrix:** Detailed mapping of agent fallbacks and timeout thresholds.
 
@@ -36,11 +45,14 @@ To ensure maximum decision-making velocity during the June 16 progress meeting, 
 The progress meeting will be structured around a formal voting board to lock the following decisions before entering code production:
 
 1. **Decision 1.1: Sandbox API Schema Approval** — Lock the data contracts (JSON payloads) for travel history, ensuring they are identical to future production payloads.
-2. **Decision 1.2: Scenario Weighted Rubric** — Formally approve the exact weights for scenario ranking:
-    * *Cost Focus:* 100% Cost optimization.
-    * *Balanced Focus:* 60% Cost / 40% Flexibility & Convenience.
-    * *Sustainability Focus:* 50% Cost / 50% CO₂ reduction.
-3. **Decision 1.3: Demand Forecasting Model Baseline** — Confirm choice of statistical Prophet moving averages for baseline demand, with LLM overrides triggered only by specific catalog constraints.
+2. **Decision 1.2: Scenario Weighted Rubric** — ~~Approve weights for Cost / Balanced /
+   Sustainability scenario ranking.~~ **⚠️ SUPERSEDED (July refactor):** scenario generation and
+   weighted ranking were removed. The system now emits a deterministic per-category
+   `keep/switch/drop` subscription analysis; onboarding priority scores frame the memo prose but
+   do not drive a numeric scenario rank.
+3. **Decision 1.3: Demand Forecasting Model Baseline** — ~~Confirm Prophet moving averages.~~
+   **⚠️ SUPERSEDED:** no Prophet. The Forecaster is a 90-day, calendar-aware model producing LLM
+   demand scenarios with a **deterministic seasonal fallback** as the number guard.
 4. **Decision 1.4: Resilience Thresholds & Timeouts** — Formally approve the maximum SLA timeouts:
     * Max E2E user latency: 30s.
     * Max agent execution timeout: Analyst (8s), Forecaster (8s), Optimizer (5s), Communicator (5s).
@@ -54,8 +66,8 @@ The progress meeting will be structured around a formal voting board to lock the
 * **Goal:** Implement the non-negotiable 4-agent systems and orchestrator state machine.
 * **Deliverables:**
   * **Week 5:** Analyst Agent (travel logs parsing and efficiency heuristic clustering) operational
-  * **Week 6:** Forecaster Agent (time-series seasonality prediction using Prophet/pandas) callable
-  * **Week 7:** Optimizer Agent (greedy multi-scenario solver) and basic Communicator (Claude 3.5 prompt) integrated
+  * **Week 6:** Forecaster Agent (90-day, calendar-aware; LLM scenarios + deterministic seasonal fallback) callable
+  * **Week 7:** Optimization tool (deterministic catalog analysis) and Communicator (University GPT memo, with template fallback) integrated
   * **Week 8:** End-to-end multi-agent orchestration running under the FastAPI state machine
 * **Phase Gate (July 13):** Working CLI / API flow showing all 4 agents executing on mock profile data.
 
@@ -63,12 +75,12 @@ The progress meeting will be structured around a formal voting board to lock the
 
 ### Phase 3: Pilot Run & Interface Hardening (Weeks 9-12 | July 14 - Aug 10)
 
-* **Goal:** Run the prototype against 100 synthetic customer travel profiles; validate accuracy and launch the Streamlit frontend.
+* **Goal:** Run the prototype against 100 synthetic customer travel profiles; validate accuracy and launch the React frontend.
 * **Deliverables:**
-  * ✅ 100-Profile Pilot simulation successfully executed
-  * ✅ Streamlit-based Premium Chat Widget deployed (local / web-accessible)
-  * ✅ Automated test runner proving optimizer calculations are accurate to within ±5%
-  * ✅ Caching layers (Redis) and state store (Postgres/SQLite) fully verified
+  * ⚠️ Multi-persona pilot run (6 seeded personas; a 100-profile generator was not built)
+  * ✅ React 18 + Vite Premium Chat Widget deployed (local / web-accessible)
+  * ✅ Deterministic engine test suite (`backend/tests/`) + LLM eval harness (`backend/eval/`)
+  * ✅ PostgreSQL state store verified (Redis caching deferred to Phase 2)
 * **Phase Gate (Aug 10):** Prototype functional, stable, and user-testable.
 
 ---
@@ -90,7 +102,7 @@ The progress meeting will be structured around a formal voting board to lock the
 | Risk Event | Likelihood | Impact | Proactive Mitigation Strategy |
 | :--- | :---: | :---: | :--- |
 | **API Contract Delays** | High | High | **Mitigated:** Use simulated sandbox endpoints and high-fidelity mock datasets. |
-| **Orchestrator Latency** | Medium | Medium | Implement parallel agent executions; cache pricing databases in Redis. |
+| **Orchestrator Latency** | Medium | Medium | Read-through cache on the latest recommendation; defer the slow LLM memo to a background task (no Redis in Phase 1). |
 | **Scope Creep** | Medium | High | Rely on the strict Phase 1 vs. Phase 2 boundaries; push advanced APIs to Phase 2. |
 
 ---
@@ -101,8 +113,8 @@ The progress meeting will be structured around a formal voting board to lock the
 
 - [ ] Technical Architecture document complete and approved.
 * [ ] Sandbox API Gateway operational with JSON schemas matching DB specifications.
-* [ ] Synthetic customer profile generator working with 5 traveler personas ([US 14]).
-* [ ] Local environment operational (Python FastAPI + Streamlit base).
+* [ ] Synthetic seed dataset working with 6 traveler personas ([US 14]).
+* [ ] Local environment operational (Python FastAPI + React 18/Vite base).
 
 ### Gate 2 (Week 8 - Agent Integration)
 
@@ -112,10 +124,10 @@ The progress meeting will be structured around a formal voting board to lock the
 
 ### Gate 3 (Week 12 - Prototype Hardening)
 
-- [ ] Streamlit interface fully integrated with the 4-agent backend ([US 13]).
-* [ ] 100-profile automated test run successful with zero engine crashes.
-* [ ] Caching (Redis) working to speed up subsequent queries.
-* [ ] Recommendations validated for mathematical accuracy.
+- [ ] React interface fully integrated with the backend ([US 13]).
+* [ ] Pipeline runs cleanly across all 6 seeded personas (100-profile generator not in scope).
+* [ ] Caching — read-through recommendation cache (Redis deferred to Phase 2; Postgres-only).
+* [ ] Recommendations validated for mathematical accuracy (deterministic number guard).
 
 ### Gate 4 (Week 16 - Consulting Delivery)
 

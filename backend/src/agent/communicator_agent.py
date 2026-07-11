@@ -18,10 +18,13 @@ from langgraph.prebuilt import create_react_agent
 from database import get_connection
 from agent.schema_map import preferences_from_onboarding
 from agent.llm import get_llm
+from agent.observability import get_prompt, trace
 from agent.tools.catalog import lookup_subscriptions
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
 
 _PROMPT_PATH = Path(__file__).with_name("prompts") / "communicator_system.md"
+# Local copy, used as the offline fallback for the Langfuse-managed
+# "communicator-chat" prompt. The {{context}} placeholder is filled per request.
 _SYSTEM_TEMPLATE = _PROMPT_PATH.read_text(encoding="utf-8")
 
 _RECURSION_LIMIT = 12
@@ -69,13 +72,18 @@ def _load_user_context(user_id: str) -> str:
         f"Active subscriptions: {', '.join(services) or 'none'}",
     ]
     if rec_row and rec_row["optimizer_scenarios"]:
+        # Despite the column name (kept to avoid a schema migration), this stores the
+        # per-category current-vs-alternative-vs-no-subscription analysis, not
+        # portfolio scenarios — see agent/engines/analysis.py's category_subscription_analysis.
         data = json.loads(rec_row["optimizer_scenarios"])
-        best = data.get("best_recommendation_id")
-        scen = next((s for s in data.get("scenarios", []) if s["id"] == best), None)
-        if scen:
+        savings = data.get("total_estimated_savings_eur")
+        if savings:
+            lines.append(f"Latest recommendation: potential additional savings of €{savings}/yr across categories.")
+        for action in data.get("actions_required") or []:
             lines.append(
-                f"Latest recommendation: {scen['label']} — annual cost €{scen['annual_cost']}, "
-                f"saving €{scen['annual_savings']}/yr, changes: {scen['changes']}"
+                f"- {action['category']}: {action['action']} "
+                f"(from {action.get('from') or 'no subscription'} to {action.get('to') or 'pay-as-you-go'}), "
+                f"estimated €{action['estimated_annual_savings_eur']}/yr"
             )
     return "\n".join(lines)
 
@@ -92,12 +100,34 @@ def _to_lc_messages(messages: list):
     return out
 
 
-def run_chat(user_id: str, messages: list) -> str:
+def run_chat(user_id: str, messages: list) -> tuple[str, str | None]:
+    """Answer one chat turn. Returns ``(reply, trace_id)`` — ``trace_id`` is the
+    Langfuse trace of this turn (or ``None`` when tracing is disabled) so the
+    frontend can attach a thumbs up/down feedback score to it."""
     context = _load_user_context(user_id)
-    system_prompt = _SYSTEM_TEMPLATE.replace("{context}", context)
+
+    # Versioned system prompt from Langfuse (offline fallback = local template);
+    # {{context}} is compiled per request.
+    prompt = get_prompt("communicator-chat", fallback=_SYSTEM_TEMPLATE, type="text")
+    system_prompt = (
+        prompt.compile(context=context)
+        if prompt is not None
+        else _SYSTEM_TEMPLATE.replace("{{context}}", context)
+    )
+
     agent = create_react_agent(get_llm(), _TOOLS)
     lc_messages = [SystemMessage(content=system_prompt)] + _to_lc_messages(messages)
-    result = agent.invoke(
-        {"messages": lc_messages}, config={"recursion_limit": _RECURSION_LIMIT}
-    )
-    return result["messages"][-1].content
+    # Trace the whole ReAct turn (LLM steps + tool calls) as one "chat-response"
+    # trace. user_id doubles as the session id so a user's chat turns group into
+    # one Sessions-view conversation (there is no separate conversation id yet).
+    with trace(
+        "chat-response",
+        user_id=user_id,
+        session_id=user_id,
+        tags=["communicator", "chat"],
+    ) as tr:
+        config = {"recursion_limit": _RECURSION_LIMIT}
+        config.update(tr.config(prompt=prompt))
+        result = agent.invoke({"messages": lc_messages}, config=config)
+        trace_id = tr.trace_id
+    return result["messages"][-1].content, trace_id
