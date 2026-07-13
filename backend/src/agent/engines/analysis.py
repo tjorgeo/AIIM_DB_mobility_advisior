@@ -13,11 +13,14 @@ value and ``_estimate_alternative_remainder`` for exactly which catalog plans
 can be priced this way and which can't.
 """
 
+import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
 from agent.schema_map import category_covers_mode
+
+logger = logging.getLogger(__name__)
 
 
 _MONTH_NAMES = {
@@ -197,34 +200,20 @@ def _simulate_consumption_annual_cost(
     return round(total / months_of_data * 12, 2)
 
 
-def _estimate_alternative_remainder(
-    plan: dict,
-    no_subscription_annual_cost: float,
-    category_legs: list[dict],
-    months_of_data: float,
+def _flat_or_discount_remainder(
+    plan: dict, no_subscription_annual_cost: float
 ) -> tuple[float, str] | None:
-    """The annualized pay-as-you-go remainder ``plan`` would leave the user paying —
-    i.e. the part of ``estimated_annual_cost_eur`` not covered by the plan's own fixed
-    price. Returns ``(annual_remainder_eur, basis_label)``, or ``None`` when the plan
-    can't be honestly priced this way (surfaced as "not comparable" rather than
-    silently guessed at). Three cases, in order of confidence:
+    """Tiers 1-2 of ``_estimate_alternative_remainder``'s pricing hierarchy — the two
+    tiers that need no per-leg data at all, so they're shared with the forecast-demand
+    projection (see ``_estimate_projected_alternative_remainder``) which only ever has
+    aggregate trip/km totals, never real legs.
 
-    1. Flat-rate pass (``pricing_model == "flat_monthly"``) — remainder is 0, the
-       trip costs nothing beyond the plan's own price.
+    1. Flat-rate pass (``pricing_model == "flat_monthly"``) — remainder is 0.
     2. Recognized %-discount card (BahnCard 25/50/100, matched by name) — remainder is
-       a fixed fraction of ``no_subscription_annual_cost``. This only works because
-       both figures are denominated in the *same* fare basis (this category's own
-       reference pricing).
-    3. Linear consumption-based plan (a per-km/per-hour/per-minute rate is on file) —
-       remainder is simulated leg-by-leg from ``category_legs``' actual distance/
-       duration (see ``_simulate_consumption_annual_cost``), *not* derived as a
-       fraction of a cost that was priced under a different provider's benchmark rate
-       — car-/bike-sharing and e-scooter reference prices are anchored to one specific
-       provider's PAYG rate, so a percentage of that number wouldn't mean anything for
-       a different provider's own rate structure.
+       a fixed fraction of ``no_subscription_annual_cost`` (valid because both figures
+       are denominated in the same fare basis: this category's own reference pricing).
 
-    Returns ``None`` for tiered or undocumented pricing that can't be honestly
-    reconstructed from the catalog's structured fields.
+    Returns ``None`` when neither tier applies.
     """
     if (plan.get("pricing_model") or "").lower() == "flat_monthly":
         return 0.0, "flat-rate pass (fully covered)"
@@ -237,11 +226,232 @@ def _estimate_alternative_remainder(
             remainder = round(no_subscription_annual_cost * fraction, 2)
             return remainder, f"{pct}% discount card (estimated from plan name)"
 
+    return None
+
+
+def _estimate_alternative_remainder(
+    plan: dict,
+    no_subscription_annual_cost: float,
+    category_legs: list[dict],
+    months_of_data: float,
+) -> tuple[float, str] | None:
+    """The annualized pay-as-you-go remainder ``plan`` would leave the user paying —
+    i.e. the part of ``estimated_annual_cost_eur`` not covered by the plan's own fixed
+    price. Returns ``(annual_remainder_eur, basis_label)``, or ``None`` when the plan
+    can't be honestly priced this way (surfaced as "not comparable" rather than
+    silently guessed at). Three cases, in order of confidence — the first two via
+    ``_flat_or_discount_remainder``, the third only reachable here since it needs real
+    per-leg data:
+
+    1. Flat-rate pass — remainder is 0.
+    2. Recognized %-discount card — remainder is a fraction of ``no_subscription_annual_cost``.
+    3. Linear consumption-based plan (a per-km/per-hour/per-minute rate is on file) —
+       remainder is simulated leg-by-leg from ``category_legs``' actual distance/
+       duration (see ``_simulate_consumption_annual_cost``), *not* derived as a
+       fraction of a cost that was priced under a different provider's benchmark rate
+       — car-/bike-sharing and e-scooter reference prices are anchored to one specific
+       provider's PAYG rate, so a percentage of that number wouldn't mean anything for
+       a different provider's own rate structure.
+
+    Returns ``None`` for tiered or undocumented pricing that can't be honestly
+    reconstructed from the catalog's structured fields.
+    """
+    result = _flat_or_discount_remainder(plan, no_subscription_annual_cost)
+    if result is not None:
+        return result
+
     simulated = _simulate_consumption_annual_cost(plan, category_legs, months_of_data)
     if simulated is not None:
         return simulated, "simulated from the plan's per-km/per-hour/per-minute rate on file"
 
     return None
+
+
+def _active_subscriptions(current_subscriptions: list) -> dict:
+    """Pure function of ``current_subscriptions`` — no travel_history dependency, so
+    it can be reused by both the historical analysis and a forecast-demand projection
+    without re-deriving anything from real trip legs.
+
+    Returns a dict with ``annual_sub_cost``, ``active_subs_by_id``,
+    ``active_categories``, ``current_contracts`` and ``held_subs_by_category`` (the
+    last grouped independent of the >0-cost filter ``subscription_coverage`` applies —
+    a €0 employer-sponsored sub should still count as "already held", not show up as a
+    switchable alternative).
+    """
+    annual_sub_cost = 0.0
+    active_subs_by_id: dict[str, dict] = {}
+    active_categories: set[str] = set()
+    current_contracts: list[str] = []
+    held_subs_by_category: dict[str, list[dict]] = defaultdict(list)
+
+    for sub in current_subscriptions:
+        if sub.get("subscription_status") != "active":
+            continue
+        monthly = float(sub.get("monthly_cost_eur") or 0.0)
+        annual = float(sub.get("annual_cost_eur") or 0.0) or monthly * 12
+        annual_sub_cost += annual
+        sub_id = sub.get("user_subscription_id")
+        if sub_id:
+            active_subs_by_id[sub_id] = {**sub, "_annual_cost": annual}
+        category = (sub.get("subscription_category") or "").lower()
+        if category:
+            active_categories.add(category)
+            held_subs_by_category[category].append({**sub, "_annual_cost": annual})
+        name = sub.get("provider_plan_name") or sub.get("provider_name") or "Subscription"
+        cost_label = f"€{monthly:.0f}/mo" if monthly else (f"€{annual:.0f}/yr" if annual else "")
+        current_contracts.append(f"{name} ({cost_label})" if cost_label else name)
+
+    return {
+        "annual_sub_cost": annual_sub_cost,
+        "active_subs_by_id": active_subs_by_id,
+        "active_categories": active_categories,
+        "current_contracts": current_contracts,
+        "held_subs_by_category": held_subs_by_category,
+    }
+
+
+def _rank_alternatives(
+    pricing_catalog: list[dict],
+    db_category: str,
+    plan_filter,
+    user_age,
+    held_ids: set,
+    held_travel_class: int | None,
+    no_subscription_annual_cost: float | None,
+    remainder_fn,
+    actual_annual_cost: float | None,
+    has_held_subs: bool,
+) -> tuple[list[dict], list[str]]:
+    """Search ``pricing_catalog`` for this category's eligible alternatives, price
+    each via ``remainder_fn(plan) -> (remainder_eur, basis_label) | None``, and rank
+    them cheapest-first. Shared by the historical analysis (``remainder_fn`` bound to
+    ``_estimate_alternative_remainder`` with real legs) and the forecast-demand
+    projection (bound to ``_estimate_projected_alternative_remainder``, no legs) — the
+    eligibility/travel-class filtering and ranking logic is identical either way, only
+    how a plan's remainder gets priced differs.
+
+    ``no_subscription_annual_cost`` may be ``None`` when the caller has no reference
+    cost basis at all for this category (e.g. a forecast scenario introducing a mode
+    with no historical rate to project from) — in that case there is nothing to rank
+    alternatives against, so this returns ``([], [])`` rather than guessing.
+
+    Returns ``(alternatives_sorted_by_cost, non_comparable_plan_names)``.
+    """
+    if no_subscription_annual_cost is None:
+        return [], []
+
+    alternatives = []
+    non_comparable_alternatives = []
+    for plan in pricing_catalog:
+        if (plan.get("category") or "").lower() != db_category:
+            continue
+        if not plan_filter(plan.get("name")):
+            continue
+        if plan.get("id") in held_ids:
+            continue
+        if not _is_ongoing_candidate(plan) or not _is_eligible(plan, user_age):
+            continue
+        plan_class = _travel_class(plan.get("name"))
+        # Default to a 2nd-class baseline when nothing is currently held (there's
+        # no per-leg class evidence to fall back on otherwise) — never silently
+        # compare a 1st-class card's price against fares that might be 2nd-class.
+        if plan_class is not None and plan_class != (held_travel_class or 2):
+            non_comparable_alternatives.append(plan.get("name"))
+            continue
+        pricing = remainder_fn(plan)
+        if pricing is None:
+            non_comparable_alternatives.append(plan.get("name"))
+            continue
+        pay_as_you_go_remainder, basis = pricing
+        plan_annual_cost = round(_plan_annual(plan), 2)
+        estimated_annual_cost = round(plan_annual_cost + pay_as_you_go_remainder, 2)
+        alternatives.append({
+            "provider_plan_name": plan.get("name"),
+            "estimated_annual_cost_eur": estimated_annual_cost,
+            "pricing_basis": basis,
+            # Breakdown of how estimated_annual_cost_eur was derived: the plan's
+            # own fixed price, plus whatever pay-as-you-go cost remains after its
+            # discount (0 for a true flat-rate pass).
+            "plan_annual_cost_eur": plan_annual_cost,
+            "estimated_pay_as_you_go_remainder_eur": pay_as_you_go_remainder,
+            "annual_savings_vs_no_subscription_eur": round(
+                no_subscription_annual_cost - estimated_annual_cost, 2
+            ),
+            "annual_savings_vs_current_eur": (
+                round(actual_annual_cost - estimated_annual_cost, 2)
+                if has_held_subs and actual_annual_cost is not None
+                else None
+            ),
+        })
+    alternatives.sort(key=lambda a: a["estimated_annual_cost_eur"])
+    return alternatives, non_comparable_alternatives
+
+
+def _pick_recommendation(
+    actual_annual_cost: float | None,
+    no_subscription_annual_cost: float | None,
+    cheapest_alternative: dict | None,
+    has_held_subs: bool,
+) -> tuple[float | None, str]:
+    """Pick the genuinely cheapest of the three options — current setup, pure
+    pay-as-you-go, and the cheapest priceable alternative — rather than only
+    checking the alternative against the current setup. Without this, a case
+    where pay-as-you-go actually beats *both* the current subscription and the
+    best alternative would still recommend switching to that (pricier-than-payg)
+    alternative instead of dropping subscriptions in this bucket entirely.
+
+    Any of the three costs may be ``None`` (unknown — only possible for the forecast
+    projection, e.g. a currently-held metered plan whose cost can't be projected
+    without duration data). A ``None`` cost simply can't win a comparison; if every
+    cost is ``None``, the recommendation is ``"insufficient_cost_data"`` rather than
+    silently defaulting to "keep current" with no actual number behind it.
+
+    Returns ``(best_known_cost, recommendation)``.
+    """
+    best_cost = actual_annual_cost
+    recommendation = "keep_current" if has_held_subs else "no_subscription_needed"
+
+    if no_subscription_annual_cost is not None and (
+        best_cost is None or no_subscription_annual_cost < best_cost
+    ):
+        best_cost = no_subscription_annual_cost
+        recommendation = "cancel_current_go_pay_as_you_go" if has_held_subs else "no_subscription_needed"
+
+    if cheapest_alternative is not None and (
+        best_cost is None or cheapest_alternative["estimated_annual_cost_eur"] < best_cost
+    ):
+        best_cost = cheapest_alternative["estimated_annual_cost_eur"]
+        recommendation = "switch_to_alternative" if has_held_subs else "consider_subscribing"
+
+    if best_cost is None:
+        recommendation = "insufficient_cost_data"
+
+    return best_cost, recommendation
+
+
+def _category_definitions() -> list[tuple]:
+    """The 5 (key, db_category, mode_filter, plan_filter) combinations
+    ``category_subscription_analysis`` iterates — factored out so the forecast-demand
+    projection (``project_category_subscription_analysis``) uses the exact same
+    category/mode/plan carve-up and the two can't silently drift apart. See the "8b."
+    comment in ``analyze_portfolio`` for why public_transport/long_distance_rail split
+    out of one shared DB category.
+    """
+    return [
+        ("bike_sharing", "bike_sharing", lambda m: category_covers_mode("bike_sharing", m), lambda name: True),
+        ("car_sharing", "car_sharing", lambda m: category_covers_mode("car_sharing", m), lambda name: True),
+        ("e_scooter", "e_scooter", lambda m: category_covers_mode("e_scooter", m), lambda name: True),
+        (
+            "public_transport", "public_transport",
+            lambda m: category_covers_mode("public_transport", m),
+            lambda name: not _is_bahncard_plan(name),
+        ),
+        (
+            _LONG_DISTANCE_RAIL_CATEGORY, "public_transport",
+            lambda m: m == _LONG_DISTANCE_RAIL_MODE,
+            _is_bahncard_plan,
+        ),
+    ]
 
 
 def analyze_portfolio(
@@ -303,33 +513,12 @@ def analyze_portfolio(
     # ------------------------------------------------------------------ #
     # 2. Active subscriptions                                              #
     # ------------------------------------------------------------------ #
-    annual_sub_cost = 0.0
-    active_subs_by_id: dict[str, dict] = {}
-    active_categories: set[str] = set()
-    current_contracts: list[str] = []
-    # Active subs grouped by category — used by category_subscription_analysis to
-    # know which catalog plans are already held (so they're never re-offered as an
-    # "alternative") and their combined annual cost, independent of the >0-cost
-    # filter subscription_coverage below applies (a €0 employer-sponsored sub should
-    # still count as "already held", not show up as a switchable alternative).
-    held_subs_by_category: dict[str, list[dict]] = defaultdict(list)
-
-    for sub in current_subscriptions:
-        if sub.get("subscription_status") != "active":
-            continue
-        monthly = float(sub.get("monthly_cost_eur") or 0.0)
-        annual = float(sub.get("annual_cost_eur") or 0.0) or monthly * 12
-        annual_sub_cost += annual
-        sub_id = sub.get("user_subscription_id")
-        if sub_id:
-            active_subs_by_id[sub_id] = {**sub, "_annual_cost": annual}
-        category = (sub.get("subscription_category") or "").lower()
-        if category:
-            active_categories.add(category)
-            held_subs_by_category[category].append({**sub, "_annual_cost": annual})
-        name = sub.get("provider_plan_name") or sub.get("provider_name") or "Subscription"
-        cost_label = f"€{monthly:.0f}/mo" if monthly else (f"€{annual:.0f}/yr" if annual else "")
-        current_contracts.append(f"{name} ({cost_label})" if cost_label else name)
+    _subs = _active_subscriptions(current_subscriptions)
+    annual_sub_cost = _subs["annual_sub_cost"]
+    active_subs_by_id = _subs["active_subs_by_id"]
+    active_categories = _subs["active_categories"]
+    current_contracts = _subs["current_contracts"]
+    held_subs_by_category = _subs["held_subs_by_category"]
 
     # ------------------------------------------------------------------ #
     # 3. Per-leg aggregation                                               #
@@ -665,67 +854,19 @@ def analyze_portfolio(
             None,
         )
 
-        alternatives = []
-        non_comparable_alternatives = []
-        for plan in pricing_catalog:
-            if (plan.get("category") or "").lower() != db_category:
-                continue
-            if not plan_filter(plan.get("name")):
-                continue
-            if plan.get("id") in held_ids:
-                continue
-            if not _is_ongoing_candidate(plan) or not _is_eligible(plan, user_age):
-                continue
-            plan_class = _travel_class(plan.get("name"))
-            # Default to a 2nd-class baseline when nothing is currently held (there's
-            # no per-leg class evidence to fall back on otherwise) — never silently
-            # compare a 1st-class card's price against fares that might be 2nd-class.
-            if plan_class is not None and plan_class != (held_travel_class or 2):
-                non_comparable_alternatives.append(plan.get("name"))
-                continue
-            pricing = _estimate_alternative_remainder(
+        alternatives, non_comparable_alternatives = _rank_alternatives(
+            pricing_catalog, db_category, plan_filter, user_age, held_ids, held_travel_class,
+            no_subscription_annual_cost,
+            lambda plan: _estimate_alternative_remainder(
                 plan, no_subscription_annual_cost, category_legs, months_of_data
-            )
-            if pricing is None:
-                non_comparable_alternatives.append(plan.get("name"))
-                continue
-            pay_as_you_go_remainder, basis = pricing
-            plan_annual_cost = round(_plan_annual(plan), 2)
-            estimated_annual_cost = round(plan_annual_cost + pay_as_you_go_remainder, 2)
-            alternatives.append({
-                "provider_plan_name": plan.get("name"),
-                "estimated_annual_cost_eur": estimated_annual_cost,
-                "pricing_basis": basis,
-                # Breakdown of how estimated_annual_cost_eur was derived: the plan's
-                # own fixed price, plus whatever pay-as-you-go cost remains after its
-                # discount (0 for a true flat-rate pass).
-                "plan_annual_cost_eur": plan_annual_cost,
-                "estimated_pay_as_you_go_remainder_eur": pay_as_you_go_remainder,
-                "annual_savings_vs_no_subscription_eur": round(
-                    no_subscription_annual_cost - estimated_annual_cost, 2
-                ),
-                "annual_savings_vs_current_eur": (
-                    round(actual_annual_cost - estimated_annual_cost, 2) if held_subs else None
-                ),
-            })
-        alternatives.sort(key=lambda a: a["estimated_annual_cost_eur"])
+            ),
+            actual_annual_cost, bool(held_subs),
+        )
         cheapest_alternative = alternatives[0] if alternatives else None
 
-        # Pick the genuinely cheapest of the three options — current setup, pure
-        # pay-as-you-go, and the cheapest priceable alternative — rather than only
-        # checking the alternative against the current setup. Without this, a case
-        # where pay-as-you-go actually beats *both* the current subscription and the
-        # best alternative would still recommend switching to that (pricier-than-payg)
-        # alternative instead of dropping subscriptions in this bucket entirely.
-        best_cost = actual_annual_cost
-        recommendation = "keep_current" if held_subs else "no_subscription_needed"
-
-        if no_subscription_annual_cost < best_cost:
-            best_cost = no_subscription_annual_cost
-            recommendation = "cancel_current_go_pay_as_you_go" if held_subs else "no_subscription_needed"
-
-        if cheapest_alternative and cheapest_alternative["estimated_annual_cost_eur"] < best_cost:
-            recommendation = "switch_to_alternative" if held_subs else "consider_subscribing"
+        _, recommendation = _pick_recommendation(
+            actual_annual_cost, no_subscription_annual_cost, cheapest_alternative, bool(held_subs)
+        )
 
         return {
             "category": key,
@@ -744,27 +885,8 @@ def analyze_portfolio(
         }
 
     category_subscription_analysis = []
-    for cat in sorted(_ALL_CATEGORIES):
-        if cat == "public_transport":
-            entry = _build_category_entry(
-                "public_transport", "public_transport",
-                lambda m: category_covers_mode("public_transport", m),
-                lambda name: not _is_bahncard_plan(name),
-            )
-            if entry:
-                category_subscription_analysis.append(entry)
-            entry = _build_category_entry(
-                _LONG_DISTANCE_RAIL_CATEGORY, "public_transport",
-                lambda m: m == _LONG_DISTANCE_RAIL_MODE,
-                _is_bahncard_plan,
-            )
-            if entry:
-                category_subscription_analysis.append(entry)
-            continue
-
-        entry = _build_category_entry(
-            cat, cat, lambda m, cat=cat: category_covers_mode(cat, m), lambda name: True
-        )
+    for key, db_category, mode_filter, plan_filter in _category_definitions():
+        entry = _build_category_entry(key, db_category, mode_filter, plan_filter)
         if entry:
             category_subscription_analysis.append(entry)
 
@@ -838,6 +960,275 @@ def analyze_portfolio(
         # Forecaster-ready summary (consumed by forecast() via pipeline.py)
         "forecaster_summary": forecaster_summary,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Forecast-demand cost projection                                             #
+#                                                                              #
+# The same current-vs-alternative-vs-no-subscription comparison as             #
+# category_subscription_analysis above, but computed from a forecast          #
+# scenario's *projected* demand (see forecasting.py's PredictedDemand)        #
+# instead of real travel_history. forecast() itself never touches money — it  #
+# only predicts trips/km per mode — so all cost math here stays deterministic #
+# and lives next to the analysis it mirrors, invoked as a separate pipeline   #
+# step (see attach_projected_category_analysis) after both analyze_portfolio  #
+# and forecast() have run.                                                   #
+#                                                                              #
+# PredictedDemand carries no per-leg duration or per-day distribution (by      #
+# design — see forecasting.py's module docstring), so a catalog plan billed   #
+# by duration (per_hour_eur/per_minute_eur) or with a daily_cap_eur can't be   #
+# honestly simulated here the way _simulate_consumption_annual_cost does for   #
+# real legs — those land in non_comparable_alternatives instead of being       #
+# guessed at with an assumed duration. Only flat-rate passes, recognized       #
+# %-discount cards, and plans with a pure uncapped per_km_eur rate are         #
+# projectable — see _estimate_projected_alternative_remainder.                #
+# --------------------------------------------------------------------------- #
+
+def _implied_rate_by_mode(mode_breakdown: dict) -> dict[str, tuple[float, str]]:
+    """mode -> (rate, basis) where basis is "per_km" or "per_trip", implied from real
+    historical mode_breakdown figures (intrinsic_cost_eur / distance_km, falling back
+    to /trips for a mode with no meaningful distance signal). Modes absent from
+    mode_breakdown (never used historically) are absent from the returned dict
+    entirely — callers must treat that as "no cost basis to project from", not "$0
+    to travel this much".
+    """
+    rates: dict[str, tuple[float, str]] = {}
+    for mode, st in mode_breakdown.items():
+        distance_km = st.get("distance_km") or 0.0
+        trips = st.get("trips") or 0
+        cost = st.get("intrinsic_cost_eur") or 0.0
+        if distance_km > 0:
+            rates[mode] = (cost / distance_km, "per_km")
+        elif trips > 0:
+            rates[mode] = (cost / trips, "per_trip")
+    return rates
+
+
+def _estimate_projected_alternative_remainder(
+    plan: dict,
+    no_subscription_annual_cost: float,
+    projected_annual_trips: float,
+    projected_annual_km: float,
+) -> tuple[float, str] | None:
+    """Forecast-projection analogue of ``_estimate_alternative_remainder``. Shares the
+    flat-rate/%-discount tiers via ``_flat_or_discount_remainder`` — neither needs
+    per-leg data. The third tier is narrower than the historical version: only a plan
+    with a pure, uncapped per-km rate (``per_km_eur`` set, ``per_hour_eur``/
+    ``per_minute_eur`` unset, no ``daily_cap_eur``) can be honestly priced from an
+    annual trips/km total alone — a duration-billed or daily-capped plan needs data a
+    forecast scenario doesn't have (see module note above) and returns ``None``
+    ("not comparable") here rather than being simulated with a guessed duration.
+    """
+    result = _flat_or_discount_remainder(plan, no_subscription_annual_cost)
+    if result is not None:
+        return result
+
+    per_km = plan.get("per_km_eur")
+    has_duration_component = any(
+        v not in (None, 0, 0.0) for v in (plan.get("per_hour_eur"), plan.get("per_minute_eur"))
+    )
+    has_daily_cap = plan.get("daily_cap_eur") not in (None, "")
+    if per_km in (None, 0, 0.0) or has_duration_component or has_daily_cap:
+        return None
+
+    unlock = float(plan.get("unlock_fee_eur") or 0.0)
+    remainder = unlock * projected_annual_trips + float(per_km) * projected_annual_km
+    return (
+        round(remainder, 2),
+        "projected from the plan's per-km rate on file, applied to this scenario's forecasted annual km/trips",
+    )
+
+
+def project_category_subscription_analysis(
+    predicted_demand: list,
+    forecast_horizon_days: int,
+    mode_breakdown: dict,
+    current_subscriptions: list,
+    pricing_catalog: list | None = None,
+    user_age: int | None = None,
+) -> list[dict]:
+    """Forecast-scenario analogue of ``category_subscription_analysis``: the same
+    current-vs-alternative-vs-no-subscription comparison, computed from one forecast
+    scenario's projected demand (a list of ``{"mode", "estimated_trips",
+    "estimated_km", ...}`` dicts, i.e. one scenario's ``predicted_demand``) instead of
+    real ``travel_history``.
+
+    Every total is rescaled to a 365-day-equivalent annual figure (regardless of
+    ``forecast_horizon_days``) so it's directly comparable to the historical
+    ``category_subscription_analysis`` — that comparability is the entire point of
+    this function existing.
+
+    See the module note above for exactly which catalog plans can be projected this
+    way; anything that can't lands in ``non_comparable_alternatives`` with a reason,
+    never silently mispriced.
+    """
+    pricing_catalog = pricing_catalog or []
+    horizon_days = forecast_horizon_days or 365
+    annual_factor = 365.0 / horizon_days
+
+    held_subs_by_category = _active_subscriptions(current_subscriptions)["held_subs_by_category"]
+    rates = _implied_rate_by_mode(mode_breakdown)
+    demand_by_mode = {d["mode"]: d for d in predicted_demand if d.get("mode")}
+
+    projected_category_analysis = []
+    for key, db_category, mode_filter, plan_filter in _category_definitions():
+        matching_modes = sorted(m for m in demand_by_mode if mode_filter(m))
+        projected_trips = sum(
+            (demand_by_mode[m].get("estimated_trips") or 0) for m in matching_modes
+        ) * annual_factor
+        projected_km = sum(
+            (demand_by_mode[m].get("estimated_km") or 0) for m in matching_modes
+        ) * annual_factor
+        if projected_trips <= 0:
+            continue
+
+        no_subscription_annual_cost = 0.0
+        modes_without_rate = []
+        priced_any_mode = False
+        for m in matching_modes:
+            mode_trips = (demand_by_mode[m].get("estimated_trips") or 0) * annual_factor
+            mode_km = (demand_by_mode[m].get("estimated_km") or 0) * annual_factor
+            if mode_trips <= 0:
+                continue
+            rate = rates.get(m)
+            if rate is None:
+                modes_without_rate.append(m)
+                continue
+            value, basis = rate
+            no_subscription_annual_cost += value * (mode_km if basis == "per_km" else mode_trips)
+            priced_any_mode = True
+        no_subscription_annual_cost = round(no_subscription_annual_cost, 2) if priced_any_mode else None
+        incomplete_cost_basis = bool(modes_without_rate)
+
+        held_subs = [
+            s for s in held_subs_by_category.get(db_category, [])
+            if plan_filter(s.get("provider_plan_name"))
+        ]
+        held_ids = {s.get("subscription_id") for s in held_subs if s.get("subscription_id")}
+        held_travel_class = next(
+            (tc for s in held_subs if (tc := _travel_class(s.get("provider_plan_name"))) is not None),
+            None,
+        )
+
+        # Price the currently-held subscription(s) the same way an alternative would
+        # be priced — there's no real per-leg "effective cost" to sum for future
+        # trips, so the held plan's projected cost has to come from the same
+        # remainder-estimation logic as any other candidate plan.
+        current_subscriptions_detail = []
+        actual_annual_cost = None
+        actual_annual_cost_note = None
+        if not held_subs:
+            actual_annual_cost = no_subscription_annual_cost
+        elif no_subscription_annual_cost is None:
+            actual_annual_cost_note = (
+                "no historical €/km or €/trip rate for at least one forecasted mode in this "
+                "category, so the held plan's projected cost can't be anchored to a reference cost"
+            )
+            for s in held_subs:
+                current_subscriptions_detail.append({
+                    "provider_plan_name": s.get("provider_plan_name") or s.get("provider_name"),
+                    "annual_cost_eur": round(s["_annual_cost"], 2),
+                    "projected_annual_net_savings_eur": None,
+                })
+        else:
+            held_total = 0.0
+            all_priced = True
+            for s in held_subs:
+                sub_annual = s["_annual_cost"]
+                remainder = _estimate_projected_alternative_remainder(
+                    s, no_subscription_annual_cost, projected_trips, projected_km
+                )
+                if remainder is None:
+                    all_priced = False
+                    current_subscriptions_detail.append({
+                        "provider_plan_name": s.get("provider_plan_name") or s.get("provider_name"),
+                        "annual_cost_eur": round(sub_annual, 2),
+                        "projected_annual_net_savings_eur": None,
+                    })
+                    continue
+                remainder_eur, _basis = remainder
+                projected_cost = round(sub_annual + remainder_eur, 2)
+                held_total += projected_cost
+                current_subscriptions_detail.append({
+                    "provider_plan_name": s.get("provider_plan_name") or s.get("provider_name"),
+                    "annual_cost_eur": round(sub_annual, 2),
+                    "projected_annual_net_savings_eur": round(no_subscription_annual_cost - projected_cost, 2),
+                })
+            if all_priced:
+                actual_annual_cost = round(held_total, 2)
+            else:
+                actual_annual_cost_note = (
+                    "currently-held plan's pricing model needs duration/day data this "
+                    "scenario doesn't forecast"
+                )
+
+        alternatives, non_comparable_alternatives = _rank_alternatives(
+            pricing_catalog, db_category, plan_filter, user_age, held_ids, held_travel_class,
+            no_subscription_annual_cost,
+            lambda plan: _estimate_projected_alternative_remainder(
+                plan, no_subscription_annual_cost, projected_trips, projected_km
+            ),
+            actual_annual_cost, bool(held_subs),
+        )
+        cheapest_alternative = alternatives[0] if alternatives else None
+
+        _, recommendation = _pick_recommendation(
+            actual_annual_cost, no_subscription_annual_cost, cheapest_alternative, bool(held_subs)
+        )
+
+        projected_category_analysis.append({
+            "category": key,
+            "annual_trips": round(projected_trips, 1),
+            "annual_distance_km": round(projected_km, 2),
+            "no_subscription_annual_cost_eur": no_subscription_annual_cost,
+            "actual_annual_cost_eur": actual_annual_cost,
+            "actual_annual_cost_note": actual_annual_cost_note,
+            "applies_to_modes": matching_modes,
+            "current_subscriptions": current_subscriptions_detail,
+            "alternatives": alternatives,
+            "cheapest_alternative": cheapest_alternative,
+            "non_comparable_alternatives": non_comparable_alternatives,
+            "recommendation": recommendation,
+            "pricing_basis_note": (
+                "Costs projected from this scenario's forecasted trips/km using historical "
+                "€/km (or €/trip) rates per mode observed in the last 12 months — not measured "
+                "spend. Plans billed by duration or with a daily cap can't be projected this way "
+                "and are listed under non_comparable_alternatives instead."
+            ),
+            "incomplete_cost_basis": incomplete_cost_basis,
+            "modes_without_historical_rate": modes_without_rate,
+            "forecast_horizon_days": forecast_horizon_days,
+        })
+
+    return projected_category_analysis
+
+
+def attach_projected_category_analysis(
+    forecaster_out: dict,
+    mode_breakdown: dict,
+    current_subscriptions: list,
+    pricing_catalog: list | None,
+    user_age: int | None,
+) -> None:
+    """Mutates ``forecaster_out["scenarios"]`` in place, adding
+    ``projected_category_analysis`` to each scenario — the forecast-demand analogue of
+    ``category_subscription_analysis``. Best-effort per scenario: a malformed/partial
+    scenario (e.g. missing ``predicted_demand``) must not break the whole pipeline, so
+    a failure is logged and that scenario's field is set to an empty list rather than
+    raising.
+    """
+    horizon = forecaster_out.get("forecast_horizon_days", 365)
+    for scenario in forecaster_out.get("scenarios", []):
+        try:
+            scenario["projected_category_analysis"] = project_category_subscription_analysis(
+                scenario.get("predicted_demand", []),
+                horizon, mode_breakdown, current_subscriptions, pricing_catalog, user_age,
+            )
+        except Exception:
+            logger.exception(
+                "Projected category-cost analysis failed for scenario %r", scenario.get("label")
+            )
+            scenario["projected_category_analysis"] = []
 
 
 def _detect_seasonality(monthly_total: dict[tuple, int]) -> str:

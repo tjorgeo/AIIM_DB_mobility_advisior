@@ -321,7 +321,7 @@ class Orchestrator:
         # Upgrade the forecast with the LLM now that we're off the request path. forecast()
         # self-falls-back to the deterministic result on any LLM error, so this is safe.
         try:
-            from agent.engines import forecast
+            from agent.engines import attach_projected_category_analysis, forecast
 
             forecaster_out = forecast(
                 analyst_out.get("forecaster_summary", {}),
@@ -329,10 +329,32 @@ class Orchestrator:
                 forecast_horizon_days=365,
                 use_llm=True,
             )
+            # Re-attach the projected category-cost analysis per scenario — forecast()
+            # returns a fresh forecaster_out here, so the fast synchronous response's
+            # projected_category_analysis would otherwise be silently dropped once this
+            # LLM-upgraded forecast overwrites it in the DB.
+            attach_projected_category_analysis(
+                forecaster_out, analyst_out.get("mode_breakdown", {}), ctx["subscriptions"],
+                ctx["pricing_catalog"], ctx["user"].get("age"),
+            )
         except Exception:
             logger.exception("Background forecast upgrade failed; deterministic forecast stands")
 
         name = ctx["user"]["name"]
+
+        # Regenerate the template memo against the (now possibly LLM-upgraded) forecast
+        # first — this is the only place a life event ever gets detected (the fresh
+        # /api/analyze run uses the deterministic-only forecast, which can't reason
+        # about calendar text), so it's also the only place the forecast's caveat can
+        # reach the memo. Used as the guaranteed baseline; overwritten below if the LLM
+        # prose call succeeds, so a life event still surfaces even if that call fails.
+        from agent.engines import template_memos
+
+        template_out = template_memos(name, analyst_out, forecaster_out)
+        stored["memos"] = {"english": template_out["memo_english"], "german": template_out["memo_german"]}
+        stored["memo_source"] = "template"
+
+        memo_trace_id = None
         try:
             from agent.analyst_agent import run_briefing
 
@@ -343,13 +365,11 @@ class Orchestrator:
                 ctx["pricing_catalog"],
                 user_id=user_id,
             )
+            stored["memos"] = {"english": memo_en, "german": memo_de}
+            stored["memo_source"] = "llm"
         except Exception:
-            logger.exception("Background memo generation failed; template memo stands")
-            conn.close()
-            return
+            logger.exception("Background memo generation failed; forecast-aware template memo stands")
 
-        stored["memos"] = {"english": memo_en, "german": memo_de}
-        stored["memo_source"] = "llm"
         cursor.execute(
             "UPDATE recommendations SET optimizer_scenarios = ?, forecaster_output = ?, "
             "memo_trace_id = ? WHERE recommendation_id = ?",

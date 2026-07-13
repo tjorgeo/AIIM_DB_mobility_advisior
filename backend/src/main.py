@@ -370,7 +370,7 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 365, as_
     Same six personas as /api/analyst/{user_id} work here.
     """
     from agent.context import load_context
-    from agent.engines import analyze_portfolio, forecast
+    from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast
 
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -383,6 +383,10 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 365, as_
             raw_calendar_entries=ctx["raw_calendar_entries"],
             forecast_horizon_days=forecast_horizon_days,
             as_of_date=as_of_date,
+        )
+        attach_projected_category_analysis(
+            result, analyst_out["mode_breakdown"], ctx["subscriptions"],
+            ctx["pricing_catalog"], ctx["user"].get("age"),
         )
         return result
     except Exception as e:
