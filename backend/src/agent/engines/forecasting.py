@@ -126,7 +126,11 @@ _RULES = """\
 Rules:
 1. Always include a "baseline" scenario derived from the historical patterns.
 2. If a life_event with confidence "medium" or "high" is present, produce a SECOND
-   scenario that accounts for the change (label examples: "post_relocation", "new_job").
+   scenario that covers the SAME full {horizon}-day window as baseline (not just the
+   period after the event) — use baseline rates up to the event date, then the
+   adjusted rates from the event date through the end of the window (label examples:
+   "post_relocation", "new_job"). Both scenarios' predicted_demand totals must be
+   directly comparable full-horizon numbers, not baseline-vs-partial-window.
 3. If signals are ambiguous (confidence "low"), note this in the rationale but do NOT
    create a second scenario.
 4. The basis field must briefly explain the reasoning for each mode's prediction.
@@ -404,7 +408,7 @@ def forecast(
     calendar_events: list | None = None,
     ics_text: str | None = None,
     raw_calendar_entries: list[dict] | None = None,
-    forecast_horizon_days: int = 90,
+    forecast_horizon_days: int = 365,
     as_of_date: str | None = None,
     use_llm: bool = True,
 ) -> dict:

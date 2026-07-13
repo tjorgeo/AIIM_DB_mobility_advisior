@@ -87,7 +87,7 @@ class ForecasterTestRequest(BaseModel):
     calendar_events: list | None = None          # pre-structured CalendarEvent dicts
     ics_text: str | None = None                  # raw ICS — parsed and filtered by the LLM
     raw_calendar_entries: list | None = None     # pre-parsed raw entries (skips ICS parsing)
-    forecast_horizon_days: int = 90
+    forecast_horizon_days: int = 365
     as_of_date: str | None = None                # ISO date; overrides "today" for seasonal testing
 
 # --- API ENDPOINTS ---
@@ -354,7 +354,7 @@ def test_analyst(user_id: str):
 
 
 @app.get("/api/forecaster/{user_id}")
-def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90, as_of_date: str | None = None):
+def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 365, as_of_date: str | None = None):
     """
     Run load_context -> analyze_portfolio -> forecast for a real seeded persona,
     stopping before the optimize/communicate steps of the full /api/analyze

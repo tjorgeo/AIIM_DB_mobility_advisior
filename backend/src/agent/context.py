@@ -13,8 +13,8 @@ from database import get_connection
 from agent.schema_map import clean_row, preferences_from_onboarding
 
 # How far ahead to look for calendar occurrences — roughly 2x the forecaster's
-# 90-day horizon so a stray far-future entry doesn't dominate.
-_CALENDAR_LOOKAHEAD_DAYS = 180
+# 365-day horizon so a stray far-future entry doesn't dominate.
+_CALENDAR_LOOKAHEAD_DAYS = 730
 
 
 def _next_occurrence(dtstart, rrule_str, exdate_raw, window_start, window_end):

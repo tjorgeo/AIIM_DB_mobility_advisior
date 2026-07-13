@@ -326,7 +326,7 @@ class Orchestrator:
             forecaster_out = forecast(
                 analyst_out.get("forecaster_summary", {}),
                 raw_calendar_entries=ctx["raw_calendar_entries"],
-                forecast_horizon_days=90,
+                forecast_horizon_days=365,
                 use_llm=True,
             )
         except Exception:

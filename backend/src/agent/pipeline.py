@@ -64,7 +64,7 @@ def run_analysis(user_id: str, include_memo: bool = True) -> dict:
     forecaster_out = forecast(
         analyst_out["forecaster_summary"],
         raw_calendar_entries=ctx["raw_calendar_entries"],
-        forecast_horizon_days=90,
+        forecast_horizon_days=365,
         use_llm=include_memo,
     )
 
