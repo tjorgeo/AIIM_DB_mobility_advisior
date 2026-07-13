@@ -18,15 +18,14 @@ class Orchestrator:
     and shapes the exact response payload the frontend consumes. That separation is
     the backend merge: agentic engine inside, stable session/contract API outside.
 
-    Latency guards:
+    Latency guard:
     * **Read-through cache** — ``/api/analyze`` auto-runs on every dashboard mount, so
       an unforced call reuses the user's most recent ``recommendations`` row (rebuilt
       from stored JSON + a cheap ``load_context``) instead of re-running the pipeline.
-      Pass ``force=True`` to recompute.
-    * **Lazy LLM memo** — a fresh run defers the (slow) Analyst memo: it returns the
-      deterministic numbers with the template memo immediately, and the caller schedules
-      :meth:`generate_memo` as a background task. The next (cached) mount serves the
-      upgraded LLM prose.
+      Pass ``force=True`` to recompute. A forced/fresh run is fully synchronous — it
+      waits for the LLM forecast and Analyst memo (when an LLM is configured) before
+      returning, so the response always reflects the final result, calendar-driven
+      life events included, with no follow-up call needed to see the upgraded memo.
     """
 
     def run_analysis(self, user_id: str, force: bool = False) -> dict:
@@ -36,10 +35,8 @@ class Orchestrator:
             if cached is not None:
                 return cached
 
-        # --- FRESH RUN (load_context → analyze → forecast → template memo) ---
-        # include_memo=False: defer the slow LLM memo to a background task (see main.py);
-        # the deterministic numbers + template memo return immediately.
-        state = run_pipeline(user_id, include_memo=False)
+        # --- FRESH RUN (load_context → analyze → forecast → communicate), synchronous ---
+        state = run_pipeline(user_id)
 
         if state.get("error"):
             raise ValueError(state["error"])
@@ -89,9 +86,7 @@ class Orchestrator:
 
         # Persist into the production recommendations table (one row per analysis run).
         # memo_trace_id links this recommendation to the Langfuse trace of the memo
-        # LLM call, so approval can attach a `recommendation-accepted` score to it. On a
-        # fresh (lazy) run the memo hasn't run yet, so it starts NULL and generate_memo
-        # fills it in.
+        # LLM call, so approval can attach a `recommendation-accepted` score to it.
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -134,9 +129,6 @@ class Orchestrator:
             memos=memos,
             memo_source=memo_source,
         )
-        # Signals main.py to schedule the background LLM memo. Popped before the
-        # response is returned to the client.
-        payload["_fresh"] = True
         return payload
 
     def _load_cached(self, user_id: str):
@@ -277,106 +269,6 @@ class Orchestrator:
                 },
             },
         }
-
-    def generate_memo(self, rec_id: str, user_id: str) -> None:
-        """Upgrade an already-persisted recommendation with the LLM forecast + memo.
-
-        Runs as a background task after a fresh ``/api/analyze`` returns its deterministic
-        forecast + template memo. Reloads the stored agent outputs + context, regenerates
-        the (slow) LLM forecast and the grounded Analyst memo, and updates the row in place
-        (memo_source → "llm"). Doing both here keeps the synchronous ``/api/analyze`` fast
-        (neither LLM call blocks it) and persists them together so the next cached mount
-        serves the upgraded forecast and prose. Best-effort: any failure leaves the
-        deterministic forecast + template memo standing.
-        """
-        from agent.llm import llm_available
-
-        if not llm_available():
-            return
-
-        ctx = load_context(user_id)
-        if ctx.get("error"):
-            return
-
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT analyst_output, forecaster_output, optimizer_scenarios "
-            "FROM recommendations WHERE recommendation_id = ?",
-            (rec_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return
-        row = dict(row)
-        try:
-            analyst_out = json.loads(row["analyst_output"])
-            forecaster_out = json.loads(row["forecaster_output"])
-            stored = json.loads(row["optimizer_scenarios"])
-        except (TypeError, json.JSONDecodeError):
-            conn.close()
-            return
-
-        # Upgrade the forecast with the LLM now that we're off the request path. forecast()
-        # self-falls-back to the deterministic result on any LLM error, so this is safe.
-        try:
-            from agent.engines import attach_projected_category_analysis, forecast
-
-            forecaster_out = forecast(
-                analyst_out.get("forecaster_summary", {}),
-                raw_calendar_entries=ctx["raw_calendar_entries"],
-                forecast_horizon_days=365,
-                use_llm=True,
-            )
-            # Re-attach the projected category-cost analysis per scenario — forecast()
-            # returns a fresh forecaster_out here, so the fast synchronous response's
-            # projected_category_analysis would otherwise be silently dropped once this
-            # LLM-upgraded forecast overwrites it in the DB.
-            attach_projected_category_analysis(
-                forecaster_out, analyst_out.get("mode_breakdown", {}), ctx["subscriptions"],
-                ctx["pricing_catalog"], ctx["user"].get("age"),
-            )
-        except Exception:
-            logger.exception("Background forecast upgrade failed; deterministic forecast stands")
-
-        name = ctx["user"]["name"]
-
-        # Regenerate the template memo against the (now possibly LLM-upgraded) forecast
-        # first — this is the only place a life event ever gets detected (the fresh
-        # /api/analyze run uses the deterministic-only forecast, which can't reason
-        # about calendar text), so it's also the only place the forecast's caveat can
-        # reach the memo. Used as the guaranteed baseline; overwritten below if the LLM
-        # prose call succeeds, so a life event still surfaces even if that call fails.
-        from agent.engines import template_memos
-
-        template_out = template_memos(name, analyst_out, forecaster_out)
-        stored["memos"] = {"english": template_out["memo_english"], "german": template_out["memo_german"]}
-        stored["memo_source"] = "template"
-
-        memo_trace_id = None
-        try:
-            from agent.analyst_agent import run_briefing
-
-            memo_en, memo_de, memo_trace_id = run_briefing(
-                name,
-                analyst_out,
-                forecaster_out,
-                ctx["pricing_catalog"],
-                user_id=user_id,
-            )
-            stored["memos"] = {"english": memo_en, "german": memo_de}
-            stored["memo_source"] = "llm"
-        except Exception:
-            logger.exception("Background memo generation failed; forecast-aware template memo stands")
-
-        cursor.execute(
-            "UPDATE recommendations SET optimizer_scenarios = ?, forecaster_output = ?, "
-            "memo_trace_id = ? WHERE recommendation_id = ?",
-            (json.dumps(stored), json.dumps(forecaster_out), memo_trace_id, rec_id),
-        )
-        conn.commit()
-        conn.close()
 
     def save_revision(self, user_id: str, analyst_out: dict, revision: dict) -> str:
         """Persist a chat-driven re-optimisation as a new ``recommendations`` row.

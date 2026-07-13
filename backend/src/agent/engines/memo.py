@@ -16,6 +16,13 @@ see analysis.py's ``project_category_subscription_analysis``) when that scenario
 projected verdict differs from today's — purely textual, never changes
 ``actions_required``/``total_estimated_savings_eur``, which stay grounded in the
 historical verdict only.
+
+On top of those inline caveats, the memo ends with a standalone "Looking ahead"
+section (``_forecast_outlook_section``) built purely from the forecaster: any
+detected life event, the behaviour shift it implies (baseline vs. life-event
+scenario ``predicted_demand``), and whether that would change today's subscription
+advice. Same rule applies — it's presented as a heads-up for later, never blended
+into ``actions_required``/``total_estimated_savings_eur``.
 """
 
 _CATEGORY_LABEL_EN = {
@@ -50,6 +57,72 @@ _MODE_LABEL_DE = {
     "long_distance_train": "Fernzüge",
 }
 _MODES_WORTH_NAMING = {"public_transport", "long_distance_rail"}
+
+# Categories where a subscription ties the customer to one specific operator's own
+# fleet — unlike public_transport/long_distance_rail (any operator's vehicle on the
+# line works), a bike/car/e-scooter subscription only pays off if that provider
+# actually has a vehicle parked nearby when needed. Worth flagging whenever we
+# recommend moving to a new provider (switch_to_alternative / consider_subscribing).
+_PROVIDER_DEPENDENCY_CATEGORIES = {"bike_sharing", "car_sharing", "e_scooter"}
+_VEHICLE_NOUN_EN = {"bike_sharing": "bike", "car_sharing": "car", "e_scooter": "scooter"}
+_VEHICLE_NOUN_DE = {"bike_sharing": "Fahrrad", "car_sharing": "Auto", "e_scooter": "Scooter"}
+
+# Every raw transport mode the forecaster can predict demand for (see
+# forecasting.py's DominantPattern/PredictedDemand) — broader than _MODE_LABEL_EN/DE
+# above, which only cover the two modes worth disambiguating within a shared
+# catalog category. Falls back to a humanized mode string for anything unlisted.
+_ALL_MODE_LABEL_EN = {
+    "public_transport": "local public transport",
+    "regional_train": "regional trains",
+    "long_distance_train": "long-distance trains",
+    "bike_sharing": "bike sharing",
+    "car_sharing": "car sharing",
+    "e_scooter": "e-scooters",
+}
+_ALL_MODE_LABEL_DE = {
+    "public_transport": "lokaler ÖPNV",
+    "regional_train": "Regionalzüge",
+    "long_distance_train": "Fernzüge",
+    "bike_sharing": "Bike-Sharing",
+    "car_sharing": "Car-Sharing",
+    "e_scooter": "E-Scooter",
+}
+
+# A mode's projected trip count must move by at least this fraction between the
+# baseline and life-event scenarios to be called out as a behaviour change — a
+# mild wobble isn't worth putting in front of the customer.
+_DEMAND_CHANGE_THRESHOLD = 0.15
+_MAX_BEHAVIOR_CHANGE_LINES = 4
+
+
+def _mode_label(mode: str, lang: str) -> str:
+    labels = _ALL_MODE_LABEL_EN if lang == "en" else _ALL_MODE_LABEL_DE
+    return labels.get(mode, mode.replace("_", " "))
+
+
+def _with_provider_dependency_note(text: str, category: str, alt_name: str, lang: str) -> str:
+    """Appends a short subordinate clause — not a new sentence — flagging that a new
+    bike/car/e-scooter provider ties the customer to that operator's own fleet, so
+    they're less flexible than pay-as-you-go across providers (a nearby vehicle from
+    THAT provider has to actually be available). A no-op for every other category,
+    where any operator's vehicle on the line works just as well. ``text`` is assumed
+    to end in a period, as every ``_category_line`` branch's text does."""
+    if category not in _PROVIDER_DEPENDENCY_CATEGORIES:
+        return text
+    vehicle = (_VEHICLE_NOUN_EN if lang == "en" else _VEHICLE_NOUN_DE)[category]
+    if lang == "en":
+        clause = (
+            f", though this ties you to {alt_name} specifically — worth keeping in "
+            f"mind that a {vehicle} needs to actually be available nearby with them, "
+            "so you're somewhat less flexible than with pay-as-you-go across providers"
+        )
+    else:
+        clause = (
+            f", wobei man dadurch an {alt_name} gebunden ist — ein {vehicle} muss "
+            "dann auch tatsächlich in der Nähe verfügbar sein, man ist also etwas "
+            "weniger flexibel als bei Einzelfahrten anbieterübergreifend"
+        )
+    return text[:-1] + clause + "."
 
 
 def _current_names(entry: dict) -> str:
@@ -98,6 +171,22 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             if en else
             f"{prefix_with_note}{current} lohnt sich — günstiger als Einzelfahrscheine, also behalten."
         )
+    elif rec == "switch_to_alternative" and entry.get("actual_annual_cost_eur") is None:
+        # Only reachable via a forecast scenario's projected_category_analysis: the
+        # currently-held plan's pricing model needs per-leg duration/day data this
+        # scenario doesn't forecast (see analysis.py's actual_annual_cost_note), so
+        # there's no current-vs-alternative delta to state — say so instead of
+        # crashing on None arithmetic or inventing a number.
+        savings = 0.0
+        text = (
+            f"{prefix_with_note}{alt_name} looks cheaper than {current}, though {current}'s exact "
+            f"cost can't be projected here, so the savings aren't quantifiable yet ({alt['pricing_basis']})."
+            if en else
+            f"{prefix_with_note}{alt_name} wirkt günstiger als {current}, die genauen Kosten von "
+            f"{current} lassen sich hier aber nicht projizieren — die Ersparnis ist daher noch nicht "
+            f"bezifferbar ({alt['pricing_basis']})."
+        )
+        text = _with_provider_dependency_note(text, entry["category"], alt_name, lang)
     elif rec == "switch_to_alternative":
         savings = round(entry["actual_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
         text = (
@@ -106,6 +195,18 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             if en else
             f"{prefix_with_note}ein Wechsel von {current} zu {alt_name} könnte geschätzt "
             f"€{savings:.2f}/Jahr sparen ({alt['pricing_basis']})."
+        )
+        text = _with_provider_dependency_note(text, entry["category"], alt_name, lang)
+    elif rec == "cancel_current_go_pay_as_you_go" and entry.get("actual_annual_cost_eur") is None:
+        # Same guard as above, for the pay-as-you-go verdict.
+        savings = 0.0
+        text = (
+            f"{prefix_with_note}paying as you go looks cheaper than {current}, though {current}'s "
+            f"exact cost can't be projected here, so the savings aren't quantifiable yet."
+            if en else
+            f"{prefix_with_note}Einzelfahrscheine wirken günstiger als {current}, die genauen Kosten "
+            f"von {current} lassen sich hier aber nicht projizieren — die Ersparnis ist daher noch "
+            f"nicht bezifferbar."
         )
     elif rec == "cancel_current_go_pay_as_you_go":
         savings = round(entry["actual_annual_cost_eur"] - entry["no_subscription_annual_cost_eur"], 2)
@@ -125,6 +226,7 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             f"{prefix_with_note}ein {alt_name} könnte geschätzt €{savings:.2f}/Jahr im Vergleich zu "
             f"Einzelfahrscheinen sparen ({alt['pricing_basis']})."
         )
+        text = _with_provider_dependency_note(text, entry["category"], alt_name, lang)
     elif rec == "insufficient_cost_data":
         # Only reachable via a forecast scenario's projected_category_analysis — the
         # historical category_subscription_analysis always has a real cost basis.
@@ -143,6 +245,19 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             f"{prefix_plain}Einzelfahrscheine bleiben die günstigste Option — kein Abo nötig."
         )
     return text, max(savings, 0.0)
+
+
+def _verdict_changed(entry: dict, projected_entry: dict | None) -> bool:
+    """Whether a forecast scenario's projected verdict for this category is
+    different enough from today's to be worth surfacing — a real, priced,
+    different recommendation, not noise. Shared by the inline per-category caveat
+    and the standalone "Looking ahead" section so both apply the exact same bar."""
+    return bool(
+        projected_entry
+        and not projected_entry.get("incomplete_cost_basis")
+        and projected_entry["recommendation"] != "insufficient_cost_data"
+        and projected_entry["recommendation"] != entry["recommendation"]
+    )
 
 
 def _forecast_caveat_scenario(forecaster_out: dict | None) -> dict | None:
@@ -173,6 +288,157 @@ def _forecast_caveat_line(projected_entry: dict, scenario_label: str, lang: str)
     return f"*Perspektivisch ({scenario_label}): {phrase}*"
 
 
+def _demand_deltas(baseline_scenario: dict, event_scenario: dict, lang: str) -> list[str]:
+    """One phrase per mode whose projected trip count under the life-event scenario
+    differs from the baseline scenario by at least ``_DEMAND_CHANGE_THRESHOLD`` —
+    the concrete "how will my travel behaviour actually shift" evidence behind the
+    life event, not just its label. A mode present in only one scenario (newly
+    picked up, or dropped entirely) always counts as a change. Sorted by size of
+    the shift, capped to ``_MAX_BEHAVIOR_CHANGE_LINES`` so the section stays
+    skimmable."""
+    baseline_by_mode = {d["mode"]: d for d in baseline_scenario.get("predicted_demand", []) if d.get("mode")}
+    event_by_mode = {d["mode"]: d for d in event_scenario.get("predicted_demand", []) if d.get("mode")}
+
+    deltas = []
+    for mode in set(baseline_by_mode) | set(event_by_mode):
+        base_trips = (baseline_by_mode.get(mode) or {}).get("estimated_trips") or 0
+        event_trips = (event_by_mode.get(mode) or {}).get("estimated_trips") or 0
+        if base_trips == 0 and event_trips == 0:
+            continue
+        pct = (event_trips - base_trips) / base_trips if base_trips else 1.0
+        if base_trips > 0 and abs(pct) < _DEMAND_CHANGE_THRESHOLD:
+            continue
+        deltas.append((mode, base_trips, event_trips, pct))
+    deltas.sort(key=lambda d: abs(d[3]), reverse=True)
+
+    lines = []
+    for mode, base_trips, event_trips, pct in deltas[:_MAX_BEHAVIOR_CHANGE_LINES]:
+        label = _mode_label(mode, lang)
+        if lang == "en":
+            direction = "up" if event_trips >= base_trips else "down"
+            change = f" ({pct:+.0%})" if base_trips else ""
+            lines.append(f"- **{label}:** {direction} from an estimated {base_trips:.0f} to {event_trips:.0f} trips/year{change}.")
+        else:
+            direction = "mehr" if event_trips >= base_trips else "weniger"
+            change = f" ({pct:+.0%})" if base_trips else ""
+            lines.append(f"- **{label}:** von geschätzt {base_trips:.0f} auf {event_trips:.0f} Fahrten/Jahr ({direction}){change}.")
+    return lines
+
+
+def _subscription_impact_line(entry: dict, projected_entry: dict, lang: str) -> str:
+    """One bullet naming a category whose subscription advice would change under
+    the life-event scenario — same phrasing engine as the inline caveat
+    (``_category_line``), just formatted as a standalone list item instead of
+    folded under the category's own paragraph."""
+    label = (_CATEGORY_LABEL_EN if lang == "en" else _CATEGORY_LABEL_DE)[entry["category"]]
+    phrase, _ = _category_line(projected_entry, lang, include_label=False)
+    return f"- **{label}:** {phrase}"
+
+
+def _forecast_outlook_section(forecaster_out: dict | None, categories: list[dict], lang: str) -> str | None:
+    """A standalone, explicitly forward-looking section appended at the end of the
+    memo — distinct from the inline per-category caveats above. Where those fold a
+    single sentence into an already-written category paragraph, this section pulls
+    everything forecast-related together: whether a life event was detected, what
+    behaviour shift it implies (baseline vs. life-event scenario ``predicted_demand``),
+    and whether that shift would change any subscription's recommendation.
+
+    Always grounded in ``forecaster_out`` only — never lets a projected number
+    change ``actions_required``/``total_estimated_savings_eur``, which stay derived
+    from ``categories`` (today's historical verdict) elsewhere in this module.
+
+    Returns ``None`` only when the forecaster produced no scenarios at all (e.g. it
+    hasn't run yet) — a "nothing changes" outlook is still worth stating, so that
+    case renders a (short) section rather than being suppressed.
+    """
+    scenarios = (forecaster_out or {}).get("scenarios") or []
+    if not scenarios:
+        return None
+
+    uncertainty = forecaster_out.get("uncertainty_flags") or {}
+    header = "## Looking ahead" if lang == "en" else "## Perspektivisch"
+
+    if not uncertainty.get("life_event_detected"):
+        body = (
+            "Your forecasted travel demand over the next 12 months follows the same "
+            "patterns as your history — no upcoming life events were flagged that "
+            "would change these recommendations."
+            if lang == "en" else
+            "Ihr prognostizierter Reisebedarf über die nächsten 12 Monate folgt den "
+            "gleichen Mustern wie bisher — es wurden keine bevorstehenden "
+            "Lebensereignisse erkannt, die diese Empfehlungen ändern würden."
+        )
+        return f"{header}\n\n{body}"
+
+    life_event_type = (uncertainty.get("life_event_type") or "life event").replace("_", " ")
+    re_eval_days = uncertainty.get("recommend_re_evaluation_in_days")
+    baseline = scenarios[0]
+    event_scenario = scenarios[-1] if len(scenarios) > 1 else None
+
+    if event_scenario is None:
+        # Flagged but the forecaster didn't produce a comparable second scenario —
+        # say so rather than inventing behaviour-change detail we don't have.
+        body = (
+            f"Your calendar flagged a possible **{life_event_type}**, but there wasn't "
+            "enough detail yet to project how it would change your travel demand."
+            if lang == "en" else
+            f"Ihr Kalender deutet auf ein mögliches **{life_event_type}** hin, es gab "
+            "aber noch nicht genug Details, um dessen Einfluss auf Ihr Reiseverhalten "
+            "zu prognostizieren."
+        )
+        return f"{header}\n\n{body}"
+
+    description = event_scenario.get("description") or ""
+    intro = (
+        f"Your calendar points to a likely **{life_event_type}**. {description}"
+        if lang == "en" else
+        f"Ihr Kalender deutet auf ein wahrscheinliches **{life_event_type}** hin. {description}"
+    )
+
+    behavior_lines = _demand_deltas(baseline, event_scenario, lang)
+    behavior_intro = "Expected change in your travel behaviour:" if lang == "en" else "Erwartete Änderung Ihres Reiseverhaltens:"
+    behavior_block = (
+        f"{behavior_intro}\n" + "\n".join(behavior_lines)
+        if behavior_lines else
+        (
+            "Projected trip volumes stay close to your current pattern overall."
+            if lang == "en" else
+            "Die prognostizierten Fahrtenzahlen bleiben insgesamt nahe am aktuellen Muster."
+        )
+    )
+
+    projected_by_category = {
+        e["category"]: e for e in event_scenario.get("projected_category_analysis", [])
+    }
+    impact_lines = [
+        _subscription_impact_line(entry, projected_by_category.get(entry["category"]), lang)
+        for entry in categories
+        if _verdict_changed(entry, projected_by_category.get(entry["category"]))
+    ]
+    impact_intro = "What this could mean for your subscriptions:" if lang == "en" else "Was das für Ihre Abos bedeuten könnte:"
+    impact_block = (
+        f"{impact_intro}\n" + "\n".join(impact_lines)
+        if impact_lines else
+        (
+            "None of your subscription recommendations change under this scenario yet "
+            "— worth revisiting once the change actually takes effect."
+            if lang == "en" else
+            "Keine Ihrer Abo-Empfehlungen ändert sich in diesem Szenario bisher — es "
+            "lohnt sich, dies erneut zu prüfen, sobald die Änderung eintritt."
+        )
+    )
+
+    re_eval = ""
+    if re_eval_days:
+        re_eval = (
+            f"\n\nWe'd recommend revisiting this analysis in about {re_eval_days} days."
+            if lang == "en" else
+            f"\n\nWir empfehlen, diese Analyse in etwa {re_eval_days} Tagen erneut zu prüfen."
+        )
+
+    return f"{header}\n\n{intro}\n\n{behavior_block}\n\n{impact_block}{re_eval}"
+
+
 def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dict | None = None) -> dict:
     """
     Drafts a context-aware, personalized mobility consultation memo in German and
@@ -181,9 +447,12 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
 
     ``forecaster_out`` (optional) adds a one-line forward-looking caveat under any
     category whose verdict would differ under the life-event forecast scenario (see
-    ``_forecast_caveat_scenario``) — purely textual: ``actions_required`` and
-    ``total_estimated_savings_eur`` stay derived only from today's historical
-    verdict, never from a speculative projection.
+    ``_forecast_caveat_scenario``), plus a standalone "Looking ahead" section at the
+    end (see ``_forecast_outlook_section``) naming any detected life event, the
+    behaviour shift it implies, and whether it would change subscription advice —
+    purely textual either way: ``actions_required`` and ``total_estimated_savings_eur``
+    stay derived only from today's historical verdict, never from a speculative
+    projection.
     """
     categories = analysis_result.get("category_subscription_analysis", [])
     scenario = _forecast_caveat_scenario(forecaster_out)
@@ -201,12 +470,7 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         line_de, _ = _category_line(entry, "de")
 
         projected_entry = projected_by_category.get(entry["category"])
-        if (
-            projected_entry
-            and not projected_entry.get("incomplete_cost_basis")
-            and projected_entry["recommendation"] != "insufficient_cost_data"
-            and projected_entry["recommendation"] != entry["recommendation"]
-        ):
+        if _verdict_changed(entry, projected_entry):
             scenario_label = scenario.get("label", "forecast")
             line_en += "\n" + _forecast_caveat_line(projected_entry, scenario_label, "en")
             line_de += "\n" + _forecast_caveat_line(projected_entry, scenario_label, "de")
@@ -241,6 +505,9 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         "Ihr aktuelles Setup ist in den von Ihnen genutzten Kategorien bereits kosteneffizient."
     )
 
+    outlook_en = _forecast_outlook_section(forecaster_out, categories, "en")
+    outlook_de = _forecast_outlook_section(forecaster_out, categories, "de")
+
     text_en = (
         f"Dear {persona_name},\n\n"
         f"I reviewed your travel history over the past year, category by category — comparing "
@@ -248,7 +515,8 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         f"alternative.\n\n"
         f"{body_en}\n\n"
         f"{savings_line_en}\n\n"
-        f"Best regards,\n"
+        + (f"{outlook_en}\n\n" if outlook_en else "")
+        + f"Best regards,\n"
         f"DB MoveOptimizer Strategy Advisor"
     )
     text_de = (
@@ -257,7 +525,8 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         f"zwischen Ihren aktuellen Kosten, Einzelfahrscheinen und vergleichbaren Abo-Alternativen.\n\n"
         f"{body_de}\n\n"
         f"{savings_line_de}\n\n"
-        f"Mit freundlichen Grüßen,\n"
+        + (f"{outlook_de}\n\n" if outlook_de else "")
+        + f"Mit freundlichen Grüßen,\n"
         f"Ihr DB MoveOptimizer Strategieberater"
     )
 

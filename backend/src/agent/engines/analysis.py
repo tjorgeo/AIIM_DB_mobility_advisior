@@ -1066,6 +1066,16 @@ def project_category_subscription_analysis(
     horizon_days = forecast_horizon_days or 365
     annual_factor = 365.0 / horizon_days
 
+    # held_subs entries carry the user_subscriptions record's own field names
+    # (provider_plan_name, monthly_cost_eur, ...), not the pricing_catalog plan
+    # shape (pricing_model, name, per_km_eur, ...) that
+    # _estimate_projected_alternative_remainder expects — resolve each held sub to
+    # its catalog row (by subscription_id == catalog id) before pricing it, or a
+    # flat-rate pass like the Deutschlandticket would wrongly come back
+    # unprojectable (neither field name matches, so every tier of
+    # _flat_or_discount_remainder falls through to None).
+    catalog_by_id = {p.get("id"): p for p in pricing_catalog if p.get("id")}
+
     held_subs_by_category = _active_subscriptions(current_subscriptions)["held_subs_by_category"]
     rates = _implied_rate_by_mode(mode_breakdown)
     demand_by_mode = {d["mode"]: d for d in predicted_demand if d.get("mode")}
@@ -1135,8 +1145,12 @@ def project_category_subscription_analysis(
             all_priced = True
             for s in held_subs:
                 sub_annual = s["_annual_cost"]
-                remainder = _estimate_projected_alternative_remainder(
-                    s, no_subscription_annual_cost, projected_trips, projected_km
+                catalog_plan = catalog_by_id.get(s.get("subscription_id"))
+                remainder = (
+                    _estimate_projected_alternative_remainder(
+                        catalog_plan, no_subscription_annual_cost, projected_trips, projected_km
+                    )
+                    if catalog_plan is not None else None
                 )
                 if remainder is None:
                     all_priced = False

@@ -25,16 +25,13 @@ from agent.llm import llm_available
 logger = logging.getLogger(__name__)
 
 
-def run_analysis(user_id: str, include_memo: bool = True) -> dict:
-    """Run the deterministic pipeline for one user.
+def run_analysis(user_id: str) -> dict:
+    """Run the full pipeline for one user, synchronously — including the LLM forecast
+    and the Analyst memo when an LLM is configured.
 
     Returns a dict with ``user``, ``user_preferences``, ``subscriptions``,
     ``travel_history``, ``pricing_catalog`` and the agent outputs, or
     ``{"error": ...}`` if the user is not found.
-
-    ``include_memo=False`` skips the (slow) Analyst LLM memo and leaves the template
-    memo in place, so a caller can return the deterministic numbers immediately and
-    generate the LLM prose lazily (see :meth:`orchestrator.Orchestrator.generate_memo`).
     """
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -55,17 +52,13 @@ def run_analysis(user_id: str, include_memo: bool = True) -> dict:
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
     # seasonality) plus the user's upcoming calendar entries (see context.py).
-    # Demand-only + deterministic fallback, so numbers stay guarded.
-    #
-    # use_llm is tied to include_memo: both are the slow LLM steps. On the fast fresh
-    # return (include_memo=False) we run the deterministic forecast only and defer the
-    # LLM forecast to the same background task that upgrades the memo, so the response
-    # isn't blocked on a forecaster round-trip.
+    # Falls back to the deterministic baseline itself when no LLM is configured, so
+    # numbers stay guarded either way.
     forecaster_out = forecast(
         analyst_out["forecaster_summary"],
         raw_calendar_entries=ctx["raw_calendar_entries"],
         forecast_horizon_days=365,
-        use_llm=include_memo,
+        use_llm=True,
     )
 
     # Project the same current-vs-alternative-vs-no-subscription comparison onto each
@@ -82,7 +75,7 @@ def run_analysis(user_id: str, include_memo: bool = True) -> dict:
     communicator_out["memo_source"] = "template"
     memo_trace_id = None
 
-    if include_memo and llm_available():
+    if llm_available():
         try:
             from agent.analyst_agent import run_briefing
 

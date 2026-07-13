@@ -335,6 +335,25 @@ add_calendar(JULIA, datetime(2025, 10, 3, 19, 0, tzinfo=TZ_SUMMER), datetime(202
 add_calendar(JULIA, datetime(2026, 3, 14, 12, 0, tzinfo=TZ), datetime(2026, 3, 14, 14, 0, tzinfo=TZ),
              "Haircut appointment", "Trim and color at the salon.", "Leipzig", "")
 
+# Life-event calendar: an *upcoming* job change (dated ahead of WINDOW_END/today so
+# the forecaster's forward-looking scan picks it up - see the NOTE in Jonas's
+# section below) that ends her frequent long-distance client travel entirely, not
+# yet reflected in the trip history above. Meant to flip category_subscription_
+# analysis's long_distance_rail recommendation forward (today: switch_to_alternative
+# to BahnCard 50, driven by her current ~113 trips/yr) once the forecaster projects
+# that volume collapsing to near zero.
+JOB_OFFER_DATE = date(2026, 8, 10)
+NEW_JOB_START = date(2026, 9, 1)
+add_calendar(JULIA, datetime(JOB_OFFER_DATE.year, JOB_OFFER_DATE.month, JOB_OFFER_DATE.day, 15, 0, tzinfo=TZ_SUMMER),
+             datetime(JOB_OFFER_DATE.year, JOB_OFFER_DATE.month, JOB_OFFER_DATE.day, 16, 0, tzinfo=TZ_SUMMER),
+             "Neues Jobangebot angenommen - vollständig remote", "Accepted a new, fully remote Account "
+             "Manager role starting next month - no more client site visits once she starts.", "Leipzig", "")
+add_calendar(JULIA, datetime(NEW_JOB_START.year, NEW_JOB_START.month, NEW_JOB_START.day, 9, 0, tzinfo=TZ_SUMMER),
+             datetime(NEW_JOB_START.year, NEW_JOB_START.month, NEW_JOB_START.day, 17, 0, tzinfo=TZ_SUMMER),
+             "Neuer Job beginnt - vollständig remote", "First day in the new, fully remote position - works "
+             "exclusively from her home office in Leipzig from here on. The weekly long-distance client trips "
+             "to Munich, Cologne, Frankfurt, Berlin and Hamburg stop completely.", "Leipzig", "")
+
 print(f"Julia trips so far: {len(trip_rows)}")
 
 
@@ -524,6 +543,26 @@ add_calendar(SIMONE, datetime(2025, 11, 9, 18, 30, tzinfo=TZ), datetime(2025, 11
              "Dresden", "")
 add_calendar(SIMONE, datetime(2026, 4, 18, 9, 0, tzinfo=TZ_SUMMER), datetime(2026, 4, 18, 9, 30, tzinfo=TZ_SUMMER),
              "Hairdresser appointment", "Trim appointment at the salon around the corner.", "Dresden", "")
+
+# Life-event calendar: her partner's *upcoming* relocation to Berlin for a new job
+# (dated ahead of WINDOW_END/today so the forecaster's forward-looking scan picks it
+# up - see the NOTE in Jonas's section above), plus the recurring monthly weekend
+# visits that follow - not yet reflected in the two-trips-a-year baseline above.
+# Meant to flip category_subscription_analysis's long_distance_rail recommendation
+# forward (today: cancel_current_go_pay_as_you_go, since her BahnCard 25 barely
+# breaks even at ~4 trips/yr) once the forecaster projects that volume rising
+# sharply - well past the point where the BahnCard pays off again.
+PARTNER_MOVE_DATE = date(2026, 8, 15)
+FIRST_VISIT_DATE = date(2026, 8, 29)
+add_calendar(SIMONE, datetime(PARTNER_MOVE_DATE.year, PARTNER_MOVE_DATE.month, PARTNER_MOVE_DATE.day, 9, 0, tzinfo=TZ_SUMMER),
+             datetime(PARTNER_MOVE_DATE.year, PARTNER_MOVE_DATE.month, PARTNER_MOVE_DATE.day, 18, 0, tzinfo=TZ_SUMMER),
+             "Partner zieht nach Berlin", "Her partner has accepted a new job in Berlin and is relocating "
+             "there - regular weekend visits by long-distance train start from here on.", "Berlin", "")
+add_calendar(SIMONE, datetime(FIRST_VISIT_DATE.year, FIRST_VISIT_DATE.month, FIRST_VISIT_DATE.day, 8, 0, tzinfo=TZ_SUMMER),
+             datetime(FIRST_VISIT_DATE.year, FIRST_VISIT_DATE.month, FIRST_VISIT_DATE.day + 1, 20, 0, tzinfo=TZ_SUMMER),
+             "Wochenendbesuch in Berlin", "Monthly weekend visit to see her partner in Berlin by "
+             "long-distance train (ICE) - a new recurring routine now that he lives there.", "Berlin",
+             "FREQ=MONTHLY;BYDAY=-1SA")
 
 print(f"After Simone: {len(trip_rows)}")
 

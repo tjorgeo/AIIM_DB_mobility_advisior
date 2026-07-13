@@ -439,9 +439,8 @@ def forecast(
     response cannot be parsed.
 
     ``use_llm=False`` forces the deterministic fallback and skips the LLM call entirely —
-    used on the synchronous ``/api/analyze`` fast path so the response isn't blocked on a
-    forecaster round-trip; the LLM forecast is regenerated later in the background (see
-    ``orchestrator.Orchestrator.generate_memo``).
+    useful for tests/experiments that want the reproducible baseline on demand.
+    ``/api/analyze`` itself always calls with ``use_llm=True``.
     """
     resolved_as_of_date = date.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc).date()
 

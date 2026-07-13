@@ -1,7 +1,7 @@
 import json
 import os
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -216,22 +216,17 @@ def get_personas():
     return personas
 
 @app.post("/api/analyze")
-def analyze_portfolio(req: AnalyzeRequest, background_tasks: BackgroundTasks):
+def analyze_portfolio(req: AnalyzeRequest):
     """
     Triggers the 4-Agent orchestration flow for a specific traveler persona.
 
     Reuses the user's latest recommendation when available (unless ``force``); a fresh
-    run returns the deterministic numbers with the template memo immediately and
-    schedules the slow LLM memo as a background task, so the next mount serves the
-    upgraded prose from cache.
+    run is synchronous and waits for the LLM forecast + Analyst memo (when an LLM is
+    configured), so the response already reflects the final result — no follow-up call
+    needed to see calendar-driven life events or the upgraded memo prose.
     """
     try:
-        pipeline_output = orchestrator.run_analysis(req.user_id, force=req.force)
-        if pipeline_output.pop("_fresh", False):
-            background_tasks.add_task(
-                orchestrator.generate_memo, pipeline_output["session_id"], req.user_id
-            )
-        return pipeline_output
+        return orchestrator.run_analysis(req.user_id, force=req.force)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
