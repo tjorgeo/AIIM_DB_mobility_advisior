@@ -270,6 +270,26 @@ After the graph runs, the orchestrator inserts a row into `recommendations`
 }
 ```
 
+### 6.1 The single-call LLM baseline (evaluation only)
+
+[`src/agent/baseline_pipeline.py`](src/agent/baseline_pipeline.py) is the
+evaluation counterpart to this pipeline: the same raw context `load_context`
+produces (profile, preferences, subscriptions, full leg-level travel history,
+catalog, calendar) is handed to the LLM in **one call**, and the LLM derives the
+recommended portfolio changes itself — no deterministic engines, no forecaster,
+no number guard. Its output uses the same action vocabulary as
+`category_subscription_analysis[*].recommendation` / `actions_required`
+(`keep_current`, `switch_to_alternative`, `cancel_current_go_pay_as_you_go`,
+`consider_subscribing`, `no_subscription_needed`, `insufficient_cost_data`), so
+main-pipeline and baseline recommendations can be judged against the same rubric.
+
+It is not wired into any endpoint or the frontend. Run it from `backend/` (needs
+`DATABASE_URL` + `UNI_GPT_API_KEY`):
+
+```bash
+python scripts/run_baseline.py <user_id> [...]   # or --all, optionally --out results.json
+```
+
 ---
 
 ## 7. HTTP API
