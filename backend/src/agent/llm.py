@@ -24,7 +24,15 @@ _llm = None
 
 
 def get_llm(temperature: float = 0.0):
-    """Lazily build a shared ChatOpenAI client pointed at University GPT."""
+    """Lazily build a shared ChatOpenAI client pointed at University GPT.
+
+    ``timeout``/``max_retries`` are set explicitly: without them a stalled or
+    rate-limited call to the shared university endpoint hangs indefinitely — the chat
+    request (and the frontend's "typing…" indicator) never resolves into either a
+    reply or an error. Capping it means a stuck call surfaces as an error within
+    ~30s, which /api/chat and /api/chat/stream already turn into a 500 / SSE error
+    event that the frontend falls back on.
+    """
     global _llm
     if _llm is None:
         from langchain_openai import ChatOpenAI
@@ -34,5 +42,7 @@ def get_llm(temperature: float = 0.0):
             openai_api_key=UNI_GPT_API_KEY,
             openai_api_base=UNI_GPT_BASE_URL,
             temperature=temperature,
+            timeout=30,
+            max_retries=1,
         )
     return _llm

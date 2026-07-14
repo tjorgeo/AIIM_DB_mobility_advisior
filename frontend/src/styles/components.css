@@ -617,7 +617,17 @@
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   animation: slideUpSheet 0.28s var(--ease-out) both;
+  transition: width 0.22s var(--ease-out), max-height 0.22s var(--ease-out);
 }
+
+.chat-panel--expanded {
+  width: 860px;
+  max-width: calc(100vw - 24px);
+  max-height: min(92vh, 1040px);
+}
+.chat-panel--expanded .msg { font-size: 1rem; max-width: 78%; }
+.chat-panel--expanded .chat__input { font-size: 1rem; }
+.chat-panel--expanded .quick-chip { font-size: 0.9rem; }
 
 .chat__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--slate-100); background: var(--white); }
 .chat__avatar { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #ff3347, var(--db-red)); color: #fff; font-weight: 700; font-size: var(--text-sm); }

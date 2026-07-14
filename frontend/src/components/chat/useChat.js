@@ -125,15 +125,21 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     // Grow the last assistant message as streamed tokens arrive. The placeholder is
     // created lazily on the first token so a failed stream (e.g. 503, no LLM key)
     // leaves no empty bubble behind and can fall back cleanly.
+    //
+    // Whether a bubble already exists is derived from the state itself (last message
+    // is a streaming assistant one) rather than a separate outer flag mutated inside
+    // the updater — React 18 StrictMode invokes setState updater functions twice to
+    // detect impure ones, and a flag flipped as a side effect inside the updater gets
+    // out of sync between the two calls, so the "first token" branch never runs.
     let streamStarted = false
     const appendToken = (delta) => {
+      streamStarted = true
       setMessages((m) => {
-        if (!streamStarted) {
-          streamStarted = true
-          return [...m, { role: 'assistant', content: delta, traceId: null, feedback: null, streaming: true }]
-        }
         const last = m.length - 1
-        return m.map((x, i) => (i === last && x.streaming ? { ...x, content: x.content + delta } : x))
+        if (last >= 0 && m[last].role === 'assistant' && m[last].streaming) {
+          return m.map((x, i) => (i === last ? { ...x, content: x.content + delta } : x))
+        }
+        return [...m, { role: 'assistant', content: delta, traceId: null, feedback: null, streaming: true }]
       })
     }
 

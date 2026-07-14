@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageCircle, X, Send, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { MessageCircle, X, Send, ThumbsUp, ThumbsDown, Maximize2, Minimize2 } from 'lucide-react'
 import { useChat } from './useChat'
 import Markdown from './Markdown'
 
 export default function ChatWidget({ user, lang, getContext, actions, advisorMemo }) {
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [unread, setUnread] = useState(0)
   const [teaserDismissed, setTeaserDismissed] = useState(false)
   const [input, setInput] = useState('')
@@ -73,13 +74,20 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
       </button>
     </>
   ) : (
-    <div className="chat-panel" role="dialog" aria-label={t('MoveOptimizer assistant', 'MoveOptimizer-Assistent')}>
+    <div className={`chat-panel${expanded ? ' chat-panel--expanded' : ''}`} role="dialog" aria-label={t('MoveOptimizer assistant', 'MoveOptimizer-Assistent')}>
       <div className="chat__header">
         <span className="chat__avatar">AI<span className="status-dot" /></span>
         <div>
           <div className="chat__title">{t('Mobility Assistant', 'Mobilitäts-Assistent')}</div>
           <div className="chat__status">● {t('Online', 'Online')}</div>
         </div>
+        <button
+          className="chat__close"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? t('Shrink window', 'Fenster verkleinern') : t('Enlarge window', 'Fenster vergrößern')}
+        >
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
         <button className="chat__close" onClick={() => setOpen(false)} aria-label={t('Close', 'Schließen')}><X size={18} /></button>
       </div>
 

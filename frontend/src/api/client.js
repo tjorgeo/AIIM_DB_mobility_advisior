@@ -83,26 +83,60 @@ export async function approve(sessionId, scenarioId) {
 
 // Optional endpoint owned by the backend team. Until it exists this throws,
 // and the chat widget falls back to its scripted assistant.
-export async function chat(userId, messages) {
-  const res = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, messages }),
-  })
-  return parseJson(res, 'Chat')
+//
+// timeoutMs guards against a stalled backend/LLM call that never resolves — without
+// it a hang here would leave the chat widget's "typing…" indicator stuck forever
+// instead of falling through to the scripted assistant.
+export async function chat(userId, messages, { timeoutMs = 20000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, messages }),
+      signal: controller.signal,
+    })
+    return await parseJson(res, 'Chat')
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Chat timed out')
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // Streaming variant: POST /api/chat/stream returns Server-Sent Events. Calls
 // onToken(text) for each token as it arrives and resolves to { traceId, gotTokens }.
 // Throws on a non-OK response (e.g. 503 when no LLM key) so the caller can fall back
 // to the non-streaming chat() and then to the scripted assistant.
-export async function streamChat(userId, messages, onToken) {
-  const res = await fetch('/api/chat/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, messages }),
-  })
+//
+// idleTimeoutMs resets on every chunk received (including the SSE keep-alive of a
+// long reply), so a real answer never gets cut short — it only fires when the
+// backend/LLM call stalls and nothing (not even an error event) ever arrives.
+export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35000 } = {}) {
+  const controller = new AbortController()
+  let timer = setTimeout(() => controller.abort(), idleTimeoutMs)
+  const resetTimer = () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), idleTimeoutMs)
+  }
+
+  let res
+  try {
+    res = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, messages }),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    clearTimeout(timer)
+    if (err.name === 'AbortError') throw new Error('Chat stream timed out')
+    throw err
+  }
   if (!res.ok || !res.body) {
+    clearTimeout(timer)
     const err = new Error(`Chat stream failed (${res.status})`)
     err.status = res.status
     throw err
@@ -114,29 +148,41 @@ export async function streamChat(userId, messages, onToken) {
   let traceId = null
   let gotTokens = false
 
-  // Parse the SSE stream: events are separated by a blank line; each carries one
-  // `data: <json>` line.
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const events = buffer.split('\n\n')
-    buffer = events.pop() ?? ''
-    for (const evt of events) {
-      const line = evt.trim()
-      if (!line.startsWith('data:')) continue
-      const payload = line.slice(5).trim()
-      if (!payload) continue
-      let ev
-      try { ev = JSON.parse(payload) } catch { continue }
-      if (ev.type === 'token') { gotTokens = true; onToken(ev.text) }
-      else if (ev.type === 'done') { traceId = ev.trace_id || null }
-      else if (ev.type === 'error') {
-        const err = new Error(ev.detail || 'Chat stream error')
-        err.gotTokens = gotTokens
-        throw err
+  try {
+    // Parse the SSE stream: events are separated by a blank line; each carries one
+    // `data: <json>` line.
+    for (;;) {
+      const { done, value } = await reader.read()
+      resetTimer()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split('\n\n')
+      buffer = events.pop() ?? ''
+      for (const evt of events) {
+        const line = evt.trim()
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload) continue
+        let ev
+        try { ev = JSON.parse(payload) } catch { continue }
+        if (ev.type === 'token') { gotTokens = true; onToken(ev.text) }
+        else if (ev.type === 'done') { traceId = ev.trace_id || null }
+        else if (ev.type === 'error') {
+          const err = new Error(ev.detail || 'Chat stream error')
+          err.gotTokens = gotTokens
+          throw err
+        }
       }
     }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Chat stream timed out')
+      timeoutErr.gotTokens = gotTokens
+      throw timeoutErr
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
   }
   return { traceId, gotTokens }
 }
