@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { 
-  Wallet, Leaf, Route, Globe, LogOut, TrendingUp, 
-  Check, ChevronDown, ArrowUpRight, BarChart3, AlertCircle 
+import {
+  Wallet, Leaf, Route, Globe, LogOut, TrendingUp,
+  Check, ChevronDown, ChevronRight, BarChart3, AlertCircle,
+  PiggyBank, CheckCircle2, AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo'
@@ -11,12 +12,13 @@ import ChatWidget from '../components/chat/ChatWidget'
 import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 import TravelInsights from './TravelInsights.jsx'
+import CostBreakdown from './CostBreakdown.jsx'
 
 export default function Dashboard() {
   const { logout, currentUser } = useAuth()
   const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
   const [profileMenuOpen, setProfileMenuOpen] = useState(false) // State für das kleine Fenster
-  const [view, setView] = useState('overview') // 'overview' | 'insights' — kein Router nötig, gleiches Muster wie Login.jsx currentView
+  const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' — kein Router nötig, gleiches Muster wie Login.jsx currentView
 
   // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
   const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
@@ -34,18 +36,24 @@ export default function Dashboard() {
     DE: {
       optimized: 'Du bist optimiert',
       optimizedSub: 'Dein aktueller Plan passt perfekt zu deinem Reiseverhalten — kein verlorenes Sparpotenzial.',
-      seePlan: 'Meinen Plan ansehen',
+      savingsTitle: 'Hier ist dein Sparpotenzial',
+      analyzing: 'Wir analysieren deine Fahrten…',
+      analyzingSub: 'Dein persönlicher Plan ist gleich fertig.',
       annualSpend: 'JÄHRLICHE AUSGABEN',
       distance: 'DISTANZ',
       co2: 'CO₂-FUSABDRUCK (12 MONATE)',
       acrossTransit: 'Über alle Verkehrsmittel',
       estimatedEmissions: 'Geschätzte Emissionen',
+      realizedSavings: 'ERSPARNIS DURCH ABOS',
+      viaSubscriptions: 'Ggü. Einzelfahrten',
+      worthIt: (v) => `Spart ${euro(v, { lang: 'de' })}`,
+      notWorthIt: (v) => `${euro(v, { lang: 'de' })} Mehrkosten`,
       howYouTravel: 'Wie du reist',
-      mostlyWalk: 'Hauptsächlich zu Fuß',
       viewDetails: 'Alle Details ansehen',
       recommended: 'Für dich empfohlen',
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
       portfolioTitle: 'Kostenoptimiertes Portfolio',
+      estimated: 'Geschätzt',
       currentPlan: 'Dein aktueller Tarif',
       currentSubsTitle: 'Deine aktuellen Abos',
       noSubs: 'Keine aktiven Abos hinterlegt.',
@@ -53,8 +61,6 @@ export default function Dashboard() {
       perYear: '/ Jahr',
       whatChanges: 'WAS SICH ÄNDERT',
       noChanges: 'Keine Änderungen — behalte deinen Tarif bei',
-      savingOpp: 'Sparpotenziale',
-      perfectMix: 'Du nutzt bereits den perfekten Abo-Mix.',
       logout: 'Abmelden',
       settings: 'Einstellungen',
       editProfile: 'Profildaten ändern',
@@ -63,18 +69,24 @@ export default function Dashboard() {
     EN: {
       optimized: "You're optimized",
       optimizedSub: 'Your current plan already fits how you travel — no savings left on the table.',
-      seePlan: 'See my plan',
+      savingsTitle: "Here's your savings potential",
+      analyzing: 'Analyzing your trips…',
+      analyzingSub: 'Your personalized plan will be ready shortly.',
       annualSpend: 'ANNUAL SPEND',
       distance: 'DISTANCE',
       co2: 'CO₂ FOOTPRINT (12 MO)',
       acrossTransit: 'Across all transit',
       estimatedEmissions: 'Estimated emissions',
+      realizedSavings: 'SAVED VIA SUBSCRIPTIONS',
+      viaSubscriptions: 'Vs. paying per trip',
+      worthIt: (v) => `Saves ${euro(v, { lang: 'en' })}`,
+      notWorthIt: (v) => `Costs ${euro(v, { lang: 'en' })} extra`,
       howYouTravel: 'How you travel',
-      mostlyWalk: 'Mostly by walk',
       viewDetails: 'View all details',
       recommended: 'Recommended for you',
       basedMonths: 'Based on your last 12 months',
       portfolioTitle: 'Cost-Optimized Portfolio',
+      estimated: 'Estimated',
       currentPlan: 'Your current plan',
       currentSubsTitle: 'Your current subscriptions',
       noSubs: 'No active subscriptions on file.',
@@ -82,8 +94,6 @@ export default function Dashboard() {
       perYear: '/ yr',
       whatChanges: 'WHAT CHANGES',
       noChanges: 'No changes — keep your current plan',
-      savingOpp: 'Savings opportunities',
-      perfectMix: 'You are already using the perfect subscription mix.',
       logout: 'Sign out',
       settings: 'Settings',
       editProfile: 'Edit Profile',
@@ -159,11 +169,16 @@ export default function Dashboard() {
   const communicator = analysis?.raw_agent_payloads?.communicator?.output || null
   const recommended = summary || null
   const currentSubscriptions = analysis?.current_subscriptions || []
+  // subscription_coverage carries the per-subscription worth-it check (net_savings_eur);
+  // joined on subscription_id (the catalog id, shared with current_subscriptions).
+  const coverageBySubId = new Map((analyst?.subscription_coverage || []).map((c) => [c.subscription_id, c]))
+  const realizedSavings = (analyst?.subscription_coverage || []).reduce((s, c) => s + (c.realized_savings_eur || 0), 0)
 
   const busy = (v) => (loadingData ? '…' : v)
   const annualSpendStr = analyst ? euro(analyst.current_annual_spend_eur, { lang: langKey }) : busy('—')
   const distanceStr = analyst ? `${number(analyst.total_distance_km, langKey)} km` : busy('—')
   const co2Str = analyst ? `${number(analyst.total_co2_kg, langKey)} kg` : busy('—')
+  const realizedSavingsStr = analyst ? euro(realizedSavings, { lang: langKey }) : busy('—')
   const recSavings = summary?.total_estimated_savings_eur || 0
   // Recommended annual cost = what you pay today minus the estimated savings if you
   // follow every suggested action (category_subscription_analysis contract).
@@ -177,6 +192,18 @@ export default function Dashboard() {
     if (a.to) lines.push({ action: 'add', item: a.to })
     return lines
   })
+
+  // Hero headline must reflect the actual result, not a fixed "you're optimized"
+  // claim — that's true only once we know there's nothing left to save.
+  const hasSavings = recSavings > 0 && recChanges.length > 0
+  const heroTitle = loadingData ? t.analyzing : hasSavings ? t.savingsTitle : t.optimized
+  const heroSub = loadingData
+    ? t.analyzingSub
+    : hasSavings
+      ? (lang === 'DE'
+        ? `Mit den empfohlenen Änderungen sparst du schätzungsweise ${euro(recSavings, { lang: langKey })} pro Jahr.`
+        : `With the recommended changes you could save an estimated ${euro(recSavings, { lang: langKey })} per year.`)
+      : t.optimizedSub
 
   const palette = ['#00f2fe', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f43f5e']
   const derivedTravelStats = analyst?.mode_breakdown
@@ -194,6 +221,18 @@ export default function Dashboard() {
   if (view === 'insights') {
     return (
       <TravelInsights
+        analysis={analysis}
+        lang={lang}
+        colors={colors}
+        isDark={isDark}
+        onBack={() => setView('overview')}
+      />
+    )
+  }
+
+  if (view === 'cost') {
+    return (
+      <CostBreakdown
         analysis={analysis}
         lang={lang}
         colors={colors}
@@ -235,11 +274,10 @@ export default function Dashboard() {
           }
           .col-hero { grid-column: span 7; }
           .col-stats-grid { grid-column: span 5; }
-          .col-co2 { grid-column: span 5; }
-          .col-current-subs { grid-column: span 7; }
-          .col-portfolio { grid-column: span 12; }
+          .col-usage-stats { grid-column: span 5; }
           .col-travel { grid-column: span 7; }
-          .col-savings { grid-column: span 5; }
+          .col-current-subs { grid-column: span 6; }
+          .col-portfolio { grid-column: span 6; }
         }
       `}</style>
       
@@ -456,45 +494,49 @@ export default function Dashboard() {
             </div>
 
             <h2 style={{ color: colors.text, fontSize: '1.8rem', fontWeight: '800', letterSpacing: '-0.03em', marginBottom: '0.5rem', lineHeight: '1.2' }}>
-              {t.optimized}
+              {heroTitle}
             </h2>
-            <p style={{ color: colors.textMuted, fontSize: '0.9rem', lineHeight: '1.4', marginBottom: '1.25rem' }}>
-              {t.optimizedSub}
+            <p style={{ color: colors.textMuted, fontSize: '0.9rem', lineHeight: '1.4' }}>
+              {heroSub}
             </p>
           </div>
-          
-          <button style={{
-            backgroundColor: 'transparent',
-            border: 'none',
-            color: colors.accentCyan,
-            fontSize: '0.9rem',
-            fontWeight: '700',
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.25rem',
-            cursor: 'pointer',
-            marginTop: 'auto'
-          }}>
-            {t.seePlan} <span style={{ fontSize: '1.1rem' }}>↓</span>
-          </button>
         </div>
 
-        {/* 2. CORE STATS (GRID CONFIGURATION) */}
+        {/* 2. MONEY STATS — annual spend next to what subscriptions save you, so the two euro figures read together */}
         <div className="col-stats-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          {/* ANNUAL SPEND */}
-          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          {/* ANNUAL SPEND — clickable through to the cost-breakdown subpage */}
+          <button
+            onClick={() => setView('cost')}
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left', cursor: 'pointer', color: colors.text, font: 'inherit' }}
+          >
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                 <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.annualSpend}</span>
                 <span style={{ color: colors.accentCyan }}><Wallet size={14} /></span>
               </div>
               <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{annualSpendStr}</div>
+              <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.35rem', display: 'block' }}>{t.subAndTickets}</span>
             </div>
-            <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.subAndTickets}</span>
-          </div>
+            <span style={{ fontSize: '0.78rem', color: colors.accentCyan, fontWeight: '700', marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+              {t.viewDetails} <ChevronRight size={13} style={{ flexShrink: 0 }} />
+            </span>
+          </button>
 
-          {/* DISTANCE */}
+          {/* REALIZED SAVINGS */}
+          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.realizedSavings}</span>
+                <span style={{ color: colors.accentCyan }}><PiggyBank size={14} /></span>
+              </div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{realizedSavingsStr}</div>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.viaSubscriptions}</span>
+          </div>
+        </div>
+
+        {/* 3. USAGE STATS — distance + CO₂ grouped together */}
+        <div className="col-usage-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
@@ -505,126 +547,16 @@ export default function Dashboard() {
             </div>
             <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.acrossTransit}</span>
           </div>
-        </div>
 
-        {/* CO₂ CARD */}
-        <div className="col-co2" style={{
-          backgroundColor: colors.card,
-          border: `1px solid ${colors.border}`,
-          borderRadius: '20px',
-          padding: '1.1rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div>
-            <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.35rem' }}>
-              {t.co2}
-            </span>
-            <div style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{co2Str}</div>
-            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.estimatedEmissions}</span>
-          </div>
-          <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: 'rgba(34, 197, 94, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.successGreen }}>
-            <Leaf size={20} style={{ margin: 'auto' }} />
-          </div>
-        </div>
-
-        {/* 3. CURRENT SUBSCRIPTIONS CARD */}
-        <div className="col-current-subs" style={{
-          backgroundColor: colors.card,
-          border: `1px solid ${colors.border}`,
-          borderRadius: '24px',
-          padding: '1.5rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem' }}>
-            <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700' }}>{t.currentSubsTitle}</h3>
-            <Check size={18} style={{ color: colors.accentCyan }} />
-          </div>
-          {currentSubscriptions.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {currentSubscriptions.map((s) => {
-                const label = s.provider_plan_name || s.provider_name || t.currentPlan
-                const priceStr = s.monthly_cost_eur
-                  ? `${euro(s.monthly_cost_eur, { lang: langKey })} ${t.perMonth}`
-                  : s.annual_cost_eur
-                    ? `${euro(s.annual_cost_eur, { lang: langKey })} ${t.perYear}`
-                    : null
-                return (
-                  <div key={s.user_subscription_id || label} style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.text, fontWeight: '500', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                    <span>{subscriptionEmoji(s)} {label}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                      {priceStr && <span style={{ color: colors.textMuted, fontWeight: '600', fontSize: '0.8rem' }}>{priceStr}</span>}
-                      <Check size={16} style={{ color: colors.accentCyan }} />
-                    </span>
-                  </div>
-                )
-              })}
+          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.co2}</span>
+                <span style={{ color: colors.successGreen }}><Leaf size={14} /></span>
+              </div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{co2Str}</div>
             </div>
-          ) : (
-            <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.textMuted, fontWeight: '500' }}>
-              {t.noSubs}
-            </div>
-          )}
-        </div>
-
-        {/* 4. PORTFOLIO RECOMMENDATION CARD */}
-        <div className="col-portfolio" style={{
-          backgroundColor: colors.card,
-          border: `2px solid ${colors.accentCyan}`,
-          borderRadius: '24px',
-          padding: '1.25rem',
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between'
-        }}>
-          <div style={{
-            position: 'absolute',
-            top: '-12px',
-            left: '20px',
-            backgroundColor: colors.accentCyan,
-            color: colors.onAccent,
-            fontSize: '0.65rem',
-            fontWeight: '800',
-            padding: '0.2rem 0.6rem',
-            borderRadius: '6px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            BEST FOR YOU
-          </div>
-
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginTop: '0.25rem', marginBottom: '1rem' }}>
-              <div>
-                <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.portfolioTitle}</h3>
-                <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.recommended}</span>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.85rem' }}>
-            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
-              {t.whatChanges}
-            </span>
-            {recSavings > 0 && recChanges.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                {recChanges.map((c, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.text }}>
-                    <span style={{ color: c.action === 'add' ? colors.successGreen : colors.accentRed, fontWeight: '800' }}>{c.action === 'add' ? '+' : '−'}</span>
-                    {c.item}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.textMuted }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accentCyan }} />
-                {t.noChanges}
-              </div>
-            )}
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.estimatedEmissions}</span>
           </div>
         </div>
 
@@ -636,10 +568,7 @@ export default function Dashboard() {
           padding: '1.5rem'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <div>
-              <h3 style={{ color: colors.text, fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
-              <span style={{ fontSize: '0.78rem', color: colors.textMuted }}>{modes[0] ? `${lang === 'DE' ? 'Meist' : 'Mostly'} ${modes[0].name}` : t.mostlyWalk}</span>
-            </div>
+            <h3 style={{ color: colors.text, fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
             <BarChart3 size={18} style={{ color: colors.accentPurple }} />
           </div>
 
@@ -671,20 +600,109 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* 5. SAVINGS OPPORTUNITIES HEADER */}
-        <div className="col-savings" style={{
+        {/* 5. CURRENT SUBSCRIPTIONS + PORTFOLIO RECOMMENDATION — side by side, matching format so they read as a pair */}
+        <div className="col-current-subs" style={{
           backgroundColor: colors.card,
           border: `1px solid ${colors.border}`,
-          borderRadius: '20px',
-          padding: '1.2rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem'
+          borderRadius: '24px',
+          padding: '1.5rem'
         }}>
-          <div style={{ color: colors.accentCyan }}><ArrowUpRight size={20} /></div>
-          <div style={{ textAlign: 'left' }}>
-            <h4 style={{ color: colors.text, fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.1rem' }}>{t.savingOpp}</h4>
-            <p style={{ fontSize: '0.8rem', color: colors.textMuted, margin: 0 }}>{t.perfectMix}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem' }}>
+            <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700' }}>{t.currentSubsTitle}</h3>
+            <Check size={18} style={{ color: colors.accentCyan }} />
+          </div>
+          {currentSubscriptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {currentSubscriptions.map((s) => {
+                const label = s.provider_plan_name || s.provider_name || t.currentPlan
+                const priceStr = s.monthly_cost_eur
+                  ? `${euro(s.monthly_cost_eur, { lang: langKey })} ${t.perMonth}`
+                  : s.annual_cost_eur
+                    ? `${euro(s.annual_cost_eur, { lang: langKey })} ${t.perYear}`
+                    : null
+                const coverage = coverageBySubId.get(s.subscription_id)
+                const netSavings = coverage?.net_savings_eur
+                const worthIt = netSavings != null && netSavings >= 0
+                return (
+                  <div key={s.user_subscription_id || label} style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
+                    <div style={{ fontSize: '0.85rem', color: colors.text, fontWeight: '500', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <span>{subscriptionEmoji(s)} {label}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                        {priceStr && <span style={{ color: colors.textMuted, fontWeight: '600', fontSize: '0.8rem' }}>{priceStr}</span>}
+                        <Check size={16} style={{ color: colors.accentCyan }} />
+                      </span>
+                    </div>
+                    {netSavings != null && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.4rem', fontSize: '0.75rem', fontWeight: '600', color: worthIt ? '#0ca30c' : colors.accentRed }}>
+                        {worthIt ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                        {worthIt ? t.worthIt(netSavings) : t.notWorthIt(Math.abs(netSavings))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.textMuted, fontWeight: '500' }}>
+              {t.noSubs}
+            </div>
+          )}
+        </div>
+
+        <div className="col-portfolio" style={{
+          backgroundColor: colors.card,
+          border: `2px solid ${colors.accentCyan}`,
+          borderRadius: '24px',
+          padding: '1.5rem',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: '-12px',
+            left: '20px',
+            backgroundColor: colors.accentCyan,
+            color: colors.onAccent,
+            fontSize: '0.65rem',
+            fontWeight: '800',
+            padding: '0.2rem 0.6rem',
+            borderRadius: '6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            BEST FOR YOU
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.35rem', marginBottom: '1.1rem' }}>
+            <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700' }}>{t.portfolioTitle}</h3>
+            <TrendingUp size={18} style={{ color: colors.accentCyan }} />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.estimated} · {t.recommended}</span>
+            <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
+          </div>
+
+          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.85rem', marginTop: 'auto' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
+              {t.whatChanges}
+            </span>
+            {recSavings > 0 && recChanges.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {recChanges.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.text }}>
+                    <span style={{ color: c.action === 'add' ? colors.successGreen : colors.accentRed, fontWeight: '800' }}>{c.action === 'add' ? '+' : '−'}</span>
+                    {c.item}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.textMuted }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accentCyan }} />
+                {t.noChanges}
+              </div>
+            )}
           </div>
         </div>
 

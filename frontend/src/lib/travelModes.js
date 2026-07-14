@@ -50,13 +50,27 @@ const LABELS = {
   },
 }
 
+// The analyst agent's subscription_coverage uses a slightly different, finer
+// vocabulary than trip_legs' travel modes (e.g. "long_distance_rail" for a
+// BahnCard vs. "long_distance_train" as the trip mode) — normalize known
+// synonyms so both resolve to the same color/label instead of falling back
+// to the generic "other" gray.
+const ALIASES = {
+  long_distance_rail: 'long_distance_train',
+  regional_rail: 'regional_train',
+}
+
+function canonical(mode) {
+  return ALIASES[mode] || mode
+}
+
 export function modeLabel(mode, lang = 'de') {
   const dict = LABELS[lang] || LABELS.de
-  return dict[mode] || dict.other
+  return dict[canonical(mode)] || dict.other
 }
 
 export function modeColor(mode, isDark = false) {
-  const idx = MODE_ORDER.indexOf(mode)
+  const idx = MODE_ORDER.indexOf(canonical(mode))
   if (idx === -1) return isDark ? OTHER_DARK : OTHER_LIGHT
   return (isDark ? COLORS_DARK : COLORS_LIGHT)[idx]
 }
@@ -64,7 +78,7 @@ export function modeColor(mode, isDark = false) {
 // Orders the modes actually present in a dataset by MODE_ORDER, unknown modes last.
 export function sortModes(modes) {
   return [...modes].sort((a, b) => {
-    const ia = MODE_ORDER.indexOf(a), ib = MODE_ORDER.indexOf(b)
+    const ia = MODE_ORDER.indexOf(canonical(a)), ib = MODE_ORDER.indexOf(canonical(b))
     return (ia === -1 ? MODE_ORDER.length : ia) - (ib === -1 ? MODE_ORDER.length : ib)
   })
 }

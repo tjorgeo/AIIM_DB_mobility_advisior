@@ -22,15 +22,16 @@ function useMonthlyDataset(analyst, lang) {
 
     const months = monthKeys.map((key) => {
       const values = mmb[key] || {}
-      let trips = {}, distance = 0, co2Kg = 0, cost = 0
+      let trips = {}, distance = 0, co2Kg = 0, cost = 0, effectiveCost = 0
       for (const mode of Object.keys(values)) {
         const v = values[mode]
         trips[mode] = v.trips || 0
         distance += v.distance_km || 0
         co2Kg += v.co2_kg || 0
         cost += v.intrinsic_cost_eur || 0
+        effectiveCost += v.effective_cost_eur || 0
       }
-      return { key, label: monthLabel(key, lang), trips, distance, co2: co2Kg, cost }
+      return { key, label: monthLabel(key, lang), trips, distance, co2: co2Kg, cost, effectiveCost }
     })
 
     const totals = months.reduce((acc, m) => ({
@@ -38,7 +39,8 @@ function useMonthlyDataset(analyst, lang) {
       distance: acc.distance + m.distance,
       co2: acc.co2 + m.co2,
       cost: acc.cost + m.cost,
-    }), { trips: 0, distance: 0, co2: 0, cost: 0 })
+      effectiveCost: acc.effectiveCost + m.effectiveCost,
+    }), { trips: 0, distance: 0, co2: 0, cost: 0, effectiveCost: 0 })
 
     return { months, series, totals }
   }, [analyst, lang])
@@ -52,7 +54,8 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
       back: 'Zurück zum Dashboard', title: 'Wie du reist', subtitle: 'Letzte 12 Monate im Detail',
       trips: 'Fahrten', distance: 'Distanz', co2: 'CO₂', cost: 'Kosten',
       tripsByMode: 'Fahrten pro Monat nach Verkehrsmittel', distanceTrend: 'Distanz pro Monat',
-      co2Trend: 'CO₂ pro Monat', costTrend: 'Kosten pro Monat (vor Abo-Deckung)',
+      co2Trend: 'CO₂ pro Monat', costTrend: 'Kosten pro Monat',
+      costIntrinsic: 'Vor Abo-Deckung', costEffective: 'Tatsächlich gezahlt',
       showTable: 'Als Tabelle anzeigen', showCharts: 'Als Diagramm anzeigen',
       month: 'Monat', noData: 'Für diesen Zeitraum liegen noch keine Reisedaten vor.',
     }
@@ -60,7 +63,8 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
       back: 'Back to dashboard', title: 'How you travel', subtitle: 'Last 12 months in detail',
       trips: 'Trips', distance: 'Distance', co2: 'CO₂', cost: 'Cost',
       tripsByMode: 'Trips per month by mode', distanceTrend: 'Distance per month',
-      co2Trend: 'CO₂ per month', costTrend: 'Cost per month (before subscription coverage)',
+      co2Trend: 'CO₂ per month', costTrend: 'Cost per month',
+      costIntrinsic: 'Before subscription coverage', costEffective: 'Actually paid',
       showTable: 'Show as table', showCharts: 'Show as chart',
       month: 'Month', noData: 'No travel data available for this period yet.',
     }
@@ -133,7 +137,8 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
                       ))}
                       <th style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{t.distance} (km)</th>
                       <th style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{t.co2} (kg)</th>
-                      <th style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{t.cost}</th>
+                      <th style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{t.cost} ({t.costIntrinsic})</th>
+                      <th style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{t.cost} ({t.costEffective})</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -146,6 +151,7 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
                         <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{number(mo.distance, langKey)}</td>
                         <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{number(mo.co2, langKey)}</td>
                         <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{euro(mo.cost, { lang: langKey })}</td>
+                        <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{euro(mo.effectiveCost, { lang: langKey })}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -169,8 +175,10 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
                 <div style={cardStyle}>
                   <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem' }}>{t.distanceTrend}</h3>
                   <LineChart
-                    data={months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.distance }))}
-                    color={colors.accentCyan}
+                    series={[{
+                      key: 'distance', label: t.distance, color: colors.accentCyan,
+                      data: months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.distance })),
+                    }]}
                     colors={colors}
                     valueFormatter={(v) => `${number(v, langKey)} km`}
                     unitLabel="km"
@@ -180,8 +188,10 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
                 <div style={cardStyle}>
                   <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem' }}>{t.co2Trend}</h3>
                   <LineChart
-                    data={months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.co2 }))}
-                    color={colors.successGreen}
+                    series={[{
+                      key: 'co2', label: t.co2, color: colors.successGreen,
+                      data: months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.co2 })),
+                    }]}
                     colors={colors}
                     valueFormatter={(v) => co2(v, langKey)}
                     unitLabel="kg"
@@ -191,8 +201,16 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
                 <div style={cardStyle}>
                   <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem' }}>{t.costTrend}</h3>
                   <LineChart
-                    data={months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.cost }))}
-                    color={modeColor('bike_sharing', isDark)}
+                    series={[
+                      {
+                        key: 'intrinsic', label: t.costIntrinsic, color: modeColor('bike_sharing', isDark),
+                        data: months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.cost })),
+                      },
+                      {
+                        key: 'effective', label: t.costEffective, color: modeColor('regional_train', isDark),
+                        data: months.map((mo) => ({ key: mo.key, label: mo.label, value: mo.effectiveCost })),
+                      },
+                    ]}
                     colors={colors}
                     valueFormatter={(v) => euro(v, { lang: langKey })}
                     unitLabel="€"
