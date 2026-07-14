@@ -10,11 +10,13 @@ import { euro, number, subscriptionEmoji } from '../lib/format'
 import ChatWidget from '../components/chat/ChatWidget'
 import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
+import TravelInsights from './TravelInsights.jsx'
 
 export default function Dashboard() {
   const { logout, currentUser } = useAuth()
   const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
   const [profileMenuOpen, setProfileMenuOpen] = useState(false) // State für das kleine Fenster
+  const [view, setView] = useState('overview') // 'overview' | 'insights' — kein Router nötig, gleiches Muster wie Login.jsx currentView
 
   // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
   const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
@@ -40,6 +42,7 @@ export default function Dashboard() {
       estimatedEmissions: 'Geschätzte Emissionen',
       howYouTravel: 'Wie du reist',
       mostlyWalk: 'Hauptsächlich zu Fuß',
+      viewDetails: 'Alle Details ansehen',
       recommended: 'Für dich empfohlen',
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
       portfolioTitle: 'Kostenoptimiertes Portfolio',
@@ -68,6 +71,7 @@ export default function Dashboard() {
       estimatedEmissions: 'Estimated emissions',
       howYouTravel: 'How you travel',
       mostlyWalk: 'Mostly by walk',
+      viewDetails: 'View all details',
       recommended: 'Recommended for you',
       basedMonths: 'Based on your last 12 months',
       portfolioTitle: 'Cost-Optimized Portfolio',
@@ -186,6 +190,18 @@ export default function Dashboard() {
         .map((x, i) => ({ ...x, color: palette[i % palette.length] }))
     : null
   const modes = derivedTravelStats || travelStats
+
+  if (view === 'insights') {
+    return (
+      <TravelInsights
+        analysis={analysis}
+        lang={lang}
+        colors={colors}
+        isDark={isDark}
+        onBack={() => setView('overview')}
+      />
+    )
+  }
 
   return (
     <div style={{
@@ -642,6 +658,17 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          <button
+            onClick={() => setView('insights')}
+            style={{
+              width: '100%', marginTop: '1.25rem', backgroundColor: 'transparent',
+              border: 'none', color: colors.accentCyan, fontSize: '0.85rem', fontWeight: '700',
+              padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', cursor: 'pointer',
+            }}
+          >
+            {t.viewDetails} <span style={{ fontSize: '1rem' }}>→</span>
+          </button>
         </div>
 
         {/* 5. SAVINGS OPPORTUNITIES HEADER */}
