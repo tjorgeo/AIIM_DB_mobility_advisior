@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { MessageCircle, X, Send, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useChat } from './useChat'
+import Markdown from './Markdown'
 
 export default function ChatWidget({ user, lang, getContext, actions, advisorMemo }) {
   const [open, setOpen] = useState(false)
@@ -85,7 +86,7 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
       <div className="chat__body" ref={bodyRef}>
         {messages.map((m, i) => (
           <div className={`msg msg--${m.role}`} key={i}>
-            {m.content}
+            {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
             {m.role === 'assistant' && m.traceId && (
               <div className="msg__feedback">
                 <button
