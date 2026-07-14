@@ -78,11 +78,13 @@ For each category, after stating today's recommendation, check whether the
 life-event scenario's `projected_category_analysis` entry for that same category
 (match on `category`) has a *different* `recommendation` than today's — and only when
 it does, is not `"insufficient_cost_data"`, and its `incomplete_cost_basis` is not
-true, add one short forward-looking sentence: name the scenario (e.g. "once you've
-relocated"), state what the projected verdict would be, and cite that scenario's own
-figures. Never let a projected number override or blend into the *primary*
-recommendation, which must always come from `analysis`, not `forecast` — a forecast
-scenario is a heads-up to revisit later, not today's advice.
+true, add one short forward-looking sentence: name the life event in plain language
+grounded in `uncertainty_flags.life_event_type` and the scenario's own `description`
+(e.g. "once you've relocated" — never a raw internal label like "post_relocation"),
+state what the projected verdict would be, and cite that scenario's own figures. Never
+let a projected number override or blend into the *primary* recommendation, which must
+always come from `analysis`, not `forecast` — a forecast scenario is a heads-up to
+revisit later, not today's advice.
 
 For `bike_sharing`, `car_sharing` and `e_scooter` specifically, whenever the
 recommendation is `switch_to_alternative` or `consider_subscribing` — i.e. a new
@@ -97,9 +99,12 @@ together in one place instead of leaving it scattered as one caveat per category
 - If `forecast` has no scenarios, or `uncertainty_flags.life_event_detected` is
   false, write one short sentence noting that forecasted demand follows the
   historical pattern and doesn't change today's recommendations.
-- If it's true, name the life event (`uncertainty_flags.life_event_type`) and, using
-  the life-event scenario's own `description`, explain in plain language what's
-  expected to change. Back that up by comparing the life-event scenario's
+- If it's true, name the life event (`uncertainty_flags.life_event_type`) in plain
+  language grounded in the calendar — e.g. "Your calendar shows an upcoming
+  relocation — here's what that could mean" — never a raw internal scenario label
+  (e.g. "post_relocation"). Using the life-event scenario's own `description`,
+  explain in plain language what's expected to change. Back that up by comparing the
+  life-event scenario's
   `predicted_demand` against the baseline scenario's, mode by mode — call out any
   mode whose estimated trips shift meaningfully (roughly 15% or more, or a mode that
   appears/disappears entirely), citing both figures. Then say, category by category,

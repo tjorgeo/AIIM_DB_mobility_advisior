@@ -104,12 +104,24 @@ def _get_agent():
     return _agent
 
 
-def _build_run_config(user_id: str, prompt, tr):
+def _build_run_config(user_id: str, prompt, tr, messages: list):
     config = {"recursion_limit": _RECURSION_LIMIT}
     config.update(tr.config(prompt=prompt))
     # Inject the authenticated user id for tools (e.g. reoptimize) via the run config —
     # not exposed to the LLM, so it always acts on the real caller.
-    config["configurable"] = {**config.get("configurable", {}), "user_id": user_id}
+    #
+    # confirmed_turn: whether the user has sent more than one message in this
+    # conversation — i.e. there was at least one earlier turn where a proposal could
+    # have been shown before this one. The reoptimize tool uses this as a code-level
+    # gate on apply=True, since a model call can otherwise ignore the system prompt's
+    # "only apply after explicit confirmation" instruction and commit a change straight
+    # off an ambiguous first message like "optimize my portfolio".
+    user_turns = sum(1 for m in messages if m.get("role") == "user")
+    config["configurable"] = {
+        **config.get("configurable", {}),
+        "user_id": user_id,
+        "confirmed_turn": user_turns > 1,
+    }
     return config
 
 
@@ -140,7 +152,7 @@ def run_chat(user_id: str, messages: list) -> tuple[str, str | None]:
         session_id=user_id,
         tags=["communicator", "chat"],
     ) as tr:
-        config = _build_run_config(user_id, prompt, tr)
+        config = _build_run_config(user_id, prompt, tr, messages)
         result = _get_agent().invoke({"messages": lc_messages}, config=config)
         trace_id = tr.trace_id
     return result["messages"][-1].content, trace_id
@@ -162,7 +174,7 @@ def stream_chat(user_id: str, messages: list):
         session_id=user_id,
         tags=["communicator", "chat", "stream"],
     ) as tr:
-        config = _build_run_config(user_id, prompt, tr)
+        config = _build_run_config(user_id, prompt, tr, messages)
         # stream_mode="messages" emits (message_chunk, metadata) tuples; we forward the
         # text of assistant token chunks and skip tool-call / tool-result chunks.
         for chunk, _meta in _get_agent().stream(

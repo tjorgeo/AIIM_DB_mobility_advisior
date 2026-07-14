@@ -10,6 +10,12 @@ the user's wish into constraints and narrates the result, it never computes mone
 Mirrors the three-way comparison in ``analysis.py::_build_category_entry`` (current
 setup vs. pay-as-you-go vs. cheapest priceable alternative), but over the constrained
 candidate set, so a re-optimisation is consistent with a fresh analysis.
+
+Optionally also re-derives the same constrained verdict against the forecaster's
+life-event scenario (``forecaster_out``, when supplied) — the same "Looking ahead"
+caveat the memo shows, just applied to the constrained re-optimisation instead of the
+plain historical one. Purely informational: never changes ``chosen_annual_cost_eur`` or
+``actions_required``, which stay grounded in the historical re-derivation only.
 """
 
 
@@ -69,7 +75,24 @@ def _rederive_entry(entry: dict, constraints: dict) -> dict:
     return revised
 
 
-def reoptimize_from_analysis(category_analysis: list, constraints: dict | None = None) -> dict:
+def _life_event_scenario(forecaster_out: dict | None) -> dict | None:
+    """The forecast scenario worth re-deriving the constrained verdict against: the
+    life-event scenario, when one was detected. Mirrors ``memo.py``'s
+    ``_forecast_caveat_scenario`` — per forecasting.py's own rules, a baseline scenario
+    is always first and a second scenario is only ever added when
+    ``uncertainty_flags.life_event_detected`` is true, so the last scenario is that one.
+    """
+    if not forecaster_out:
+        return None
+    if not (forecaster_out.get("uncertainty_flags") or {}).get("life_event_detected"):
+        return None
+    scenarios = forecaster_out.get("scenarios") or []
+    return scenarios[-1] if len(scenarios) > 1 else None
+
+
+def reoptimize_from_analysis(
+    category_analysis: list, constraints: dict | None = None, forecaster_out: dict | None = None
+) -> dict:
     """Re-derive every category's verdict under ``constraints`` and roll up the totals.
 
     ``category_analysis`` is ``analyst_out["category_subscription_analysis"]`` (each entry
@@ -80,11 +103,49 @@ def reoptimize_from_analysis(category_analysis: list, constraints: dict | None =
     * ``drop``          — category names whose current subscription must be cancelled
     * ``exclude_plans`` — plan names never to propose as an alternative
     * ``prefer_plans``  — plan names to choose where available, even if not the cheapest
-    * ``prioritize``    — "cost" (default) or "co2"; note the current flat-rate cost model
-                          does not shift CO2, so "co2" has limited effect today
+
+    ``forecaster_out`` (optional) adds a ``forecast_note`` to any category whose
+    constrained verdict would differ under the life-event forecast scenario's own
+    ``projected_category_analysis`` (same category-comparison shape as
+    ``category_analysis``, so ``_rederive_entry`` applies unchanged) — purely
+    informational, see module docstring.
     """
     constraints = constraints or {}
     revised_entries = [_rederive_entry(e, constraints) for e in category_analysis]
+
+    scenario = _life_event_scenario(forecaster_out)
+    if scenario:
+        life_event_type = ((forecaster_out or {}).get("uncertainty_flags") or {}).get("life_event_type")
+        projected_by_category = {
+            e["category"]: e for e in scenario.get("projected_category_analysis", [])
+        }
+        for revised in revised_entries:
+            projected_entry = projected_by_category.get(revised["category"])
+            if (
+                not projected_entry
+                or projected_entry.get("incomplete_cost_basis")
+                or projected_entry["recommendation"] == "insufficient_cost_data"
+            ):
+                continue
+            try:
+                projected_revised = _rederive_entry(projected_entry, constraints)
+            except Exception:
+                # actual_annual_cost_eur can legitimately be None on a projected entry
+                # whose held plan needs duration data the forecast doesn't have (e.g. a
+                # metered car-sharing plan) — best-effort, skip this category's note
+                # rather than let one unpriceable category break the whole response.
+                continue
+            if projected_revised["recommendation"] != revised["recommendation"]:
+                revised["forecast_note"] = {
+                    # The life event as detected from the calendar (e.g. "relocation"),
+                    # not the forecaster's internal scenario label (e.g.
+                    # "post_relocation") — the chat LLM narrates this to the customer,
+                    # who should read about their calendar, not internal naming.
+                    "life_event_type": life_event_type,
+                    "recommendation": projected_revised["recommendation"],
+                    "chosen_annual_cost_eur": projected_revised["chosen_annual_cost_eur"],
+                    "chosen_alternative": projected_revised.get("chosen_alternative"),
+                }
 
     baseline_total = round(sum(e["actual_annual_cost_eur"] for e in category_analysis), 2)
     revised_total = round(sum(e["chosen_annual_cost_eur"] for e in revised_entries), 2)

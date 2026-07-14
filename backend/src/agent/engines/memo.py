@@ -94,10 +94,59 @@ _ALL_MODE_LABEL_DE = {
 _DEMAND_CHANGE_THRESHOLD = 0.15
 _MAX_BEHAVIOR_CHANGE_LINES = 4
 
+# uncertainty_flags.life_event_type is free text from the forecaster LLM (see
+# forecasting.py's _RULES: "relocation", "new_job", "start_of_studies", "Elternzeit",
+# "major_life_change" are the named examples, but nothing enforces exactly these
+# strings). A natural-language noun for the common ones reads far better in a
+# sentence than either the raw type or a raw scenario label like "post_relocation".
+#
+# English needs no article agreement ("an upcoming X" — the "an" attaches to
+# "upcoming", not to X). German does — "ein bevorstehender Umzug" (masc.) vs. "eine
+# bevorstehende Elternzeit" (fem.) — so the German table stores the full
+# "ein/eine <noun>" phrase (no adjective baked in, so it composes into different
+# sentence frames), and the neuter "ein Ereignis" fallback sidesteps having to guess
+# an unknown noun's gender.
+_LIFE_EVENT_NOUN_EN = {
+    "relocation": "relocation",
+    "new_job": "new job",
+    "start_of_studies": "start of studies",
+    "parental_leave": "parental leave",
+    "elternzeit": "parental leave",
+    "major_life_change": "life change",
+}
+_LIFE_EVENT_ARTICLE_NOUN_DE = {
+    "relocation": "ein Umzug",
+    "new_job": "ein Jobwechsel",
+    "start_of_studies": "ein Studienbeginn",
+    "parental_leave": "eine Elternzeit",
+    "elternzeit": "eine Elternzeit",
+    "major_life_change": "eine größere Veränderung",
+}
+
 
 def _mode_label(mode: str, lang: str) -> str:
     labels = _ALL_MODE_LABEL_EN if lang == "en" else _ALL_MODE_LABEL_DE
     return labels.get(mode, mode.replace("_", " "))
+
+
+def _life_event_noun(life_event_type: str | None, lang: str) -> str:
+    """English noun for the life event (no article needed — see module note)."""
+    key = (life_event_type or "").strip().lower()
+    fallback = (life_event_type or "life event").replace("_", " ") if lang == "en" else ""
+    if lang == "en":
+        return _LIFE_EVENT_NOUN_EN.get(key, fallback)
+    return _life_event_article_noun_de(life_event_type)
+
+
+def _life_event_article_noun_de(life_event_type: str | None) -> str:
+    """German "ein/eine <noun>" phrase, gender-agreed — see module note above."""
+    key = (life_event_type or "").strip().lower()
+    if key in _LIFE_EVENT_ARTICLE_NOUN_DE:
+        return _LIFE_EVENT_ARTICLE_NOUN_DE[key]
+    # No markdown here — callers wrap this in their own ** — nesting a second pair
+    # around the parenthetical would render as literal asterisks.
+    humanized = (life_event_type or "").replace("_", " ")
+    return f"ein Ereignis ({humanized})" if humanized else "ein Ereignis"
 
 
 def _with_provider_dependency_note(text: str, category: str, alt_name: str, lang: str) -> str:
@@ -276,16 +325,22 @@ def _forecast_caveat_scenario(forecaster_out: dict | None) -> dict | None:
     return scenarios[-1] if len(scenarios) > 1 else None
 
 
-def _forecast_caveat_line(projected_entry: dict, scenario_label: str, lang: str) -> str:
+def _forecast_caveat_line(projected_entry: dict, life_event_noun: str, lang: str) -> str:
     """A one-line forward-looking note for a category whose forecast-scenario verdict
     differs from today's. Reuses ``_category_line``'s own rendering — projected
     entries share the exact shape of ``category_subscription_analysis`` entries — so
     the phrasing/numbers can't drift out of sync with how the historical line is
-    worded, and no new number-formatting logic has to be trusted separately."""
+    worded, and no new number-formatting logic has to be trusted separately.
+
+    Named after the calendar-detected life event (e.g. "relocation") rather than the
+    forecaster's raw scenario label (e.g. "post_relocation") — a customer reads the
+    former, not internal scenario naming."""
     phrase, _ = _category_line(projected_entry, lang, include_label=False)
     if lang == "en":
-        return f"*Looking ahead ({scenario_label}): {phrase}*"
-    return f"*Perspektivisch ({scenario_label}): {phrase}*"
+        return f"*Your calendar shows an upcoming {life_event_noun} — here's what that could mean: {phrase}*"
+    # life_event_noun is already the full "ein/eine <noun>" phrase for German (see
+    # _life_event_article_noun_de) — no extra article to prepend here.
+    return f"*Laut Ihrem Kalender steht {life_event_noun} bevor — das könnte bedeuten: {phrase}*"
 
 
 def _demand_deltas(baseline_scenario: dict, event_scenario: dict, lang: str) -> list[str]:
@@ -370,7 +425,8 @@ def _forecast_outlook_section(forecaster_out: dict | None, categories: list[dict
         )
         return f"{header}\n\n{body}"
 
-    life_event_type = (uncertainty.get("life_event_type") or "life event").replace("_", " ")
+    life_event_noun_en = _life_event_noun(uncertainty.get("life_event_type"), "en")
+    life_event_noun_de = _life_event_noun(uncertainty.get("life_event_type"), "de")
     re_eval_days = uncertainty.get("recommend_re_evaluation_in_days")
     baseline = scenarios[0]
     event_scenario = scenarios[-1] if len(scenarios) > 1 else None
@@ -379,20 +435,24 @@ def _forecast_outlook_section(forecaster_out: dict | None, categories: list[dict
         # Flagged but the forecaster didn't produce a comparable second scenario —
         # say so rather than inventing behaviour-change detail we don't have.
         body = (
-            f"Your calendar flagged a possible **{life_event_type}**, but there wasn't "
-            "enough detail yet to project how it would change your travel demand."
+            f"Your calendar shows a possible upcoming **{life_event_noun_en}**, but there "
+            "wasn't enough detail yet to project how it would change your travel demand."
             if lang == "en" else
-            f"Ihr Kalender deutet auf ein mögliches **{life_event_type}** hin, es gab "
-            "aber noch nicht genug Details, um dessen Einfluss auf Ihr Reiseverhalten "
-            "zu prognostizieren."
+            f"In Ihrem Kalender deutet sich **{life_event_noun_de}** an, es gab aber noch "
+            "nicht genug Details, um dessen Einfluss auf Ihr Reiseverhalten zu "
+            "prognostizieren."
         )
         return f"{header}\n\n{body}"
 
     description = event_scenario.get("description") or ""
     intro = (
-        f"Your calendar points to a likely **{life_event_type}**. {description}"
+        f"Your calendar shows an upcoming **{life_event_noun_en}** — here's what that "
+        f"could mean: {description}"
         if lang == "en" else
-        f"Ihr Kalender deutet auf ein wahrscheinliches **{life_event_type}** hin. {description}"
+        # life_event_noun_de is already the full "ein/eine <noun>" phrase (see
+        # _life_event_article_noun_de) — "steht ... bevor" is the separable verb.
+        f"In Ihrem Kalender steht **{life_event_noun_de}** bevor — folgende Auswirkungen "
+        f"kann das haben: {description}"
     )
 
     behavior_lines = _demand_deltas(baseline, event_scenario, lang)
@@ -460,6 +520,7 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         {e["category"]: e for e in scenario.get("projected_category_analysis", [])}
         if scenario else {}
     )
+    life_event_type = ((forecaster_out or {}).get("uncertainty_flags") or {}).get("life_event_type")
 
     actions_required = []
     total_savings = 0.0
@@ -471,9 +532,8 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
 
         projected_entry = projected_by_category.get(entry["category"])
         if _verdict_changed(entry, projected_entry):
-            scenario_label = scenario.get("label", "forecast")
-            line_en += "\n" + _forecast_caveat_line(projected_entry, scenario_label, "en")
-            line_de += "\n" + _forecast_caveat_line(projected_entry, scenario_label, "de")
+            line_en += "\n" + _forecast_caveat_line(projected_entry, _life_event_noun(life_event_type, "en"), "en")
+            line_de += "\n" + _forecast_caveat_line(projected_entry, _life_event_noun(life_event_type, "de"), "de")
 
         lines_en.append(line_en)
         lines_de.append(line_de)
