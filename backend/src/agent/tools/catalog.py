@@ -11,6 +11,41 @@ from langchain_core.tools import tool
 from database import get_connection
 from agent.schema_map import clean_row
 
+# The catalogue is static seed data but this tool is called repeatedly inside a single
+# chat ReAct loop, so cache the shaped product list once per process to avoid hitting
+# Postgres on every call. Call clear_catalog_cache() if the catalogue ever changes at
+# runtime (it doesn't in Phase 1).
+_CATALOG_CACHE: list | None = None
+
+
+def clear_catalog_cache() -> None:
+    global _CATALOG_CACHE
+    _CATALOG_CACHE = None
+
+
+def _all_products() -> list:
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM subscription_catalogs")
+        rows = [clean_row(r) for r in cursor.fetchall()]
+        conn.close()
+        _CATALOG_CACHE = [
+            {
+                "id": r.get("subscription_id"),
+                "name": r.get("provider_plan_name"),
+                "provider": r.get("provider_name"),
+                "category": r.get("subscription_category"),
+                "monthly_cost": r.get("monthly_cost_eur"),
+                "annual_cost": r.get("annual_cost_eur"),
+                "billing_cycle": r.get("billing_cycle"),
+                "pricing_model": r.get("pricing_model"),
+            }
+            for r in rows
+        ]
+    return _CATALOG_CACHE
+
 
 @tool
 def lookup_subscriptions(filter_type: str = "all") -> str:
@@ -24,25 +59,7 @@ def lookup_subscriptions(filter_type: str = "all") -> str:
         JSON string: list of products with id, name, category, monthly_cost,
         annual_cost and billing details.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM subscription_catalogs")
-    rows = [clean_row(r) for r in cursor.fetchall()]
-    conn.close()
-
-    products = [
-        {
-            "id": r.get("subscription_id"),
-            "name": r.get("provider_plan_name"),
-            "provider": r.get("provider_name"),
-            "category": r.get("subscription_category"),
-            "monthly_cost": r.get("monthly_cost_eur"),
-            "annual_cost": r.get("annual_cost_eur"),
-            "billing_cycle": r.get("billing_cycle"),
-            "pricing_model": r.get("pricing_model"),
-        }
-        for r in rows
-    ]
+    products = list(_all_products())
 
     ft = (filter_type or "all").lower().strip()
     if ft and ft != "all":

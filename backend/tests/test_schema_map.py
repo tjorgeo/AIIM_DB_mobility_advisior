@@ -4,22 +4,11 @@ from datetime import date
 from decimal import Decimal
 
 from agent.schema_map import (
-    group_mode,
     category_covers_mode,
     preferences_from_onboarding,
     jsonable,
     clean_row,
 )
-
-
-def test_group_mode_known_and_unknown():
-    assert group_mode("public_transport") == "public_transport"
-    assert group_mode("regional_train") == "train"
-    assert group_mode("car_sharing") == "car"
-    assert group_mode("e_scooter") == "scooter"
-    # unknown / None fall back to the generic bucket
-    assert group_mode("teleporter") == "other"
-    assert group_mode(None) == "other"
 
 
 def test_category_covers_mode():

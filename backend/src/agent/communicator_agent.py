@@ -12,15 +12,16 @@ frontend's scripted fallback covers the no-key case.
 import json
 from pathlib import Path
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, AIMessageChunk
 from langgraph.prebuilt import create_react_agent
 
 from database import get_connection
-from agent.schema_map import preferences_from_onboarding
+from agent.context import load_context
 from agent.llm import get_llm
 from agent.observability import get_prompt, trace
 from agent.tools.catalog import lookup_subscriptions
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
+from agent.tools.optimize import reoptimize
 
 _PROMPT_PATH = Path(__file__).with_name("prompts") / "communicator_system.md"
 # Local copy, used as the offline fallback for the Langfuse-managed
@@ -28,36 +29,28 @@ _PROMPT_PATH = Path(__file__).with_name("prompts") / "communicator_system.md"
 _SYSTEM_TEMPLATE = _PROMPT_PATH.read_text(encoding="utf-8")
 
 _RECURSION_LIMIT = 12
-_TOOLS = [lookup_subscriptions, list_tariff_docs, read_tariff_doc]
+_TOOLS = [lookup_subscriptions, list_tariff_docs, read_tariff_doc, reoptimize]
 
 
 def _load_user_context(user_id: str) -> str:
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT user_id, first_name, last_name, home_city FROM users WHERE user_id = ?",
-        (user_id,),
-    )
-    user = cursor.fetchone()
-    if not user:
-        conn.close()
+    # Reuse the single canonical context loader (user + preferences + subscriptions)
+    # rather than re-querying those tables here — one source of truth, no drift. The
+    # only thing load_context doesn't carry is the latest recommendation, so that stays
+    # a single extra query below.
+    ctx = load_context(user_id)
+    if ctx.get("error"):
         return "No profile found for this user."
 
-    cursor.execute("SELECT * FROM user_onboardings WHERE user_id = ?", (user_id,))
-    preferences = preferences_from_onboarding(cursor.fetchone())
+    user = ctx["user"]
+    preferences = ctx["user_preferences"]
+    services = [
+        s.get("provider_plan_name")
+        for s in ctx["subscriptions"]
+        if s.get("subscription_status") == "active" and s.get("provider_plan_name")
+    ]
 
-    cursor.execute(
-        """
-        SELECT c.provider_plan_name
-        FROM user_subscriptions s
-        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
-        WHERE s.user_id = ? AND s.subscription_status = 'active'
-        """,
-        (user_id,),
-    )
-    services = [r["provider_plan_name"] for r in cursor.fetchall() if r["provider_plan_name"]]
-
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(
         "SELECT optimizer_scenarios FROM recommendations WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
         (user_id,),
@@ -65,9 +58,8 @@ def _load_user_context(user_id: str) -> str:
     rec_row = cursor.fetchone()
     conn.close()
 
-    name = f"{user['first_name']} {user['last_name']}".strip()
     lines = [
-        f"Customer: {name} (id {user['user_id']}, home city {user['home_city']})",
+        f"Customer: {user['name']} (id {user['user_id']}, home city {user.get('home_city')})",
         f"Preferences (0-100): {preferences}",
         f"Active subscriptions: {', '.join(services) or 'none'}",
     ]
@@ -100,23 +92,57 @@ def _to_lc_messages(messages: list):
     return out
 
 
-def run_chat(user_id: str, messages: list) -> tuple[str, str | None]:
-    """Answer one chat turn. Returns ``(reply, trace_id)`` — ``trace_id`` is the
-    Langfuse trace of this turn (or ``None`` when tracing is disabled) so the
-    frontend can attach a thumbs up/down feedback score to it."""
-    context = _load_user_context(user_id)
+_agent = None
 
-    # Versioned system prompt from Langfuse (offline fallback = local template);
-    # {{context}} is compiled per request.
+
+def _get_agent():
+    """The ReAct agent is stateless across turns (tools + llm are static), so build it
+    once per process and reuse it, rather than reconstructing it on every request."""
+    global _agent
+    if _agent is None:
+        _agent = create_react_agent(get_llm(), _TOOLS)
+    return _agent
+
+
+def _build_run_config(user_id: str, prompt, tr, messages: list):
+    config = {"recursion_limit": _RECURSION_LIMIT}
+    config.update(tr.config(prompt=prompt))
+    # Inject the authenticated user id for tools (e.g. reoptimize) via the run config —
+    # not exposed to the LLM, so it always acts on the real caller.
+    #
+    # confirmed_turn: whether the user has sent more than one message in this
+    # conversation — i.e. there was at least one earlier turn where a proposal could
+    # have been shown before this one. The reoptimize tool uses this as a code-level
+    # gate on apply=True, since a model call can otherwise ignore the system prompt's
+    # "only apply after explicit confirmation" instruction and commit a change straight
+    # off an ambiguous first message like "optimize my portfolio".
+    user_turns = sum(1 for m in messages if m.get("role") == "user")
+    config["configurable"] = {
+        **config.get("configurable", {}),
+        "user_id": user_id,
+        "confirmed_turn": user_turns > 1,
+    }
+    return config
+
+
+def _prepare(user_id: str, messages: list):
+    """Shared setup for a chat turn: user context, versioned system prompt, LC messages."""
+    context = _load_user_context(user_id)
     prompt = get_prompt("communicator-chat", fallback=_SYSTEM_TEMPLATE, type="text")
     system_prompt = (
         prompt.compile(context=context)
         if prompt is not None
         else _SYSTEM_TEMPLATE.replace("{{context}}", context)
     )
-
-    agent = create_react_agent(get_llm(), _TOOLS)
     lc_messages = [SystemMessage(content=system_prompt)] + _to_lc_messages(messages)
+    return prompt, lc_messages
+
+
+def run_chat(user_id: str, messages: list) -> tuple[str, str | None]:
+    """Answer one chat turn. Returns ``(reply, trace_id)`` — ``trace_id`` is the
+    Langfuse trace of this turn (or ``None`` when tracing is disabled) so the
+    frontend can attach a thumbs up/down feedback score to it."""
+    prompt, lc_messages = _prepare(user_id, messages)
     # Trace the whole ReAct turn (LLM steps + tool calls) as one "chat-response"
     # trace. user_id doubles as the session id so a user's chat turns group into
     # one Sessions-view conversation (there is no separate conversation id yet).
@@ -126,8 +152,34 @@ def run_chat(user_id: str, messages: list) -> tuple[str, str | None]:
         session_id=user_id,
         tags=["communicator", "chat"],
     ) as tr:
-        config = {"recursion_limit": _RECURSION_LIMIT}
-        config.update(tr.config(prompt=prompt))
-        result = agent.invoke({"messages": lc_messages}, config=config)
+        config = _build_run_config(user_id, prompt, tr, messages)
+        result = _get_agent().invoke({"messages": lc_messages}, config=config)
         trace_id = tr.trace_id
     return result["messages"][-1].content, trace_id
+
+
+def stream_chat(user_id: str, messages: list):
+    """Answer one chat turn as a stream of events for Server-Sent Events.
+
+    Yields ``{"type": "token", "text": ...}`` for each assistant token as it is
+    generated, then a final ``{"type": "done", "trace_id": ...}``. Same grounded
+    ReAct agent as :func:`run_chat`; only the delivery differs. Any exception is
+    surfaced as an ``{"type": "error"}`` event so the endpoint can close cleanly and
+    the frontend can fall back.
+    """
+    prompt, lc_messages = _prepare(user_id, messages)
+    with trace(
+        "chat-response",
+        user_id=user_id,
+        session_id=user_id,
+        tags=["communicator", "chat", "stream"],
+    ) as tr:
+        config = _build_run_config(user_id, prompt, tr, messages)
+        # stream_mode="messages" emits (message_chunk, metadata) tuples; we forward the
+        # text of assistant token chunks and skip tool-call / tool-result chunks.
+        for chunk, _meta in _get_agent().stream(
+            {"messages": lc_messages}, config=config, stream_mode="messages"
+        ):
+            if isinstance(chunk, AIMessageChunk) and chunk.content:
+                yield {"type": "token", "text": chunk.content}
+        yield {"type": "done", "trace_id": tr.trace_id}

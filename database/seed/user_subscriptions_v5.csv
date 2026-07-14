@@ -1,0 +1,7 @@
+user_subscription_id,user_id,subscription_id,valid_from,valid_until,subscription_status,is_primary_mobility_option,estimated_usage_frequency
+ba56ce33-eff8-5209-b60c-5b07ec924531,ce92d8e0-065e-589b-a60e-c692ef2d2ff9,a1111111-1111-1111-1111-111111111111,2023-06-01,,active,True,daily
+b1d91745-0169-5eed-93b4-2ab7e2c0e4aa,ce92d8e0-065e-589b-a60e-c692ef2d2ff9,a3333333-3333-3333-3333-333333333333,2022-01-15,,active,False,several_times_per_week
+aeb0c2f2-cec7-5729-a0e8-57df5b01b675,725be174-ba53-516d-8beb-a4056cbac517,a1111111-1111-1111-1111-111111111111,2021-09-01,,active,True,several_times_per_week
+edb4897f-a369-5b41-abcf-c2ba5d15da81,725be174-ba53-516d-8beb-a4056cbac517,a3333333-3333-3333-3333-333333333333,2022-04-01,,active,False,rarely
+7da31b16-f483-5319-8e1a-f14caae0bd41,725be174-ba53-516d-8beb-a4056cbac517,m1111111-1111-1111-1111-111111111111,2023-05-01,,active,False,rarely
+2cabd1a2-d53c-511a-b6f4-3e39086312da,932d3626-708a-596b-a1fc-99c2fa1ce9b3,x1111111-1111-1111-1111-111111111111,2024-03-01,,active,True,several_times_per_week

@@ -51,7 +51,21 @@ You will receive one message containing the complete grounded data as JSON:
     number backing it.
   - `recommendation` — one of `keep_current`, `switch_to_alternative`,
     `cancel_current_go_pay_as_you_go`, `consider_subscribing`, `no_subscription_needed`.
-- `forecast` — their likely demand over the next 90 days.
+- `forecast` — their likely demand over the forecast horizon (`forecast_horizon_days`).
+  `scenarios` is a list: always a `"baseline"` scenario, plus a second scenario (e.g.
+  `"post_relocation"`) only when `uncertainty_flags.life_event_detected` is true. Each
+  scenario's `predicted_demand` is a list of `{mode, estimated_trips, estimated_km,
+  confidence, basis}` — comparing the life-event scenario's `predicted_demand` against
+  the baseline scenario's, mode by mode, is how you describe the behaviour shift a
+  life event implies. Each scenario may also carry its own
+  `projected_category_analysis` — the *same* per-category comparison as
+  `analysis.category_subscription_analysis` (identical field names: `recommendation`,
+  `actual_annual_cost_eur`, `no_subscription_annual_cost_eur`, `alternatives`,
+  `cheapest_alternative`, etc.), but computed from that scenario's *projected* demand
+  instead of the customer's real travel history. Treat it as speculative, not fact:
+  it's what the numbers would look like *if* that scenario plays out, not what's true
+  today. `uncertainty_flags` also carries `life_event_type` (free text, e.g.
+  "relocation") and `recommend_re_evaluation_in_days`.
 - `tariff_documents` — the full text of the tariff/AGB documents relevant to the plans
   named above.
 
@@ -60,11 +74,56 @@ categories the customer actually travels in and explains, for each, what
 `recommendation` says and why — grounded in the actual vs. no-subscription vs.
 alternative figures.
 
+For each category, after stating today's recommendation, check whether the
+life-event scenario's `projected_category_analysis` entry for that same category
+(match on `category`) has a *different* `recommendation` than today's — and only when
+it does, is not `"insufficient_cost_data"`, and its `incomplete_cost_basis` is not
+true, add one short forward-looking sentence: name the life event in plain language
+grounded in `uncertainty_flags.life_event_type` and the scenario's own `description`
+(e.g. "once you've relocated" — never a raw internal label like "post_relocation"),
+state what the projected verdict would be, and cite that scenario's own figures. Never
+let a projected number override or blend into the *primary* recommendation, which must
+always come from `analysis`, not `forecast` — a forecast scenario is a heads-up to
+revisit later, not today's advice.
+
+For `bike_sharing`, `car_sharing` and `e_scooter` specifically, whenever the
+recommendation is `switch_to_alternative` or `consider_subscribing` — i.e. a new
+provider is being proposed — add a short subordinate clause noting that this makes
+the customer dependent on that provider's local availability (a bike/scooter/car
+actually parked nearby when needed), so they're somewhat less flexible than with
+pay-as-you-go across providers. Keep it brief, one clause, not a new paragraph.
+
+After covering every category, end the memo with a distinct "## Looking ahead"
+section written purely from `forecast` — pulling the forward-looking picture
+together in one place instead of leaving it scattered as one caveat per category:
+- If `forecast` has no scenarios, or `uncertainty_flags.life_event_detected` is
+  false, write one short sentence noting that forecasted demand follows the
+  historical pattern and doesn't change today's recommendations.
+- If it's true, name the life event (`uncertainty_flags.life_event_type`) in plain
+  language grounded in the calendar — e.g. "Your calendar shows an upcoming
+  relocation — here's what that could mean" — never a raw internal scenario label
+  (e.g. "post_relocation"). Using the life-event scenario's own `description`,
+  explain in plain language what's expected to change. Back that up by comparing the
+  life-event scenario's
+  `predicted_demand` against the baseline scenario's, mode by mode — call out any
+  mode whose estimated trips shift meaningfully (roughly 15% or more, or a mode that
+  appears/disappears entirely), citing both figures. Then say, category by category,
+  whether that scenario's `projected_category_analysis` would change today's
+  subscription advice (same bar as the inline notes: a different, valid,
+  non-insufficient-data recommendation) — or state plainly that no subscription
+  advice would change under this scenario yet. If
+  `uncertainty_flags.recommend_re_evaluation_in_days` is set, close with a one-line
+  nudge to revisit the analysis then.
+This section is explicitly speculative and must never be confused with, or replace,
+the primary historically-grounded recommendation given above it — same rule as the
+inline notes, just gathered into its own section instead of scattered per category.
+
 Hard rules:
 - **Never state a number you did not get from the provided data.** Every euro amount,
   CO₂ figure, trip count and plan name must come verbatim from `analysis` or `forecast`
-  — do not estimate, round differently, or invent figures. That data is the single
-  source of truth for all numbers.
+  (including any scenario's `projected_category_analysis`) — do not estimate, round
+  differently, or invent figures. That data is the single source of truth for all
+  numbers.
 - **Never recommend a plan listed in `non_comparable_alternatives`** — we could not
   price it reliably, so recommending it would state a number (or an implied saving)
   that isn't actually backed by data.

@@ -1,12 +1,24 @@
 import React from 'react'
-import { TrainFront, Bus, Car, Bike, Compass } from 'lucide-react'
+import { TrainFront, Bus, Car, Bike, Zap, Footprints, Compass } from 'lucide-react'
 import { number } from '../lib/format'
 
+// Keyed on the raw production transport_mode (see backend/database/init/01_create_table.sql's
+// transport_mode CHECK constraint) — mode_breakdown no longer groups regional_train/
+// long_distance_train into one "train" figure or car/car_sharing/ride_hailing/taxi into
+// one "car" figure, so every raw mode gets its own entry here.
 const MODE_META = {
-  train: { Icon: TrainFront, en: 'Train', de: 'Bahn', cls: 'mode--train' },
   public_transport: { Icon: Bus, en: 'Public transport', de: 'ÖPNV', cls: 'mode--bus' },
-  car: { Icon: Car, en: 'Car-sharing', de: 'Carsharing', cls: 'mode--car' },
-  scooter: { Icon: Bike, en: 'Scooter', de: 'Roller', cls: 'mode--scooter' },
+  regional_train: { Icon: TrainFront, en: 'Regional train', de: 'Regionalzug', cls: 'mode--train' },
+  long_distance_train: { Icon: TrainFront, en: 'Long-distance train', de: 'Fernverkehr', cls: 'mode--train' },
+  bike_sharing: { Icon: Bike, en: 'Bike-sharing', de: 'Fahrrad-Sharing', cls: 'mode--bike' },
+  bicycle: { Icon: Bike, en: 'Bicycle', de: 'Fahrrad', cls: 'mode--bike' },
+  car: { Icon: Car, en: 'Car', de: 'Auto', cls: 'mode--car' },
+  car_sharing: { Icon: Car, en: 'Car-sharing', de: 'Carsharing', cls: 'mode--car' },
+  ride_hailing: { Icon: Car, en: 'Ride-hailing', de: 'Ride-Hailing', cls: 'mode--car' },
+  taxi: { Icon: Car, en: 'Taxi', de: 'Taxi', cls: 'mode--car' },
+  e_scooter: { Icon: Zap, en: 'E-scooter', de: 'E-Scooter', cls: 'mode--scooter' },
+  walking: { Icon: Footprints, en: 'Walking', de: 'Zu Fuß', cls: 'mode--neutral' },
+  other: { Icon: Compass, en: 'Other', de: 'Sonstiges', cls: 'mode--neutral' },
 }
 
 export default function TravelModes({ analyst, lang }) {
@@ -34,7 +46,7 @@ export default function TravelModes({ analyst, lang }) {
 
       <div className="modes">
         {entries.map((e) => {
-          const meta = MODE_META[e.mode] || { Icon: Compass, en: e.mode, de: e.mode, cls: '' }
+          const meta = MODE_META[e.mode] || { Icon: Compass, en: e.mode, de: e.mode, cls: 'mode--neutral' }
           const Icon = meta.Icon
           const pct = Math.round((e.trips / total) * 100)
           return (

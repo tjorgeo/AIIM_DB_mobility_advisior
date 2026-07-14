@@ -59,7 +59,27 @@ CREATE TABLE IF NOT EXISTS subscription_catalogs (
             OR annual_cost_eur >= 0
         ),
 
-    markdown_ref TEXT 
+    -- Consumption-based pricing (per-minute/per-km/per-km-and-time/hybrid plans).
+    -- Populated only where the source tariff doc (markdown_ref) gives an unambiguous
+    -- linear rate; left NULL for flat-rate passes (priced via pricing_model instead)
+    -- and for genuinely tiered/undocumented plans (e.g. per-ride duration bands, or
+    -- "varies by tier/city" with no representative number) that can't be honestly
+    -- simulated from a single rate — see analysis.py's
+    -- _simulate_consumption_annual_cost for exactly how these are used.
+    unlock_fee_eur NUMERIC(10,2)
+        CHECK (unlock_fee_eur IS NULL OR unlock_fee_eur >= 0),
+    per_km_eur NUMERIC(10,4)
+        CHECK (per_km_eur IS NULL OR per_km_eur >= 0),
+    per_hour_eur NUMERIC(10,4)
+        CHECK (per_hour_eur IS NULL OR per_hour_eur >= 0),
+    per_minute_eur NUMERIC(10,4)
+        CHECK (per_minute_eur IS NULL OR per_minute_eur >= 0),
+    free_minutes_included INTEGER
+        CHECK (free_minutes_included IS NULL OR free_minutes_included >= 0),
+    daily_cap_eur NUMERIC(10,2)
+        CHECK (daily_cap_eur IS NULL OR daily_cap_eur >= 0),
+
+    markdown_ref TEXT
 );
 
 CREATE TABLE IF NOT EXISTS users (

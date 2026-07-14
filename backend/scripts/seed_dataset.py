@@ -1,6 +1,6 @@
 """Seed the Langfuse `analyze-personas` evaluation dataset from the seed personas.
 
-For each of the six fixed personas we run the deterministic pipeline once (no LLM
+For each of the four fixed personas we run the deterministic pipeline once (no LLM
 needed) and store its grounding data — the analyst output (including its per-category
 current-vs-alternative-vs-no-subscription analysis) and forecaster output, plus the
 pricing catalog — as the dataset item input. The experiment (scripts/run_experiment.py)
@@ -21,14 +21,12 @@ sys.path.insert(0, str(_BACKEND))          # eval.* (unused here, kept consisten
 
 DATASET_NAME = "analyze-personas"
 
-# The six seed personas with travel data (see main.py::test_analyst docstring).
+# The four seed personas with travel data (see main.py::test_analyst docstring).
 PERSONAS = {
-    "38bb9fdb-7d90-55a0-98d8-f9935f1aec70": "Mara Vogel",
-    "be6f3d9a-713a-5a56-bd77-5b27feea6827": "Tobias Hahn",
-    "d90794d2-efac-5b8d-b1cd-01244a890cb2": "Nina Schröder",
-    "671fbc5b-99f1-505f-aaaa-1c682f552803": "Lukas Weber",
-    "b31247a7-eb90-533a-bff7-1f0d37d28adc": "Petra Sommer",
-    "99cb2bd6-228b-566d-a250-16290da30521": "Sandra Hoffmann",
+    "ce92d8e0-065e-589b-a60e-c692ef2d2ff9": "Julia Berger",
+    "e1eb9483-d268-57cf-9b5f-0ef5e1a7fed2": "Jonas Keller",
+    "725be174-ba53-516d-8beb-a4056cbac517": "Simone Wagner",
+    "932d3626-708a-596b-a1fc-99c2fa1ce9b3": "Elif Yildiz",
 }
 
 
@@ -45,7 +43,7 @@ def main() -> int:
     client = get_client()
     client.create_dataset(
         name=DATASET_NAME,
-        description="Six fixed seed personas — grounding data for memo-quality experiments.",
+        description="Four fixed seed personas — grounding data for memo-quality experiments.",
     )
 
     for user_id, name in PERSONAS.items():

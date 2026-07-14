@@ -41,7 +41,6 @@ class AnalystSummary(BaseModel):
     dominant_patterns: List[DominantPattern]
     detected_seasonality: str
     current_contracts: List[str]
-    detected_inefficiencies: List[str]
     # month ("YYYY-MM") -> raw transport_mode -> stats for that month. Same raw
     # transport_mode granularity as dominant_patterns (regional_train and
     # long_distance_train stay distinct), but split by month instead of
@@ -127,7 +126,11 @@ _RULES = """\
 Rules:
 1. Always include a "baseline" scenario derived from the historical patterns.
 2. If a life_event with confidence "medium" or "high" is present, produce a SECOND
-   scenario that accounts for the change (label examples: "post_relocation", "new_job").
+   scenario that covers the SAME full {horizon}-day window as baseline (not just the
+   period after the event) — use baseline rates up to the event date, then the
+   adjusted rates from the event date through the end of the window (label examples:
+   "post_relocation", "new_job"). Both scenarios' predicted_demand totals must be
+   directly comparable full-horizon numbers, not baseline-vs-partial-window.
 3. If signals are ambiguous (confidence "low"), note this in the rationale but do NOT
    create a second scenario.
 4. The basis field must briefly explain the reasoning for each mode's prediction.
@@ -405,8 +408,9 @@ def forecast(
     calendar_events: list | None = None,
     ics_text: str | None = None,
     raw_calendar_entries: list[dict] | None = None,
-    forecast_horizon_days: int = 90,
+    forecast_horizon_days: int = 365,
     as_of_date: str | None = None,
+    use_llm: bool = True,
 ) -> dict:
     """
     Produce a 90-day demand forecast from an analyst summary plus calendar data.
@@ -433,6 +437,10 @@ def forecast(
 
     Falls back to a deterministic baseline when no API key is configured or the LLM
     response cannot be parsed.
+
+    ``use_llm=False`` forces the deterministic fallback and skips the LLM call entirely —
+    useful for tests/experiments that want the reproducible baseline on demand.
+    ``/api/analyze`` itself always calls with ``use_llm=True``.
     """
     resolved_as_of_date = date.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc).date()
 
@@ -443,7 +451,7 @@ def forecast(
     except ImportError:
         _has_llm = False
 
-    if not _has_llm:
+    if not use_llm or not _has_llm:
         return _deterministic_fallback(
             analyst_summary, forecast_horizon_days,
             calendar_events=calendar_events, ics_text=ics_text,
@@ -506,9 +514,6 @@ MOCK_ANALYST_SUMMARY = {
     ],
     "detected_seasonality": "Higher bike usage in spring/summer, more public transport in winter",
     "current_contracts": ["Deutschlandticket (€49/mo)", "CallABike subscription"],
-    "detected_inefficiencies": [
-        "E-scooter trips without subscription coverage (€45/year out-of-pocket)"
-    ],
     "monthly_mode_breakdown": {
         "2026-05": {
             "public_transport": {"trips": 40, "distance_km": 340.0, "co2_kg": 12.0, "intrinsic_cost_eur": 120.0, "effective_cost_eur": 49.0},

@@ -299,11 +299,12 @@ As a data scientist, I need to **present the findings to the user through a chat
 
 As a data scientist, I need to **design travel personas that represent common travel patterns and different needs regarding the agent system, **so that we can synthesize realistic travel history data and emulate real usage.
 
-> ⚠️ **6** personas were built (not 5), each exercising one distinct path through the analyst/
-> optimization logic. See [`database/seed/PERSONAS.md`](../database/seed/PERSONAS.md):
-> Mara Vogel (flat-pass, well covered), Tobias Hahn (BahnCard 50, frequent business),
-> Nina Schröder (pure pay-as-you-go), Lukas Weber (over-subscribed), Petra Sommer (thin data,
-> new user), Sandra Hoffmann (family, car-sharing + flat pass).
+> ⚠️ **4** personas were built, each with a different starting subscription situation and
+> exercising one distinct path through the analyst/optimization logic. See
+> [`database/seed/PERSONAS.md`](../database/seed/PERSONAS.md): Julia Berger (BahnCard 25 should
+> become BahnCard 50, Deutschlandticket already pays off), Jonas Keller (no subscription, should
+> pick up a Deutschlandticket), Simone Wagner (three subscriptions, two should be cancelled),
+> Elif Yildiz (car-free, car-sharing-centric multi-modal freelancer).
 
 **Acceptance Criteria**
 

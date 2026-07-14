@@ -19,22 +19,19 @@ persists them and shapes the exact response payload the frontend consumes.
 import logging
 
 from agent.context import load_context
-from agent.engines import analyze_portfolio, forecast, template_memos
+from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast, template_memos
 from agent.llm import llm_available
 
 logger = logging.getLogger(__name__)
 
 
-def run_analysis(user_id: str, include_memo: bool = True) -> dict:
-    """Run the deterministic pipeline for one user.
+def run_analysis(user_id: str) -> dict:
+    """Run the full pipeline for one user, synchronously — including the LLM forecast
+    and the Analyst memo when an LLM is configured.
 
     Returns a dict with ``user``, ``user_preferences``, ``subscriptions``,
     ``travel_history``, ``pricing_catalog`` and the agent outputs, or
     ``{"error": ...}`` if the user is not found.
-
-    ``include_memo=False`` skips the (slow) Analyst LLM memo and leaves the template
-    memo in place, so a caller can return the deterministic numbers immediately and
-    generate the LLM prose lazily (see :meth:`orchestrator.Orchestrator.generate_memo`).
     """
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -55,20 +52,30 @@ def run_analysis(user_id: str, include_memo: bool = True) -> dict:
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
     # seasonality) plus the user's upcoming calendar entries (see context.py).
-    # Demand-only + deterministic fallback, so numbers stay guarded.
+    # Falls back to the deterministic baseline itself when no LLM is configured, so
+    # numbers stay guarded either way.
     forecaster_out = forecast(
         analyst_out["forecaster_summary"],
         raw_calendar_entries=ctx["raw_calendar_entries"],
-        forecast_horizon_days=90,
+        forecast_horizon_days=365,
+        use_llm=True,
+    )
+
+    # Project the same current-vs-alternative-vs-no-subscription comparison onto each
+    # scenario's forecasted demand — deterministic, reuses analyze_portfolio's own
+    # pricing/eligibility logic, never lets the forecaster (or its LLM) touch money.
+    attach_projected_category_analysis(
+        forecaster_out, analyst_out["mode_breakdown"], subscriptions,
+        ctx["pricing_catalog"], ctx["user"].get("age"),
     )
 
     # --- communicate: template memo, upgraded to LLM prose when available ---
     name = ctx["user"]["name"]
-    communicator_out = template_memos(name, analyst_out)
+    communicator_out = template_memos(name, analyst_out, forecaster_out)
     communicator_out["memo_source"] = "template"
     memo_trace_id = None
 
-    if include_memo and llm_available():
+    if llm_available():
         try:
             from agent.analyst_agent import run_briefing
 

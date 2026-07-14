@@ -18,15 +18,14 @@ class Orchestrator:
     and shapes the exact response payload the frontend consumes. That separation is
     the backend merge: agentic engine inside, stable session/contract API outside.
 
-    Latency guards:
+    Latency guard:
     * **Read-through cache** — ``/api/analyze`` auto-runs on every dashboard mount, so
       an unforced call reuses the user's most recent ``recommendations`` row (rebuilt
       from stored JSON + a cheap ``load_context``) instead of re-running the pipeline.
-      Pass ``force=True`` to recompute.
-    * **Lazy LLM memo** — a fresh run defers the (slow) Analyst memo: it returns the
-      deterministic numbers with the template memo immediately, and the caller schedules
-      :meth:`generate_memo` as a background task. The next (cached) mount serves the
-      upgraded LLM prose.
+      Pass ``force=True`` to recompute. A forced/fresh run is fully synchronous — it
+      waits for the LLM forecast and Analyst memo (when an LLM is configured) before
+      returning, so the response always reflects the final result, calendar-driven
+      life events included, with no follow-up call needed to see the upgraded memo.
     """
 
     def run_analysis(self, user_id: str, force: bool = False) -> dict:
@@ -36,10 +35,8 @@ class Orchestrator:
             if cached is not None:
                 return cached
 
-        # --- FRESH RUN (load_context → analyze → forecast → optimize → template memo) ---
-        # include_memo=False: defer the slow LLM memo to a background task (see main.py);
-        # the deterministic numbers + template memo return immediately.
-        state = run_pipeline(user_id, include_memo=False)
+        # --- FRESH RUN (load_context → analyze → forecast → communicate), synchronous ---
+        state = run_pipeline(user_id)
 
         if state.get("error"):
             raise ValueError(state["error"])
@@ -48,42 +45,48 @@ class Orchestrator:
         user_preferences = state["user_preferences"]
         subscriptions = state["subscriptions"]
         travel_history = state["travel_history"]
+        pricing_catalog = state["pricing_catalog"]
 
         analyst_out = state["analyst_out"]
         forecaster_out = state["forecaster_out"]
         communicator_out = state["communicator_out"]
 
+        memos = {
+            "english": communicator_out["memo_english"],
+            "german": communicator_out["memo_german"],
+        }
+        memo_source = communicator_out.get("memo_source", "template")
+
+        category_analysis = analyst_out["category_subscription_analysis"]
+        # Sum of what the user is actually paying today across every category we
+        # analyzed — the post-pivot equivalent of the old optimizer's baseline cost,
+        # built from the same per-category figures the memo and category_analysis use.
+        total_actual_annual_cost = round(
+            sum(c["actual_annual_cost_eur"] for c in category_analysis), 2
+        )
+        total_estimated_savings = communicator_out["total_estimated_savings_eur"]
+        actions_required = communicator_out["actions_required"]
+
         # --- STATE MANAGEMENT & PERSISTENCE ---
         rec_id = str(uuid.uuid4())
         created_at_str = datetime.now().isoformat()
 
-        category_analysis = analyst_out["category_subscription_analysis"]
-        # Sum of what the user is actually paying today across every category we
-        # analyzed (each category's own current sub cost + out-of-pocket spend) — the
-        # closest equivalent to the old optimizer's "baseline_annual_cost", but built
-        # from the same per-category figures the memo and category_analysis use.
-        total_actual_annual_cost = round(sum(c["actual_annual_cost_eur"] for c in category_analysis), 2)
-
         # Column name kept as `optimizer_scenarios` (see database/init/01_create_table.sql)
         # to avoid a schema migration; the payload it stores is now the per-category
         # current-vs-alternative-vs-no-subscription analysis, not portfolio scenarios.
-        scenarios_payload = {
+        stored_payload = {
             "category_subscription_analysis": category_analysis,
             "total_actual_annual_cost_eur": total_actual_annual_cost,
             "total_co2_kg": analyst_out["total_co2_kg"],
-            "total_estimated_savings_eur": communicator_out["total_estimated_savings_eur"],
-            "actions_required": communicator_out["actions_required"],
-            "memos": {
-                "english": communicator_out["memo_english"],
-                "german": communicator_out["memo_german"],
-            },
+            "total_estimated_savings_eur": total_estimated_savings,
+            "actions_required": actions_required,
+            "memo_source": memo_source,
+            "memos": memos,
         }
 
         # Persist into the production recommendations table (one row per analysis run).
         # memo_trace_id links this recommendation to the Langfuse trace of the memo
-        # LLM call, so approval can attach a `recommendation-accepted` score to it. On a
-        # fresh (lazy) run the memo hasn't run yet, so it starts NULL and generate_memo
-        # fills it in.
+        # LLM call, so approval can attach a `recommendation-accepted` score to it.
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -100,7 +103,7 @@ class Orchestrator:
                 user_id,
                 json.dumps(analyst_out),
                 json.dumps(forecaster_out),
-                json.dumps(scenarios_payload),
+                json.dumps(stored_payload),
                 "ready",
                 state.get("memo_trace_id"),
                 created_at_str,
@@ -117,23 +120,24 @@ class Orchestrator:
             preferences=user_preferences,
             subscriptions=subscriptions,
             travel_history_len=len(travel_history),
-            pricing_catalog_size=len(state["pricing_catalog"]),
+            pricing_catalog_size=len(pricing_catalog),
             analyst_out=analyst_out,
             forecaster_out=forecaster_out,
-            communicator_out=communicator_out,
+            total_actual_annual_cost=total_actual_annual_cost,
+            total_estimated_savings=total_estimated_savings,
+            actions_required=actions_required,
+            memos=memos,
+            memo_source=memo_source,
         )
-        # Signals main.py to schedule the background LLM memo. Popped before the
-        # response is returned to the client.
-        payload["_fresh"] = True
         return payload
 
     def _load_cached(self, user_id: str):
         """Rebuild the frontend payload from the user's most recent recommendation.
 
         Returns ``None`` (→ caller runs a fresh analysis) when there is no prior row or
-        the stored JSON can't be parsed. The agent outputs come from the row; the display
-        fields (name / preferences / active subscriptions) come from a cheap
-        ``load_context`` — no engines, no LLM.
+        the stored JSON can't be parsed / is pre-pivot. The agent outputs come from the
+        row; the display fields (name / preferences / active subscriptions) come from a
+        cheap ``load_context`` — no engines, no LLM.
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -160,24 +164,14 @@ class Orchestrator:
             stored = json.loads(row["optimizer_scenarios"]) if row["optimizer_scenarios"] else {}
         except (TypeError, json.JSONDecodeError):
             return None
-        # Rows written before the per-category refactor stored portfolio "scenarios";
-        # they can't be shaped into the current contract → treat as cache miss so a
-        # fresh run replaces them.
+        # Post-pivot payloads store the per-category analysis. A row without it is a
+        # stale pre-pivot record — force a fresh run rather than shape a broken payload.
         if "category_subscription_analysis" not in stored:
             return None
 
         ctx = load_context(user_id)
         if ctx.get("error"):
             return None
-
-        memos = stored.get("memos", {})
-        communicator_out = {
-            "total_estimated_savings_eur": stored.get("total_estimated_savings_eur", 0.0),
-            "actions_required": stored.get("actions_required", []),
-            "memo_english": memos.get("english"),
-            "memo_german": memos.get("german"),
-            "memo_source": stored.get("memo_source", "template"),
-        }
 
         return self._shape_payload(
             rec_id=row["recommendation_id"],
@@ -187,10 +181,14 @@ class Orchestrator:
             preferences=ctx["user_preferences"],
             subscriptions=ctx["subscriptions"],
             travel_history_len=len(ctx["travel_history"]),
-            pricing_catalog_size=len(ctx.get("pricing_catalog", [])),
+            pricing_catalog_size=len(ctx["pricing_catalog"]),
             analyst_out=analyst_out,
             forecaster_out=forecaster_out,
-            communicator_out=communicator_out,
+            total_actual_annual_cost=stored.get("total_actual_annual_cost_eur", 0.0),
+            total_estimated_savings=stored.get("total_estimated_savings_eur", 0.0),
+            actions_required=stored.get("actions_required", []),
+            memos=stored.get("memos", {}),
+            memo_source=stored.get("memo_source", "template"),
         )
 
     def _shape_payload(
@@ -206,22 +204,21 @@ class Orchestrator:
         pricing_catalog_size,
         analyst_out,
         forecaster_out,
-        communicator_out,
+        total_actual_annual_cost,
+        total_estimated_savings,
+        actions_required,
+        memos,
+        memo_source,
     ) -> dict:
         """The exact response contract the frontend consumes. Shared by the fresh-run
-        and cache paths so they can never drift.
-
-        ``communicator_out`` must carry ``total_estimated_savings_eur``,
-        ``actions_required``, ``memo_english``, ``memo_german`` and ``memo_source`` —
-        exactly what :func:`template_memos` returns (the cache path rebuilds the same
-        shape from the stored row).
-        """
-        category_analysis = analyst_out.get("category_subscription_analysis", [])
-        # Sum of what the user is actually paying today across every category we
-        # analyzed (each category's own current sub cost + out-of-pocket spend).
-        total_actual_annual_cost = round(
-            sum(c.get("actual_annual_cost_eur", 0.0) for c in category_analysis), 2
-        )
+        and cache paths so they can never drift."""
+        communicator_out = {
+            "memo_english": memos.get("english"),
+            "memo_german": memos.get("german"),
+            "memo_source": memo_source,
+            "total_estimated_savings_eur": total_estimated_savings,
+            "actions_required": actions_required,
+        }
         return {
             "session_id": rec_id,
             "status": status,
@@ -233,9 +230,11 @@ class Orchestrator:
             "current_subscriptions": subscriptions,
             "summary": {
                 "total_actual_annual_cost_eur": total_actual_annual_cost,
-                "total_co2_kg": analyst_out.get("total_co2_kg", 0.0),
-                "total_estimated_savings_eur": communicator_out.get("total_estimated_savings_eur", 0.0),
-                "category_subscription_analysis": category_analysis,
+                "total_co2_kg": analyst_out.get("total_co2_kg"),
+                "total_estimated_savings_eur": total_estimated_savings,
+                "category_subscription_analysis": analyst_out.get(
+                    "category_subscription_analysis", []
+                ),
                 "memos": {
                     "english": communicator_out["memo_english"],
                     "german": communicator_out["memo_german"],
@@ -263,78 +262,62 @@ class Orchestrator:
                 },
                 "communicator": {
                     "input": {
-                        "total_estimated_savings_eur": communicator_out.get("total_estimated_savings_eur", 0.0),
-                        "memo_source": communicator_out.get("memo_source", "template"),
+                        "total_estimated_savings_eur": total_estimated_savings,
+                        "memo_source": memo_source,
                     },
                     "output": communicator_out,
                 },
             },
         }
 
-    def generate_memo(self, rec_id: str, user_id: str) -> None:
-        """Generate the LLM memo for an already-persisted recommendation and store it.
+    def save_revision(self, user_id: str, analyst_out: dict, revision: dict) -> str:
+        """Persist a chat-driven re-optimisation as a new ``recommendations`` row.
 
-        Runs as a background task after a fresh ``/api/analyze`` returns its template
-        memo. Reloads the stored agent outputs + context, makes the one grounded Analyst
-        call, and updates the row's memos + memo_trace_id in place (memo_source → "llm").
-        Best-effort: any failure leaves the template memo standing.
+        ``revision`` is the output of ``agent.engines.reoptimize.reoptimize_from_analysis``.
+        The revised per-category analysis is folded back into a copy of ``analyst_out`` so
+        the stored row stays shape-compatible with a fresh ``/api/analyze`` run, and the
+        dashboard's read-through cache serves it on the next mount. Returns the new
+        recommendation id.
         """
-        from agent.llm import llm_available
+        revised_analyst = dict(analyst_out)
+        revised_analyst["category_subscription_analysis"] = revision["category_subscription_analysis"]
 
-        if not llm_available():
-            return
+        stored_payload = {
+            "category_subscription_analysis": revision["category_subscription_analysis"],
+            "total_actual_annual_cost_eur": revision["total_actual_annual_cost_eur"],
+            "total_co2_kg": analyst_out.get("total_co2_kg"),
+            "total_estimated_savings_eur": revision["total_estimated_savings_eur"],
+            "actions_required": revision["actions_required"],
+            "memo_source": "chat_revision",
+            "memos": {"english": "", "german": ""},
+            "applied_constraints": revision.get("applied_constraints", {}),
+        }
 
-        ctx = load_context(user_id)
-        if ctx.get("error"):
-            return
-
+        rec_id = str(uuid.uuid4())
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT analyst_output, forecaster_output, optimizer_scenarios "
-            "FROM recommendations WHERE recommendation_id = ?",
-            (rec_id,),
+            """
+        INSERT INTO recommendations (
+            recommendation_id, user_id,
+            analyst_output, forecaster_output, optimizer_scenarios,
+            analysis_status, created_at
         )
-        row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return
-        row = dict(row)
-        try:
-            analyst_out = json.loads(row["analyst_output"])
-            forecaster_out = json.loads(row["forecaster_output"])
-            stored = json.loads(row["optimizer_scenarios"])
-        except (TypeError, json.JSONDecodeError):
-            conn.close()
-            return
-
-        optimizer_out = {k: v for k, v in stored.items() if k not in ("memos", "memo_source")}
-        name = ctx["user"]["name"]
-        try:
-            from agent.analyst_agent import run_briefing
-
-            memo_en, memo_de, memo_trace_id = run_briefing(
-                name,
-                analyst_out,
-                forecaster_out,
-                optimizer_out,
-                ctx["pricing_catalog"],
-                user_id=user_id,
-            )
-        except Exception:
-            logger.exception("Background memo generation failed; template memo stands")
-            conn.close()
-            return
-
-        stored["memos"] = {"english": memo_en, "german": memo_de}
-        stored["memo_source"] = "llm"
-        cursor.execute(
-            "UPDATE recommendations SET optimizer_scenarios = ?, memo_trace_id = ? "
-            "WHERE recommendation_id = ?",
-            (json.dumps(stored), memo_trace_id, rec_id),
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                rec_id,
+                user_id,
+                json.dumps(revised_analyst),
+                json.dumps({}),
+                json.dumps(stored_payload),
+                "ready",
+                datetime.now().isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
+        return rec_id
 
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
         """Marks a recommendation approved and records the selected scenario.

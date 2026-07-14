@@ -1,9 +1,10 @@
 """Unit tests for agent.engines.analysis.analyze_portfolio (pure, deterministic)."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from agent.engines import analyze_portfolio
+from agent.engines.analysis import _simulate_consumption_annual_cost
 
 _REQUIRED_KEYS = {
     "current_annual_spend_eur",
@@ -48,7 +49,6 @@ def test_forecaster_summary_is_shaped_for_the_forecaster(travel_history, subscri
         "dominant_patterns",
         "detected_seasonality",
         "current_contracts",
-        "detected_inefficiencies",
         "monthly_mode_breakdown",
     }
     assert isinstance(fs["dominant_patterns"], list)
@@ -429,3 +429,125 @@ def test_no_held_subscription_defaults_to_2nd_class_alternatives_only():
     alt_names = {a["provider_plan_name"] for a in entry["alternatives"]}
     assert alt_names == {"BahnCard 25, 2. Klasse"}
     assert "BahnCard 25, 1. Klasse" in entry["non_comparable_alternatives"]
+
+
+# --------------------------------------------------------------------------- #
+# Consumption-based alternative pricing (car-/bike-sharing, e-scooter plans   #
+# with a linear per-km/per-hour/per-minute rate on file)                     #
+# --------------------------------------------------------------------------- #
+
+def test_simulate_consumption_cost_linear_rate():
+    """Per-km + per-hour linear rate, no unlock fee/free-minutes/cap: a straightforward
+    sum across legs, annualized the same way the rest of the engine annualizes."""
+    legs = [
+        {"distance": 10.0, "duration": 30.0, "day": date(2026, 1, 1)},
+        {"distance": 10.0, "duration": 30.0, "day": date(2026, 2, 1)},
+    ]
+    plan = {"per_km_eur": 0.30, "per_hour_eur": 2.00}
+    months_of_data = 1.0  # isolates the per-leg formula from annualization scaling
+    per_leg = 2.00 * 0.5 + 0.30 * 10.0  # 1.00 + 3.00 = 4.00
+    assert _simulate_consumption_annual_cost(plan, legs, months_of_data) == round(
+        2 * per_leg / months_of_data * 12, 2
+    )
+
+
+def test_simulate_consumption_cost_returns_none_without_a_linear_rate():
+    """A plan with no per-km/per-hour/per-minute rate on file (tiered per-ride pricing
+    like Lime Prime, or no published rate at all like Bolt's bare PAYG) can't be
+    honestly simulated — must return None, not silently price it as free."""
+    no_rate_plan = {"per_km_eur": None, "per_hour_eur": None, "per_minute_eur": None}
+    assert _simulate_consumption_annual_cost(no_rate_plan, [], 1.0) is None
+    some_legs = [{"distance": 5.0, "duration": 5.0, "day": date(2026, 1, 1)}]
+    assert _simulate_consumption_annual_cost({}, some_legs, 1.0) is None
+
+
+def test_simulate_consumption_cost_deducts_free_minutes_before_billing():
+    """Call a Bike Member Plus style: 30 free minutes per ride, then a per-minute
+    rate — a 20-minute ride (under the free allowance) must cost nothing, and a
+    50-minute ride must only be billed for the 20 minutes over the allowance."""
+    plan = {"per_minute_eur": 0.10, "free_minutes_included": 30}
+    short_ride = [{"distance": 2.0, "duration": 20.0, "day": date(2026, 1, 1)}]
+    long_ride = [{"distance": 2.0, "duration": 50.0, "day": date(2026, 1, 1)}]
+    assert _simulate_consumption_annual_cost(plan, short_ride, 1.0) == 0.0
+    assert _simulate_consumption_annual_cost(plan, long_ride, 1.0) == round(2.00 / 1.0 * 12, 2)
+
+
+def test_simulate_consumption_cost_applies_daily_cap_per_day_not_per_leg():
+    """Call a Bike Starter style: three same-day rides would cost far more than the
+    daily cap if summed independently — the cap must apply to each *day's* total, and
+    a separate day's ride must be capped (or not) independently of other days."""
+    plan = {"unlock_fee_eur": 1.00, "per_minute_eur": 0.12, "daily_cap_eur": 13.00}
+    same_day_legs = [
+        {"distance": 0.0, "duration": 60.0, "day": date(2026, 1, 1)} for _ in range(3)
+    ]  # 1.00 + 0.12*60 = 8.20 each -> 24.60 raw for the day, capped down to 13.00
+    assert _simulate_consumption_annual_cost(plan, same_day_legs, 1.0) == round(13.00 / 1.0 * 12, 2)
+
+    two_days_one_leg_each = [
+        {"distance": 0.0, "duration": 10.0, "day": date(2026, 1, 1)},
+        {"distance": 0.0, "duration": 10.0, "day": date(2026, 1, 2)},
+    ]  # 1.00 + 0.12*10 = 2.20 each, well under the cap on each of their own days
+    assert _simulate_consumption_annual_cost(plan, two_days_one_leg_each, 1.0) == round(
+        2 * 2.20 / 1.0 * 12, 2
+    )
+
+
+def _car_leg(i, gap_days, distance_km, duration_min, sub_id=None, start=datetime(2025, 7, 1)):
+    """A car_sharing leg priced like MILES pay-as-you-go (1 EUR unlock + 0.79 EUR/km),
+    carrying the estimated_distance_km/duration_minutes a consumption-based
+    alternative needs to be simulated against."""
+    ref = round(1.0 + distance_km * 0.79, 2)
+    return {
+        "leg_id": f"cl{i}", "trip_id": f"ct{i}",
+        "started_at": (start + timedelta(days=i * gap_days)).isoformat(),
+        "user_subscription_id": sub_id, "transport_mode": "car_sharing",
+        "estimated_distance_km": distance_km, "duration_minutes": duration_min,
+        "estimated_cost_eur": ref, "reference_cost_eur": ref,
+        "estimated_co2_emissions": round(distance_km * 0.15, 3),
+    }
+
+
+def test_consumption_based_alternative_priced_and_not_non_comparable():
+    """A car-sharing plan with a linear per-km/per-hour rate on file (e.g. a teilAuto-
+    style membership) must be simulated leg-by-leg from actual distance/duration and
+    surface as a real cheapest_alternative — not dumped into
+    non_comparable_alternatives just because it isn't flat-rate or a BahnCard."""
+    n, gap_days = 24, 15
+    history = [_car_leg(i, gap_days, distance_km=10.0, duration_min=30.0) for i in range(n)]
+    catalog = [{
+        "id": "car_x", "name": "Car X", "category": "car_sharing",
+        "monthly_cost": 20.0, "annual_cost": None, "pricing_model": "per_km_and_time",
+        "per_km_eur": 0.30, "per_hour_eur": 2.00,
+    }]
+    out = analyze_portfolio(history, [], catalog)
+    entry = _find_entry(out, "car_sharing")
+    assert entry["non_comparable_alternatives"] == []
+    alt = entry["cheapest_alternative"]
+    assert alt["provider_plan_name"] == "Car X"
+    assert "per-km/per-hour/per-minute rate" in alt["pricing_basis"]
+
+    months_of_data = ((n - 1) * gap_days) / 30.44
+    per_leg_cost = 2.00 * 0.5 + 0.30 * 10.0
+    expected_remainder = round(n * per_leg_cost / months_of_data * 12, 2)
+    assert alt["estimated_pay_as_you_go_remainder_eur"] == expected_remainder
+    assert alt["plan_annual_cost_eur"] == 240.0  # 20 EUR/month * 12
+    assert round(alt["plan_annual_cost_eur"] + alt["estimated_pay_as_you_go_remainder_eur"], 2) == (
+        alt["estimated_annual_cost_eur"]
+    )
+
+
+def test_consumption_based_alternative_can_trigger_consider_subscribing():
+    """The new simulated pricing must feed into the same recommendation logic as
+    flat-rate/discount-card alternatives — a cheap-enough consumption-based plan must
+    flip the recommendation to consider_subscribing, not just appear as an inert
+    number nobody acts on."""
+    n, gap_days = 40, 9
+    history = [_car_leg(i, gap_days, distance_km=5.0, duration_min=15.0) for i in range(n)]
+    catalog = [{
+        "id": "car_cheap", "name": "Car Cheap", "category": "car_sharing",
+        "monthly_cost": 5.0, "annual_cost": None, "pricing_model": "per_km_and_time",
+        "per_km_eur": 0.10, "per_hour_eur": 0.50,
+    }]
+    out = analyze_portfolio(history, [], catalog)
+    entry = _find_entry(out, "car_sharing")
+    assert entry["recommendation"] == "consider_subscribing"
+    assert entry["cheapest_alternative"]["provider_plan_name"] == "Car Cheap"

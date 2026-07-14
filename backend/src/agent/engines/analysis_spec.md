@@ -57,14 +57,14 @@ annualized       = monthly_rate * 12
 ## Computations (Deterministic, No Thresholds)
 
 ### 1. Mode breakdown
-Per transport mode (using `group_mode()` for display grouping):
+Per **raw** production `transport_mode` (no display grouping — e.g. `regional_train` and `long_distance_train` are always reported as separate entries, never merged into one "train" figure):
 - total trips, total distance (km), total CO₂ (kg)
 - intrinsic cost (the pay-as-you-go price on the leg)
 - effective cost (0 if an active subscription covers this mode, intrinsic otherwise)
 - annualized versions of all of the above
 
 ### 2. Dominant patterns
-Rank modes by annualized trip count. The top modes become `dominant_patterns` — the primary output field consumed by the Forecaster. Unlike mode breakdown above, this is keyed on the **raw** production `transport_mode`, not `group_mode()`'s display bucket — so e.g. `regional_train` and `long_distance_train` are reported as separate patterns instead of being merged into one "train" figure.
+Rank modes by annualized trip count. The top modes become `dominant_patterns` — the primary output field consumed by the Forecaster. Same raw-mode granularity as mode breakdown above.
 
 ```python
 DominantPattern(
@@ -184,7 +184,6 @@ class AnalystSummary(BaseModel):         # forwarded to ForecasterAgent
     dominant_patterns: List[DominantPattern]
     detected_seasonality: str            # human-readable description of seasonal pattern
     current_contracts: List[str]         # ["Deutschlandticket (€58/mo)", ...]
-    detected_inefficiencies: List[str]   # short human-readable strings for each inefficiency
 ```
 
 **Section B — full output consumed by the Optimizer** (superset of Section A):
@@ -271,7 +270,7 @@ class AnalystOutput(BaseModel):
 |---|---|
 | No trip data for user | Returns zeroed metrics, empty `inefficiencies`, `dominant_patterns = []`, `detected_seasonality = "insufficient data"` |
 | `data_window_days < 14` | Returns output with `data_warning: "too little data for reliable annualization"` flag; all annualized figures still computed but marked unreliable |
-| Unknown transport mode on a leg | Aggregated under the raw mode string via `group_mode()`; no rule fires for it |
+| Unknown transport mode on a leg | Aggregated under its own raw mode string (lowercased, `None`/missing falls back to `"other"`); no rule fires for it |
 | Subscription with no `monthly_cost_eur` (pay-as-you-go) | Counted in active categories for coverage purposes; excluded from flat-cost waste calculation |
 | Leg has no `user_subscription_id` even though its mode falls in a category the user subscribes to | Not attributed to any subscription — treated as pay-as-you-go at `reference_cost_eur`. Coverage requires evidence on the leg, not inference from category |
 | `subscription_category` not recognized by `category_covers_mode()` | Subscription-level coverage is unaffected (attribution is per-leg, not category-based); only `uncovered_spend_by_category` skips the category |

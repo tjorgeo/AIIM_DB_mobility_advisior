@@ -28,10 +28,10 @@ Authenticates a username **or** email against the seeded `users` table. Register
 carry no hash fall back to the shared demo password (`DEMO_LOGIN_PASSWORD`, default `mobility`).
 ```jsonc
 // Request
-{ "identifier": "mara.vogel@example.com", "password": "mobility" }
+{ "identifier": "julia.berger@example.com", "password": "mobility" }
 // 200
-{ "id": "38bb9fdb-7d90-55a0-98d8-f9935f1aec70", "name": "Mara Vogel",
-  "firstName": "Mara", "email": "…", "username": "…", "initials": "MV" }
+{ "id": "ce92d8e0-065e-589b-a60e-c692ef2d2ff9", "name": "Julia Berger",
+  "firstName": "Julia", "email": "…", "username": "…", "initials": "JB" }
 // 401 { "detail": "Incorrect password." }
 ```
 
@@ -47,25 +47,25 @@ subscriptions (catalog-joined for readable names). Drives the demo persona picke
 ```jsonc
 [
   {
-    "user_id": "38bb9fdb-7d90-55a0-98d8-f9935f1aec70",
-    "first_name": "Mara", "last_name": "Vogel", "name": "Mara Vogel",
-    "email": "…", "home_city": "Berlin", "home_postal_code": "…",
-    "age": 29, "gender": "female",
+    "user_id": "ce92d8e0-065e-589b-a60e-c692ef2d2ff9",
+    "first_name": "Julia", "last_name": "Berger", "name": "Julia Berger",
+    "email": "…", "home_city": "Leipzig", "home_postal_code": "…",
+    "age": 35, "gender": "female",
     "preferences": {                       // from user_onboardings (0-100 scores), or null
-      "occupation": "Marketing Specialist",
-      "score_emission": 60, "score_money": 90, "score_flexibility": 50,
-      "preferred_transport_modes": ["public_transport", "…"],
-      "mobility_budget_monthly_eur": 120.0
+      "occupation": "Key Account Manager",
+      "score_emission": 60, "score_money": 65, "score_flexibility": 60,
+      "preferred_transport_modes": ["long_distance_train", "regional_train", "public_transport"],
+      "mobility_budget_monthly_eur": 220.0
     },
     "subscriptions": [                      // user_subscriptions ⋈ subscription_catalogs
       { "provider_name": "Deutsche Bahn", "provider_plan_name": "Deutschlandticket",
-        "monthly_cost_eur": 58.0, "subscription_status": "active",
+        "monthly_cost_eur": 63.0, "subscription_status": "active",
         "is_primary_mobility_option": true }
     ]
   }
 ]
 ```
-IDs are the six seeded persona UUIDs (see [`database/seed/PERSONAS.md`](../database/seed/PERSONAS.md)),
+IDs are the four seeded persona UUIDs (see [`database/seed/PERSONAS.md`](../database/seed/PERSONAS.md)),
 **not** the old `persona_max_commuter` string ids.
 
 ---
@@ -77,7 +77,7 @@ a fresh run returns the deterministic numbers with the **template** memo immedia
 schedules the slow LLM memo as a background task, so the next mount serves the upgraded prose.
 ```jsonc
 // Request
-{ "user_id": "38bb9fdb-7d90-55a0-98d8-f9935f1aec70", "force": false }
+{ "user_id": "ce92d8e0-065e-589b-a60e-c692ef2d2ff9", "force": false }
 ```
 ```jsonc
 // Response envelope (stable fields)
@@ -85,9 +85,9 @@ schedules the slow LLM memo as a background task, so the next mount serves the u
   "session_id": "<uuid>",                  // == recommendations.recommendation_id; used by /approve
   "status": "ready",
   "timestamp": "2026-07-08T…",
-  "user_id": "38bb9fdb-…",
-  "customer_name": "Mara Vogel",
-  "db_customer_id": "38bb9fdb-…",
+  "user_id": "ce92d8e0-…",
+  "customer_name": "Julia Berger",
+  "db_customer_id": "ce92d8e0-…",
   "preferences": { … },                    // onboarding scores
   "current_subscriptions": [ … ],
   "summary": {

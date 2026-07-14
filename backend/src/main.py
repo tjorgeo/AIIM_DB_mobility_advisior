@@ -1,7 +1,9 @@
+import json
 import os
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from register_endpoint import register 
@@ -85,7 +87,7 @@ class ForecasterTestRequest(BaseModel):
     calendar_events: list | None = None          # pre-structured CalendarEvent dicts
     ics_text: str | None = None                  # raw ICS — parsed and filtered by the LLM
     raw_calendar_entries: list | None = None     # pre-parsed raw entries (skips ICS parsing)
-    forecast_horizon_days: int = 90
+    forecast_horizon_days: int = 365
     as_of_date: str | None = None                # ISO date; overrides "today" for seasonal testing
 
 # --- API ENDPOINTS ---
@@ -172,60 +174,59 @@ def get_personas():
     )
     rows = cursor.fetchall()
 
+    # Fetch onboardings and subscriptions in two bulk queries and group them in Python,
+    # rather than issuing two extra queries per user (the old N+1). Constant query count
+    # regardless of how many users exist.
+    cursor.execute(
+        """
+        SELECT user_id, occupation, score_emission, score_money, score_flexibility,
+               preferred_transport_modes, mobility_budget_monthly_eur
+        FROM user_onboardings
+        """
+    )
+    onboarding_by_user = {}
+    for o in cursor.fetchall():
+        o = dict(o)
+        onboarding_by_user[o.pop("user_id")] = o
+
+    cursor.execute(
+        """
+        SELECT s.user_id, c.provider_name, c.provider_plan_name, c.monthly_cost_eur,
+               s.subscription_status, s.is_primary_mobility_option
+        FROM user_subscriptions s
+        LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        """
+    )
+    subs_by_user = {}
+    for s in cursor.fetchall():
+        s = dict(s)
+        subs_by_user.setdefault(s.pop("user_id"), []).append(s)
+
+    conn.close()
+
     personas = []
     for row in rows:
         r = dict(row)
         r["name"] = f"{r['first_name']} {r['last_name']}".strip()
         uid = r["user_id"]
-
-        # Onboarding preferences (0-100 scores) for this user, if present.
-        cursor.execute(
-            """
-            SELECT occupation, score_emission, score_money, score_flexibility,
-                   preferred_transport_modes, mobility_budget_monthly_eur
-            FROM user_onboardings
-            WHERE user_id = ?
-            """,
-            (uid,),
-        )
-        onboarding = cursor.fetchone()
-        r["preferences"] = dict(onboarding) if onboarding else None
-
-        # Active subscriptions, joined to the catalog for human-readable names.
-        cursor.execute(
-            """
-            SELECT c.provider_name, c.provider_plan_name, c.monthly_cost_eur,
-                   s.subscription_status, s.is_primary_mobility_option
-            FROM user_subscriptions s
-            LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
-            WHERE s.user_id = ?
-            """,
-            (uid,),
-        )
-        r["subscriptions"] = [dict(s) for s in cursor.fetchall()]
-
+        r["preferences"] = onboarding_by_user.get(uid)
+        r["subscriptions"] = subs_by_user.get(uid, [])
         personas.append(r)
 
-    conn.close()
     return personas
 
 @app.post("/api/analyze")
-def analyze_portfolio(req: AnalyzeRequest, background_tasks: BackgroundTasks):
+def analyze_portfolio(req: AnalyzeRequest):
     """
     Triggers the 4-Agent orchestration flow for a specific traveler persona.
 
     Reuses the user's latest recommendation when available (unless ``force``); a fresh
-    run returns the deterministic numbers with the template memo immediately and
-    schedules the slow LLM memo as a background task, so the next mount serves the
-    upgraded prose from cache.
+    run is synchronous and waits for the LLM forecast + Analyst memo (when an LLM is
+    configured), so the response already reflects the final result — no follow-up call
+    needed to see calendar-driven life events or the upgraded memo prose.
     """
     try:
-        pipeline_output = orchestrator.run_analysis(req.user_id, force=req.force)
-        if pipeline_output.pop("_fresh", False):
-            background_tasks.add_task(
-                orchestrator.generate_memo, pipeline_output["session_id"], req.user_id
-            )
-        return pipeline_output
+        return orchestrator.run_analysis(req.user_id, force=req.force)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
@@ -269,6 +270,31 @@ def chat(req: ChatRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest):
+    """Streaming variant of /api/chat — Server-Sent Events. Each event is a JSON line:
+    ``{"type":"token","text":"…"}`` per token, then ``{"type":"done","trace_id":…}``.
+    Requires an LLM key (503 otherwise); the frontend falls back to /api/chat and then
+    to its scripted assistant.
+    """
+    from agent.llm import llm_available
+    if not llm_available():
+        raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
+
+    from agent.communicator_agent import stream_chat
+
+    def event_stream():
+        try:
+            for event in stream_chat(req.user_id, req.messages):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.post("/api/feedback")
 def submit_feedback(req: FeedbackRequest):
     """
@@ -295,13 +321,11 @@ def test_analyst(user_id: str):
     subscription coverage, and detected inefficiencies without going through
     the full pipeline.
 
-    Try one of the six personas with travel data:
-      - 38bb9fdb-7d90-55a0-98d8-f9935f1aec70  (Mara Vogel — flat-pass commuter, well covered)
-      - be6f3d9a-713a-5a56-bd77-5b27feea6827  (Tobias Hahn — BahnCard 50, frequent business traveler)
-      - d90794d2-efac-5b8d-b1cd-01244a890cb2  (Nina Schröder — pure pay-as-you-go, no subscriptions)
-      - 671fbc5b-99f1-505f-aaaa-1c682f552803  (Lukas Weber — over-subscribed, barely uses any of it)
-      - b31247a7-eb90-533a-bff7-1f0d37d28adc  (Petra Sommer — thin data, joined ~6 weeks ago)
-      - 99cb2bd6-228b-566d-a250-16290da30521  (Sandra Hoffmann — family, car-sharing + flat pass)
+    Try one of the four personas with travel data (see database/seed/PERSONAS.md):
+      - ce92d8e0-065e-589b-a60e-c692ef2d2ff9  (Julia Berger — BahnCard 25 should become BahnCard 50, Deutschlandticket pays off)
+      - e1eb9483-d268-57cf-9b5f-0ef5e1a7fed2  (Jonas Keller — no subscription, should pick up a Deutschlandticket)
+      - 725be174-ba53-516d-8beb-a4056cbac517  (Simone Wagner — three subscriptions, two should be cancelled)
+      - 932d3626-708a-596b-a1fc-99c2fa1ce9b3  (Elif Yildiz — car-free, car-sharing-centric multi-modal freelancer)
     """
     from agent.context import load_context
     from agent.engines import analyze_portfolio
@@ -325,7 +349,7 @@ def test_analyst(user_id: str):
 
 
 @app.get("/api/forecaster/{user_id}")
-def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90, as_of_date: str | None = None):
+def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 365, as_of_date: str | None = None):
     """
     Run load_context -> analyze_portfolio -> forecast for a real seeded persona,
     stopping before the optimize/communicate steps of the full /api/analyze
@@ -341,7 +365,7 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90, as_o
     Same six personas as /api/analyst/{user_id} work here.
     """
     from agent.context import load_context
-    from agent.engines import analyze_portfolio, forecast
+    from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast
 
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -354,6 +378,10 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 90, as_o
             raw_calendar_entries=ctx["raw_calendar_entries"],
             forecast_horizon_days=forecast_horizon_days,
             as_of_date=as_of_date,
+        )
+        attach_projected_category_analysis(
+            result, analyst_out["mode_breakdown"], ctx["subscriptions"],
+            ctx["pricing_catalog"], ctx["user"].get("age"),
         )
         return result
     except Exception as e:

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { chat as apiChat, submitFeedback } from '../../api/client'
+import { chat as apiChat, streamChat, submitFeedback } from '../../api/client'
 import { euro, co2 } from '../../lib/format'
 
 // Pick the recommended scenario (or the first) from an analysis result.
@@ -121,13 +121,44 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     setSending(true)
 
     const history = [...messagesRef.current, { role: 'user', content: text }]
+
+    // Grow the last assistant message as streamed tokens arrive. The placeholder is
+    // created lazily on the first token so a failed stream (e.g. 503, no LLM key)
+    // leaves no empty bubble behind and can fall back cleanly.
+    let streamStarted = false
+    const appendToken = (delta) => {
+      setMessages((m) => {
+        if (!streamStarted) {
+          streamStarted = true
+          return [...m, { role: 'assistant', content: delta, traceId: null, feedback: null, streaming: true }]
+        }
+        const last = m.length - 1
+        return m.map((x, i) => (i === last && x.streaming ? { ...x, content: x.content + delta } : x))
+      })
+    }
+
     try {
-      const data = await apiChat(user.id, history)
-      if (!data || !data.reply) throw new Error('no reply')
-      push('assistant', data.reply, data.trace_id || null)
-    } catch {
-      const reply = await scriptedReply(text, { user, lang, getContext, actions })
-      push('assistant', reply)
+      // 1) Preferred path: token streaming.
+      const { traceId } = await streamChat(user.id, history, appendToken)
+      if (!streamStarted) throw new Error('no tokens streamed')
+      setMessages((m) => m.map((x, i) =>
+        i === m.length - 1 && x.streaming ? { ...x, streaming: false, traceId: traceId || null } : x))
+    } catch (streamErr) {
+      // If tokens already rendered, keep them (just finalize the bubble). Otherwise
+      // fall back to 2) non-streaming JSON, then 3) the scripted assistant.
+      if (streamStarted) {
+        setMessages((m) => m.map((x, i) =>
+          i === m.length - 1 && x.streaming ? { ...x, streaming: false } : x))
+      } else {
+        try {
+          const data = await apiChat(user.id, history)
+          if (!data || !data.reply) throw new Error('no reply')
+          push('assistant', data.reply, data.trace_id || null)
+        } catch {
+          const reply = await scriptedReply(text, { user, lang, getContext, actions })
+          push('assistant', reply)
+        }
+      }
     } finally {
       setSending(false)
     }
