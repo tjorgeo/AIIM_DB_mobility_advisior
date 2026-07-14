@@ -6,7 +6,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo'
 import { analyze } from '../api/client'
-import { euro, number } from '../lib/format'
+import { euro, number, subscriptionEmoji } from '../lib/format'
 import ChatWidget from '../components/chat/ChatWidget'
 import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
@@ -44,6 +44,10 @@ export default function Dashboard() {
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
       portfolioTitle: 'Kostenoptimiertes Portfolio',
       currentPlan: 'Dein aktueller Tarif',
+      currentSubsTitle: 'Deine aktuellen Abos',
+      noSubs: 'Keine aktiven Abos hinterlegt.',
+      perMonth: '/ Monat',
+      perYear: '/ Jahr',
       whatChanges: 'WAS SICH ÄNDERT',
       noChanges: 'Keine Änderungen — behalte deinen Tarif bei',
       savingOpp: 'Sparpotenziale',
@@ -68,6 +72,10 @@ export default function Dashboard() {
       basedMonths: 'Based on your last 12 months',
       portfolioTitle: 'Cost-Optimized Portfolio',
       currentPlan: 'Your current plan',
+      currentSubsTitle: 'Your current subscriptions',
+      noSubs: 'No active subscriptions on file.',
+      perMonth: '/ mo',
+      perYear: '/ yr',
       whatChanges: 'WHAT CHANGES',
       noChanges: 'No changes — keep your current plan',
       savingOpp: 'Savings opportunities',
@@ -146,6 +154,7 @@ export default function Dashboard() {
   const summary = analysis?.summary || null
   const communicator = analysis?.raw_agent_payloads?.communicator?.output || null
   const recommended = summary || null
+  const currentSubscriptions = analysis?.current_subscriptions || []
 
   const busy = (v) => (loadingData ? '…' : v)
   const annualSpendStr = analyst ? euro(analyst.current_annual_spend_eur, { lang: langKey }) : busy('—')
@@ -211,7 +220,8 @@ export default function Dashboard() {
           .col-hero { grid-column: span 7; }
           .col-stats-grid { grid-column: span 5; }
           .col-co2 { grid-column: span 5; }
-          .col-portfolio { grid-column: span 7; }
+          .col-current-subs { grid-column: span 7; }
+          .col-portfolio { grid-column: span 12; }
           .col-travel { grid-column: span 7; }
           .col-savings { grid-column: span 5; }
         }
@@ -503,7 +513,45 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 3. PORTFOLIO RECOMMENDATION CARD */}
+        {/* 3. CURRENT SUBSCRIPTIONS CARD */}
+        <div className="col-current-subs" style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '24px',
+          padding: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem' }}>
+            <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700' }}>{t.currentSubsTitle}</h3>
+            <Check size={18} style={{ color: colors.accentCyan }} />
+          </div>
+          {currentSubscriptions.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {currentSubscriptions.map((s) => {
+                const label = s.provider_plan_name || s.provider_name || t.currentPlan
+                const priceStr = s.monthly_cost_eur
+                  ? `${euro(s.monthly_cost_eur, { lang: langKey })} ${t.perMonth}`
+                  : s.annual_cost_eur
+                    ? `${euro(s.annual_cost_eur, { lang: langKey })} ${t.perYear}`
+                    : null
+                return (
+                  <div key={s.user_subscription_id || label} style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.text, fontWeight: '500', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>{subscriptionEmoji(s)} {label}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                      {priceStr && <span style={{ color: colors.textMuted, fontWeight: '600', fontSize: '0.8rem' }}>{priceStr}</span>}
+                      <Check size={16} style={{ color: colors.accentCyan }} />
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.textMuted, fontWeight: '500' }}>
+              {t.noSubs}
+            </div>
+          )}
+        </div>
+
+        {/* 4. PORTFOLIO RECOMMENDATION CARD */}
         <div className="col-portfolio" style={{
           backgroundColor: colors.card,
           border: `2px solid ${colors.accentCyan}`,
@@ -540,11 +588,6 @@ export default function Dashboard() {
                 <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
               </div>
             </div>
-
-            <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: colors.text, fontWeight: '500', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>⭐ {t.currentPlan}</span>
-              <Check size={16} style={{ color: colors.accentCyan }} />
-            </div>
           </div>
 
           <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.85rem' }}>
@@ -555,7 +598,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                 {recChanges.map((c, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: colors.text }}>
-                    <span style={{ color: c.action === 'add' ? colors.successGreen : colors.accentPurple, fontWeight: '800' }}>{c.action === 'add' ? '+' : '−'}</span>
+                    <span style={{ color: c.action === 'add' ? colors.successGreen : colors.accentRed, fontWeight: '800' }}>{c.action === 'add' ? '+' : '−'}</span>
                     {c.item}
                   </div>
                 ))}

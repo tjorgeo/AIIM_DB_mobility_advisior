@@ -45,6 +45,23 @@ export function greeting(name, lang = 'en') {
   return name ? `${g}, ${name}` : g
 }
 
+// Picks a representative emoji for a subscription. Name-based rules come first
+// because `subscription_category` alone can't tell a BahnCard (long-distance
+// train) apart from a Deutschlandticket (local/regional transit) — both are
+// "public_transport" in the DB (see database/init/01_create_table.sql).
+export function subscriptionEmoji({ provider_name = '', provider_plan_name = '', subscription_category = '' } = {}) {
+  const name = `${provider_name} ${provider_plan_name}`.toLowerCase()
+  if (name.includes('bahncard')) return '🚆'
+  if (name.includes('deutschlandticket') || name.includes('jobticket')) return '🚊'
+  switch (subscription_category) {
+    case 'bike_sharing': return '🚲'
+    case 'car_sharing': return '🚗'
+    case 'e_scooter': return '🛴'
+    case 'public_transport': return '🚌'
+    default: return '🎫'
+  }
+}
+
 // "bahncard_25_2nd" -> "Bahncard 25 2nd"
 export function titleizeService(service) {
   return String(service || '')
