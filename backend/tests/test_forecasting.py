@@ -38,7 +38,10 @@ def test_output_shape(analyst_summary):
     assert out["scenarios"][0]["label"] == "baseline"
     assert "predicted_demand" in out["scenarios"][0]
     assert set(out["uncertainty_flags"]) >= {"life_event_detected"}
-    assert isinstance(out["rationale"], str) and out["rationale"]
+    assert isinstance(out["rationale_en"], str) and out["rationale_en"]
+    assert isinstance(out["rationale_de"], str) and out["rationale_de"]
+    assert isinstance(out["scenarios"][0]["description_en"], str) and out["scenarios"][0]["description_en"]
+    assert isinstance(out["scenarios"][0]["description_de"], str) and out["scenarios"][0]["description_de"]
 
 
 def test_one_prediction_per_dominant_pattern_mode(analyst_summary):
@@ -158,7 +161,8 @@ def test_calendar_entries_are_flagged_not_analyzed(analyst_summary):
         forecast_horizon_days=90,
         as_of_date=_AS_OF,
     )
-    assert "not analyzed" in out["rationale"].lower()
+    assert "not analyzed" in out["rationale_en"].lower()
+    assert "nicht analysiert" in out["rationale_de"].lower()
 
 
 def test_reproducible(analyst_summary):

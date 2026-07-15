@@ -1,5 +1,5 @@
-import React from 'react'
-import { ChevronLeft, Wallet, PiggyBank, TrendingUp, Calendar } from 'lucide-react'
+import React, { useState } from 'react'
+import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar } from 'lucide-react'
 import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 import Markdown from '../components/chat/Markdown'
@@ -34,6 +34,18 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       noForecast: 'Für diesen Zeitraum liegt noch keine Prognose vor.',
       fullMemo: 'Vollständige Analyse deines Beraters',
       noData: 'Für diesen Zeitraum liegen noch keine Portfolio-Daten vor.',
+      co2PerYear: 'CO₂/Jahr', timePerYear: 'Zeit/Jahr', hoursShort: 'Std',
+      recommendedBadge: 'EMPFOHLEN',
+      recommendedNotCheapest: 'Nicht die günstigste Option, aber besser nach deiner Kosten-/CO₂-/Zeit-Gewichtung.',
+      modalShiftTitle: 'Kategorie wechseln?', modalShiftSub: 'Vergleich mit anderen Verkehrsmitteln für die gleichen Fahrten',
+      stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`,
+      noBetterShift: 'Kein anderes Verkehrsmittel schneidet nach deiner Gewichtung besser ab.',
+      excludedNote: 'Geprüft, aber nicht vorgeschlagen:',
+      confidenceLow: 'geringe Sicherheit',
+      priorityIntro: (cost, co2, time) => `Gewichtet nach deinen Prioritäten: Kosten ${cost}/100, CO₂ ${co2}/100, Flexibilität/Zeit ${time}/100`,
+      noCurrentToCompare: 'kein aktuelles Abo zum Vergleich',
+      showAlternatives: (n) => (n === 1 ? 'Die 1 Alternative anzeigen' : `Alle ${n} Alternativen anzeigen`),
+      hideAlternatives: 'Alternativen ausblenden',
     }
     : {
       back: 'Back to dashboard', title: 'Cost-Optimized Portfolio', subtitle: "Today's costs, alternatives compared, and what's ahead",
@@ -52,10 +64,40 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       noForecast: 'No forecast available for this period yet.',
       fullMemo: "Your advisor's full analysis",
       noData: 'No portfolio data available for this period yet.',
+      co2PerYear: 'CO₂/yr', timePerYear: 'Time/yr', hoursShort: 'hrs',
+      recommendedBadge: 'RECOMMENDED',
+      recommendedNotCheapest: "Not the cheapest option, but scores better on your cost/CO₂/time weighting.",
+      modalShiftTitle: 'Switch category?', modalShiftSub: 'Comparison with other transport modes for the same trips',
+      stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`,
+      noBetterShift: 'No other mode scores better under your weighting.',
+      excludedNote: 'Checked, but not suggested:',
+      confidenceLow: 'low confidence',
+      priorityIntro: (cost, co2, time) => `Weighted by your priorities: cost ${cost}/100, CO₂ ${co2}/100, flexibility/time ${time}/100`,
+      noCurrentToCompare: 'no current plan to compare against',
+      showAlternatives: (n) => (n === 1 ? 'Show the 1 alternative' : `Show all ${n} alternatives`),
+      hideAlternatives: 'Hide alternatives',
     }
 
+  // Per-category "all alternatives" table — collapsed by default so the page leads
+  // with the verdict (recommendation + best option), not a wall of every plan
+  // considered. Keyed by category so each card's toggle is independent.
+  const [expandedAlternatives, setExpandedAlternatives] = useState(() => new Set())
+  const toggleAlternatives = (category) => setExpandedAlternatives((prev) => {
+    const next = new Set(prev)
+    next.has(category) ? next.delete(category) : next.add(category)
+    return next
+  })
+
   const summary = analysis?.summary || null
-  const categoryAnalysis = summary?.category_subscription_analysis || []
+  // Most-used mode first — same ordering for the category cards and the modal-shift
+  // list below, so both read consistently top-to-bottom by how much the customer
+  // actually relies on that category.
+  const categoryAnalysis = [...(summary?.category_subscription_analysis || [])]
+    .sort((a, b) => (b.annual_trips || 0) - (a.annual_trips || 0))
+  const tripsByCategory = Object.fromEntries(categoryAnalysis.map((c) => [c.category, c.annual_trips || 0]))
+  const modalShiftSuggestions = [...(summary?.modal_shift_suggestions || [])]
+    .sort((a, b) => (tripsByCategory[b.from_category] || 0) - (tripsByCategory[a.from_category] || 0))
+  const preferences = analysis?.preferences || {}
   const totalCurrent = summary?.total_actual_annual_cost_eur || 0
   const totalSavings = summary?.total_estimated_savings_eur || 0
   const totalOptimized = Math.max(totalCurrent - totalSavings, 0)
@@ -117,7 +159,18 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const swatch = modeColor(c.category, isDark)
               const currentSubs = c.current_subscriptions || []
               const alternatives = [...(c.alternatives || [])].sort((a, b) => a.estimated_annual_cost_eur - b.estimated_annual_cost_eur)
-              const best = c.cheapest_alternative
+              const cheapest = c.cheapest_alternative
+              const best = c.recommended_alternative || cheapest
+              const bestDiffersFromCheapest = best && cheapest && best.provider_plan_name !== cheapest.provider_plan_name
+              // cheapest_alternative is just alternatives[0] — the cheapest plan on
+              // file, kept around for the comparison table even when it LOSES to
+              // "keep current" or "cancel" (e.g. every alternative is pricier than
+              // just paying as you go). Only show the prominent callout when an
+              // alternative actually IS the recommendation, never as a fallback
+              // display of a rejected, pricier plan.
+              const showBestAlternative = best
+                && (c.recommendation === 'switch_to_alternative' || c.recommendation === 'consider_subscribing')
+              const isAlternativesExpanded = expandedAlternatives.has(c.category)
 
               return (
                 <div key={c.category} style={cardStyle}>
@@ -130,7 +183,21 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       {meta.label}
                     </span>
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '1rem' }}>{t.categoryTrips(c.annual_trips)}</p>
+                  <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>{t.categoryTrips(c.annual_trips)}</p>
+                  {(c.annual_co2_kg != null || c.annual_time_minutes != null) && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                      {c.annual_co2_kg != null && (
+                        <span style={{ fontSize: '0.72rem', color: colors.textMuted, backgroundColor: colors.inputBg, borderRadius: '999px', padding: '0.2rem 0.6rem' }}>
+                          {t.co2PerYear}: {number(c.annual_co2_kg, langKey)} kg
+                        </span>
+                      )}
+                      {c.annual_time_minutes != null && (
+                        <span style={{ fontSize: '0.72rem', color: colors.textMuted, backgroundColor: colors.inputBg, borderRadius: '999px', padding: '0.2rem 0.6rem' }}>
+                          {t.timePerYear}: {number(Math.round(c.annual_time_minutes / 60), langKey)} {t.hoursShort}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <div className="portfolio-compare" style={{ marginBottom: '1rem' }}>
                     <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
@@ -147,48 +214,85 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                     </div>
                   </div>
 
-                  {best && (
+                  {showBestAlternative && (
                     <div style={{ border: `1px dashed ${colors.accentCyan}`, borderRadius: '14px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentCyan, letterSpacing: '0.04em' }}>{t.bestAlt.toUpperCase()}</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentCyan, letterSpacing: '0.04em' }}>
+                        {(bestDiffersFromCheapest ? t.recommendedBadge : t.bestAlt.toUpperCase())}
+                      </span>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
                         <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{best.provider_plan_name}</span>
                         <span style={{ fontWeight: '800', fontSize: '1rem', color: colors.accentCyan }}>{euro(best.estimated_annual_cost_eur, { lang: langKey })}</span>
                       </div>
                       <div style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.2rem' }}>
-                        {best.annual_savings_vs_current_eur >= 0
-                          ? (isDE ? `Spart ${euro(best.annual_savings_vs_current_eur, { lang: langKey })} ${t.vsCurrent}` : `Saves ${euro(best.annual_savings_vs_current_eur, { lang: langKey })} ${t.vsCurrent}`)
-                          : (isDE ? `${euro(Math.abs(best.annual_savings_vs_current_eur), { lang: langKey })} teurer ${t.vsCurrent}` : `${euro(Math.abs(best.annual_savings_vs_current_eur), { lang: langKey })} more expensive ${t.vsCurrent}`)}
+                        {best.annual_savings_vs_current_eur == null
+                          ? t.noCurrentToCompare
+                          : best.annual_savings_vs_current_eur >= 0
+                            ? (isDE ? `Spart ${euro(best.annual_savings_vs_current_eur, { lang: langKey })} ${t.vsCurrent}` : `Saves ${euro(best.annual_savings_vs_current_eur, { lang: langKey })} ${t.vsCurrent}`)
+                            : (isDE ? `${euro(Math.abs(best.annual_savings_vs_current_eur), { lang: langKey })} teurer ${t.vsCurrent}` : `${euro(Math.abs(best.annual_savings_vs_current_eur), { lang: langKey })} more expensive ${t.vsCurrent}`)}
                       </div>
+                      {bestDiffersFromCheapest && (
+                        <div style={{ fontSize: '0.72rem', color: colors.textMuted, marginTop: '0.35rem', fontStyle: 'italic' }}>
+                          {t.recommendedNotCheapest}
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {alternatives.length > 0 ? (
                     <div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
-                        {t.allAlternatives.toUpperCase()}
-                      </span>
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                          <thead>
-                            <tr style={{ textAlign: 'left', color: colors.textMuted }}>
-                              <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600' }}>{t.plan}</th>
-                              <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600', textAlign: 'right' }}>{t.perYear}</th>
-                              <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600', textAlign: 'right' }}>{t.vsCurrent}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {alternatives.map((a) => (
-                              <tr key={a.provider_plan_name} style={{ borderTop: `1px solid ${colors.border}` }}>
-                                <td style={{ padding: '0.4rem 0.5rem' }}>{a.provider_plan_name}</td>
-                                <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>{euro(a.estimated_annual_cost_eur, { lang: langKey })}</td>
-                                <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: a.annual_savings_vs_current_eur >= 0 ? '#0ca30c' : colors.accentRed, fontWeight: '600' }}>
-                                  {a.annual_savings_vs_current_eur >= 0 ? '+' : ''}{euro(a.annual_savings_vs_current_eur, { lang: langKey })}
-                                </td>
+                      <button
+                        onClick={() => toggleAlternatives(c.category)}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.68rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>
+                          {(isAlternativesExpanded ? t.hideAlternatives : t.showAlternatives(alternatives.length)).toUpperCase()}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          style={{ color: colors.textMuted, transition: 'transform 0.15s', transform: isAlternativesExpanded ? 'rotate(180deg)' : 'none' }}
+                        />
+                      </button>
+                      {isAlternativesExpanded && (
+                        <div style={{ overflowX: 'auto', marginTop: '0.6rem' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', color: colors.textMuted }}>
+                                <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600' }}>{t.plan}</th>
+                                <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600', textAlign: 'right' }}>{t.perYear}</th>
+                                <th style={{ padding: '0.35rem 0.5rem', fontWeight: '600', textAlign: 'right' }}>{t.vsCurrent}</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {alternatives.map((a) => {
+                                const isRecommended = bestDiffersFromCheapest && a.provider_plan_name === best.provider_plan_name
+                                return (
+                                  <tr key={a.provider_plan_name} style={{ borderTop: `1px solid ${colors.border}`, backgroundColor: isRecommended ? `${colors.accentCyan}12` : 'transparent' }}>
+                                    <td style={{ padding: '0.4rem 0.5rem', fontWeight: isRecommended ? '700' : '400' }}>
+                                      {a.provider_plan_name}
+                                      {isRecommended && (
+                                        <span style={{ marginLeft: '0.4rem', fontSize: '0.62rem', fontWeight: '700', color: colors.accentCyan }}>★ {t.recommendedBadge}</span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>{euro(a.estimated_annual_cost_eur, { lang: langKey })}</td>
+                                    {a.annual_savings_vs_current_eur == null ? (
+                                      <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: colors.textMuted, fontStyle: 'italic' }} title={t.noCurrentToCompare}>
+                                        {'–'}
+                                      </td>
+                                    ) : (
+                                      <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: a.annual_savings_vs_current_eur >= 0 ? '#0ca30c' : colors.accentRed, fontWeight: '600' }}>
+                                        {a.annual_savings_vs_current_eur >= 0 ? '+' : ''}{euro(a.annual_savings_vs_current_eur, { lang: langKey })}
+                                      </td>
+                                    )}
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p style={{ fontSize: '0.78rem', color: colors.textMuted }}>{t.noAlternatives}</p>
@@ -196,6 +300,82 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                 </div>
               )
             })}
+
+            {/* Cross-category modal-shift suggestions */}
+            {modalShiftSuggestions.length > 0 && (
+              <div style={cardStyle}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.modalShiftTitle}</h3>
+                <p style={{ fontSize: '0.8rem', color: colors.textMuted, marginBottom: '0.35rem' }}>{t.modalShiftSub}</p>
+                <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginBottom: '1.1rem', fontWeight: '600' }}>
+                  {t.priorityIntro(
+                    preferences.cost_priority ?? 50,
+                    preferences.co2_priority ?? 50,
+                    preferences.convenience_priority ?? 50,
+                  )}
+                </p>
+                <div style={{ display: 'grid', gap: '0.9rem' }}>
+                  {modalShiftSuggestions.map((s) => {
+                    const shift = s.suggested_shift
+                    const costDelta = shift ? shift.annual_cost_eur - (s.stay_annual_cost_eur ?? 0) : null
+                    const co2Delta = shift && shift.annual_co2_kg != null && s.stay_annual_co2_kg != null
+                      ? shift.annual_co2_kg - s.stay_annual_co2_kg : null
+                    const timeDeltaHours = shift && shift.annual_time_minutes != null && s.stay_annual_time_minutes != null
+                      ? Math.round((shift.annual_time_minutes - s.stay_annual_time_minutes) / 60) : null
+                    const deltaColor = (d) => (d <= 0 ? '#0ca30c' : colors.accentRed)
+                    const excluded = s.excluded_candidates || []
+
+                    return (
+                      <div key={s.from_category} style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.9rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: modeColor(s.from_category, isDark), display: 'inline-block' }} />
+                          <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>{modeLabel(s.from_category, langKey)}</span>
+                        </div>
+
+                        {shift ? (
+                          <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: '600', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: modeColor(shift.to_category, isDark), display: 'inline-block' }} />
+                                {t.shiftTo(modeLabel(shift.to_category, langKey))}
+                              </span>
+                              <span style={{ fontWeight: '800', fontSize: '0.95rem' }}>{euro(shift.annual_cost_eur, { lang: langKey })}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.9rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(costDelta) }}>
+                                {costDelta > 0 ? '+' : ''}{euro(costDelta, { lang: langKey })} {t.perYear.toLowerCase()}
+                              </span>
+                              {co2Delta != null && (
+                                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(co2Delta) }}>
+                                  {co2Delta > 0 ? '+' : ''}{number(co2Delta, langKey)} kg {t.co2PerYear}
+                                </span>
+                              )}
+                              {timeDeltaHours != null && (
+                                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(timeDeltaHours) }}>
+                                  {timeDeltaHours > 0 ? '+' : ''}{number(timeDeltaHours, langKey)} {t.hoursShort} {t.timePerYear.toLowerCase()}
+                                </span>
+                              )}
+                            </div>
+                            {shift.feasibility?.confidence === 'low' && (
+                              <div style={{ fontSize: '0.68rem', color: colors.textMuted, marginTop: '0.4rem', fontStyle: 'italic' }}>
+                                ({t.confidenceLow}{shift.feasibility?.reasoning ? `: ${shift.feasibility.reasoning}` : ''})
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '0.8rem', color: colors.textMuted }}>{t.noBetterShift}</p>
+                        )}
+
+                        {excluded.length > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: colors.textMuted, marginTop: '0.5rem' }}>
+                            {t.excludedNote} {excluded.map((e) => modeLabel(e.to_category, langKey)).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Forecast + life events */}
             <div style={cardStyle}>
@@ -243,9 +423,14 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                   {lifeEventDetected ? (
                     <div style={{ border: `1px dashed ${colors.accentCyan}`, borderRadius: '14px', padding: '0.9rem 1rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: '700', color: colors.accentCyan }}>{t.lifeEventTitle(flags.life_event_type)}</span>
-                      {forecaster.rationale && (
-                        <p style={{ fontSize: '0.82rem', color: colors.text, marginTop: '0.5rem', lineHeight: '1.5' }}>{forecaster.rationale}</p>
-                      )}
+                      {(() => {
+                        // Bilingual field (rationale_en/rationale_de) — falls back to
+                        // rationale_en for older persisted rows from before the split.
+                        const rationale = (isDE ? forecaster.rationale_de : forecaster.rationale_en) || forecaster.rationale_en
+                        return rationale && (
+                          <p style={{ fontSize: '0.82rem', color: colors.text, marginTop: '0.5rem', lineHeight: '1.5' }}>{rationale}</p>
+                        )
+                      })()}
                       {flags.recommend_re_evaluation_in_days && (
                         <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.reEval(flags.recommend_re_evaluation_in_days)}</p>
                       )}

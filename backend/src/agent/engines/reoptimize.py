@@ -16,10 +16,17 @@ life-event scenario (``forecaster_out``, when supplied) — the same "Looking ah
 caveat the memo shows, just applied to the constrained re-optimisation instead of the
 plain historical one. Purely informational: never changes ``chosen_annual_cost_eur`` or
 ``actions_required``, which stay grounded in the historical re-derivation only.
+
+The unconstrained (no keep/drop/prefer_plans) fallback comparison uses the same
+weighted cost/CO2/time score as ``analysis.py::_pick_recommendation`` (see
+``engines/scoring.py``), so a re-optimisation without explicit constraints reproduces
+exactly what a fresh analysis would have recommended for that category.
 """
 
+from agent.engines.scoring import pick_best_category_option, resolve_weights
 
-def _rederive_entry(entry: dict, constraints: dict) -> dict:
+
+def _rederive_entry(entry: dict, constraints: dict, weights: dict) -> dict:
     """Return a shallow copy of ``entry`` with its recommendation re-derived under
     ``constraints`` plus a ``chosen_annual_cost_eur`` for the picked option."""
     category = entry["category"]
@@ -27,6 +34,8 @@ def _rederive_entry(entry: dict, constraints: dict) -> dict:
     actual = entry["actual_annual_cost_eur"]
     payg = entry["no_subscription_annual_cost_eur"]
     alternatives = entry.get("alternatives") or []
+    category_co2_kg = entry.get("annual_co2_kg")
+    category_time_minutes = entry.get("annual_time_minutes")
 
     keep = category in set(constraints.get("keep", []))
     drop = category in set(constraints.get("drop", []))
@@ -53,24 +62,40 @@ def _rederive_entry(entry: dict, constraints: dict) -> dict:
         chosen = chosen_alt["estimated_annual_cost_eur"]
         rec = "switch_to_alternative" if held else "consider_subscribing"
     else:
-        # Same three-way comparison the analysis engine uses, over the constrained set.
-        cheapest_alt = (
-            min(candidates, key=lambda a: a["estimated_annual_cost_eur"]) if candidates else None
+        # Same weighted cost/CO2/time comparison analysis.py's _pick_recommendation
+        # uses (see engines/scoring.py), over the constrained candidate set.
+        current = (
+            {
+                "annual_cost_eur": actual,
+                "annual_co2_kg": category_co2_kg,
+                "annual_time_minutes": category_time_minutes,
+            }
+            if actual is not None else None
         )
-        best = actual if held else payg
-        rec = "keep_current" if held else "no_subscription_needed"
-        chosen_alt = None
-        if payg < best:
-            best = payg
-            rec = "cancel_current_go_pay_as_you_go" if held else "no_subscription_needed"
-        if cheapest_alt and cheapest_alt["estimated_annual_cost_eur"] < best:
-            best = cheapest_alt["estimated_annual_cost_eur"]
-            rec = "switch_to_alternative" if held else "consider_subscribing"
-            chosen_alt = cheapest_alt
-        chosen = best
+        no_subscription = (
+            {
+                "annual_cost_eur": payg,
+                "annual_co2_kg": category_co2_kg,
+                "annual_time_minutes": category_time_minutes,
+            }
+            if payg is not None else None
+        )
+        scored_candidates = [
+            {
+                "annual_cost_eur": a["estimated_annual_cost_eur"],
+                "annual_co2_kg": category_co2_kg,
+                "annual_time_minutes": category_time_minutes,
+                "_ref": a,
+            }
+            for a in candidates
+        ]
+        result = pick_best_category_option(current, no_subscription, scored_candidates, held, weights)
+        rec = result["recommendation"]
+        chosen = result["best_cost"]
+        chosen_alt = result["winning_alternative"]
 
     revised["recommendation"] = rec
-    revised["chosen_annual_cost_eur"] = round(chosen, 2)
+    revised["chosen_annual_cost_eur"] = round(chosen, 2) if chosen is not None else None
     revised["chosen_alternative"] = chosen_alt
     return revised
 
@@ -91,7 +116,8 @@ def _life_event_scenario(forecaster_out: dict | None) -> dict | None:
 
 
 def reoptimize_from_analysis(
-    category_analysis: list, constraints: dict | None = None, forecaster_out: dict | None = None
+    category_analysis: list, constraints: dict | None = None, forecaster_out: dict | None = None,
+    weights: dict | None = None,
 ) -> dict:
     """Re-derive every category's verdict under ``constraints`` and roll up the totals.
 
@@ -104,6 +130,12 @@ def reoptimize_from_analysis(
     * ``exclude_plans`` — plan names never to propose as an alternative
     * ``prefer_plans``  — plan names to choose where available, even if not the cheapest
 
+    ``weights`` (optional) is a ``{"cost", "co2", "time"}`` dict from
+    ``scoring.resolve_weights`` — the same weighting the original analysis used, so a
+    re-optimisation without explicit keep/drop/prefer constraints is consistent with
+    it. Defaults to an equal three-way split when omitted (neutral, cost-dominated in
+    practice — see scoring.py).
+
     ``forecaster_out`` (optional) adds a ``forecast_note`` to any category whose
     constrained verdict would differ under the life-event forecast scenario's own
     ``projected_category_analysis`` (same category-comparison shape as
@@ -111,7 +143,8 @@ def reoptimize_from_analysis(
     informational, see module docstring.
     """
     constraints = constraints or {}
-    revised_entries = [_rederive_entry(e, constraints) for e in category_analysis]
+    weights = weights or resolve_weights(None, None, None)
+    revised_entries = [_rederive_entry(e, constraints, weights) for e in category_analysis]
 
     scenario = _life_event_scenario(forecaster_out)
     if scenario:
@@ -128,7 +161,7 @@ def reoptimize_from_analysis(
             ):
                 continue
             try:
-                projected_revised = _rederive_entry(projected_entry, constraints)
+                projected_revised = _rederive_entry(projected_entry, constraints, weights)
             except Exception:
                 # actual_annual_cost_eur can legitimately be None on a projected entry
                 # whose held plan needs duration data the forecast doesn't have (e.g. a

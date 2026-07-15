@@ -210,7 +210,11 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
     note = _coverage_note(entry, lang)
     prefix_with_note = f"**{label}{note}:** " if include_label else ""
     prefix_plain = f"**{label}:** " if include_label else ""
-    alt = entry.get("cheapest_alternative")
+    # The scoring winner (cost+CO2+time), not necessarily the cheapest plan on file —
+    # see analysis.py's recommended_alternative vs. cheapest_alternative distinction.
+    # Falls back to cheapest_alternative for older persisted rows computed before that
+    # field existed.
+    alt = entry.get("recommended_alternative") or entry.get("cheapest_alternative")
     alt_name = alt["provider_plan_name"] if alt else None
 
     if rec == "keep_current":
@@ -294,6 +298,134 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             f"{prefix_plain}Einzelfahrscheine bleiben die günstigste Option — kein Abo nötig."
         )
     return text, max(savings, 0.0)
+
+
+def _join_and(parts: list[str], lang: str) -> str:
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    conj = " and " if lang == "en" else " und "
+    return ", ".join(parts[:-1]) + conj + parts[-1]
+
+
+def _modal_shift_line(entry: dict, lang: str) -> str | None:
+    """One paragraph describing a cross-category modal-shift suggestion for
+    ``entry`` (one entry of ``modal_shift_suggestions``), or ``None`` when nothing
+    beat staying (``suggested_shift`` is ``None``) — nothing to say for that category.
+
+    Deliberately does NOT quote ``feasibility.reasoning`` verbatim (it's always
+    written in English by modal_shift.py's LLM call/fallback) — embedding it
+    untranslated into the German memo would mix languages. The LLM-written memo
+    (analyst_system.md) handles this properly by translating the reasoning itself;
+    this deterministic template only states the figures plus a confidence caveat.
+    """
+    shift = entry.get("suggested_shift")
+    if not shift:
+        return None
+    en = lang == "en"
+    labels = _CATEGORY_LABEL_EN if en else _CATEGORY_LABEL_DE
+    from_label = labels.get(entry.get("from_category"), entry.get("from_category"))
+    to_label = labels.get(shift.get("to_category"), shift.get("to_category"))
+
+    parts: list[str] = []
+    stay_cost, shift_cost = entry.get("stay_annual_cost_eur"), shift.get("annual_cost_eur")
+    if stay_cost is not None and shift_cost is not None:
+        cost_delta = shift_cost - stay_cost
+        if en:
+            parts.append(
+                f"save an estimated €{abs(cost_delta):.2f}/year" if cost_delta <= 0
+                else f"cost an estimated €{cost_delta:.2f}/year more"
+            )
+        else:
+            parts.append(
+                f"geschätzt €{abs(cost_delta):.2f}/Jahr sparen" if cost_delta <= 0
+                else f"geschätzt €{cost_delta:.2f}/Jahr mehr kosten"
+            )
+
+    stay_co2, shift_co2 = entry.get("stay_annual_co2_kg"), shift.get("annual_co2_kg")
+    if stay_co2 is not None and shift_co2 is not None:
+        co2_delta = shift_co2 - stay_co2
+        if en:
+            parts.append(
+                f"cut CO₂ by {abs(co2_delta):.1f}kg/year" if co2_delta <= 0
+                else f"add {co2_delta:.1f}kg/year of CO₂"
+            )
+        else:
+            parts.append(
+                f"CO₂ um {abs(co2_delta):.1f}kg/Jahr senken" if co2_delta <= 0
+                else f"CO₂ um {co2_delta:.1f}kg/Jahr erhöhen"
+            )
+
+    stay_time, shift_time = entry.get("stay_annual_time_minutes"), shift.get("annual_time_minutes")
+    if stay_time is not None and shift_time is not None:
+        time_delta_hours = round((shift_time - stay_time) / 60)
+        if time_delta_hours != 0:
+            if en:
+                parts.append(
+                    f"take about {abs(time_delta_hours)}h/year less time" if time_delta_hours <= 0
+                    else f"take about {time_delta_hours}h/year more time"
+                )
+            else:
+                parts.append(
+                    f"rund {abs(time_delta_hours)} Std/Jahr weniger Zeit brauchen" if time_delta_hours <= 0
+                    else f"rund {time_delta_hours} Std/Jahr mehr Zeit brauchen"
+                )
+
+    if not parts:
+        return None  # nothing quantifiable to say (shouldn't normally happen)
+    delta_clause = _join_and(parts, lang)
+
+    confidence = (shift.get("feasibility") or {}).get("confidence")
+    if confidence == "low":
+        caveat = (
+            " This is a tentative idea — not yet checked against your personal circumstances."
+            if en else
+            " Das ist eine vorläufige Idee — noch nicht gegen deine persönliche Situation geprüft."
+        )
+    else:
+        caveat = ""
+
+    if en:
+        return f"**{from_label} → {to_label}:** shifting these trips could {delta_clause}.{caveat}"
+    return f"**{from_label} → {to_label}:** ein Wechsel dieser Fahrten könnte {delta_clause}.{caveat}"
+
+
+def _preferences_intro(preferences: dict, lang: str) -> str:
+    """One sentence naming the customer's own 0-100 onboarding priority scores —
+    what ``suggested_shift`` in modal_shift_suggestions was actually weighted by
+    (see engines/scoring.py) — so a shift that costs/emits more but was still
+    suggested reads as intentional (their flexibility/time priority outweighed the
+    others) rather than an unexplained inconsistency."""
+    cost = preferences.get("cost_priority", 50)
+    co2 = preferences.get("co2_priority", 50)
+    time_ = preferences.get("convenience_priority", 50)
+    if lang == "en":
+        return (
+            f"Weighted by how you told us you prioritize this — cost **{cost}/100**, "
+            f"CO₂ **{co2}/100**, flexibility/time **{time_}/100** — here's where a "
+            f"bigger change could pay off:"
+        )
+    return (
+        f"Gewichtet nach deinen angegebenen Prioritäten — Kosten **{cost}/100**, "
+        f"CO₂ **{co2}/100**, Flexibilität/Zeit **{time_}/100** — hier könnte sich eine "
+        f"größere Veränderung lohnen:"
+    )
+
+
+def _modal_shift_section(analysis_result: dict, lang: str) -> str | None:
+    """A "## Bigger changes worth considering" section built from
+    ``modal_shift_suggestions`` — the cross-category comparison, distinct from the
+    plan-level ``category_subscription_analysis`` covered above it in the memo body.
+    Returns ``None`` (section omitted) when no category has a real suggested shift,
+    rather than stating that nothing was found."""
+    suggestions = analysis_result.get("modal_shift_suggestions") or []
+    lines = [line for entry in suggestions if (line := _modal_shift_line(entry, lang))]
+    if not lines:
+        return None
+    header = "## Bigger changes worth considering" if lang == "en" else "## Größere Veränderungen, die sich lohnen könnten"
+    intro = _preferences_intro(analysis_result.get("preferences") or {}, lang)
+    return f"{header}\n\n{intro}\n\n" + "\n\n".join(lines)
 
 
 def _verdict_changed(entry: dict, projected_entry: dict | None) -> bool:
@@ -444,7 +576,11 @@ def _forecast_outlook_section(forecaster_out: dict | None, categories: list[dict
         )
         return f"{header}\n\n{body}"
 
-    description = event_scenario.get("description") or ""
+    # Bilingual field (description_en/description_de) since forecasting.py's LLM/
+    # fallback output is bilingual, same as this memo — never render the wrong
+    # language's text. Falls back to description_en for older persisted rows from
+    # before the split.
+    description = event_scenario.get(f"description_{lang}") or event_scenario.get("description_en") or ""
     intro = (
         f"Your calendar shows an upcoming **{life_event_noun_en}** — here's what that "
         f"could mean: {description}"
@@ -545,7 +681,10 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
                 "category": entry["category"],
                 "action": rec,
                 "from": _current_names(entry) if entry["current_subscriptions"] else None,
-                "to": entry["cheapest_alternative"]["provider_plan_name"] if entry.get("cheapest_alternative") else None,
+                "to": (
+                    (entry.get("recommended_alternative") or entry.get("cheapest_alternative"))["provider_plan_name"]
+                    if (entry.get("recommended_alternative") or entry.get("cheapest_alternative")) else None
+                ),
                 "estimated_annual_savings_eur": savings_en,
             })
 
@@ -565,6 +704,8 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         "Ihr aktuelles Setup ist in den von Ihnen genutzten Kategorien bereits kosteneffizient."
     )
 
+    modal_shift_en = _modal_shift_section(analysis_result, "en")
+    modal_shift_de = _modal_shift_section(analysis_result, "de")
     outlook_en = _forecast_outlook_section(forecaster_out, categories, "en")
     outlook_de = _forecast_outlook_section(forecaster_out, categories, "de")
 
@@ -575,6 +716,7 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         f"alternative.\n\n"
         f"{body_en}\n\n"
         f"{savings_line_en}\n\n"
+        + (f"{modal_shift_en}\n\n" if modal_shift_en else "")
         + (f"{outlook_en}\n\n" if outlook_en else "")
         + f"Best regards,\n"
         f"DB MoveOptimizer Strategy Advisor"
@@ -585,6 +727,7 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
         f"zwischen Ihren aktuellen Kosten, Einzelfahrscheinen und vergleichbaren Abo-Alternativen.\n\n"
         f"{body_de}\n\n"
         f"{savings_line_de}\n\n"
+        + (f"{modal_shift_de}\n\n" if modal_shift_de else "")
         + (f"{outlook_de}\n\n" if outlook_de else "")
         + f"Mit freundlichen Grüßen,\n"
         f"Ihr DB MoveOptimizer Strategieberater"

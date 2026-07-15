@@ -20,6 +20,7 @@ import logging
 
 from agent.context import load_context
 from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast, template_memos
+from agent.engines.modal_shift import build_modal_shift_suggestions
 from agent.llm import llm_available
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,19 @@ def run_analysis(user_id: str) -> dict:
     # comparison off the user's actual travel history, never off a "holding any plan
     # makes the category free" assumption — see analysis.py's _pricing_basis.
     analyst_out = analyze_portfolio(
-        travel_history, subscriptions, ctx["pricing_catalog"], user_age=ctx["user"].get("age")
+        travel_history, subscriptions, ctx["pricing_catalog"], user_age=ctx["user"].get("age"),
+        preferences=preferences,
     )
-    analyst_out["preferences"] = preferences  # referenced by the memo
+    analyst_out["preferences"] = preferences  # referenced by the memo, and re-derived
+    # from in tools/optimize.py so a chat re-optimisation stays weighted the same way
+
+    # Cross-category modal-shift comparison — deterministic candidate pricing/CO2/time
+    # plus one batched LLM call judging free-text feasibility (see modal_shift.py's
+    # module docstring). Runs fresh every analysis, no caching.
+    analyst_out["modal_shift_suggestions"] = build_modal_shift_suggestions(
+        analyst_out["mode_breakdown"], analyst_out["category_subscription_analysis"],
+        ctx.get("onboarding_raw") or {}, preferences, use_llm=True,
+    )
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +
     # seasonality) plus the user's upcoming calendar entries (see context.py).
@@ -66,7 +77,7 @@ def run_analysis(user_id: str) -> dict:
     # pricing/eligibility logic, never lets the forecaster (or its LLM) touch money.
     attach_projected_category_analysis(
         forecaster_out, analyst_out["mode_breakdown"], subscriptions,
-        ctx["pricing_catalog"], ctx["user"].get("age"),
+        ctx["pricing_catalog"], ctx["user"].get("age"), preferences=preferences,
     )
 
     # --- communicate: template memo, upgraded to LLM prose when available ---

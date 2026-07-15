@@ -115,6 +115,135 @@ def test_category_line_names_which_modes_it_covers():
     assert "Long-distance rail" in memo["memo_english"]
 
 
+def test_forecast_outlook_picks_matching_language_description():
+    """Regression: the scenario description is bilingual (description_en/
+    description_de, see forecasting.py) — the English memo must never quote the
+    German text or vice versa."""
+    analysis = {
+        "category_subscription_analysis": [
+            {
+                "category": "public_transport", "annual_trips": 20.0,
+                "no_subscription_annual_cost_eur": 300.0, "actual_annual_cost_eur": 300.0,
+                "current_subscriptions": [], "cheapest_alternative": None,
+                "non_comparable_alternatives": [], "recommendation": "no_subscription_needed",
+            }
+        ],
+    }
+    forecaster_out = {
+        "scenarios": [
+            {"label": "baseline", "description_en": "Baseline scenario.", "description_de": "Basisszenario.",
+             "predicted_demand": []},
+            {"label": "post_relocation",
+             "description_en": "English-only relocation description.",
+             "description_de": "Rein deutsche Umzugsbeschreibung.",
+             "predicted_demand": [], "projected_category_analysis": []},
+        ],
+        "uncertainty_flags": {"life_event_detected": True, "life_event_type": "relocation"},
+    }
+    memo = template_memos("Test User", analysis, forecaster_out)
+    assert "English-only relocation description." in memo["memo_english"]
+    assert "Rein deutsche Umzugsbeschreibung." not in memo["memo_english"]
+    assert "Rein deutsche Umzugsbeschreibung." in memo["memo_german"]
+    assert "English-only relocation description." not in memo["memo_german"]
+
+
+def test_modal_shift_section_states_the_users_priority_scores():
+    analysis = {
+        "category_subscription_analysis": [],
+        "preferences": {"cost_priority": 60, "co2_priority": 45, "convenience_priority": 80},
+        "modal_shift_suggestions": [
+            {
+                "from_category": "e_scooter",
+                "stay_annual_cost_eur": 422.54,
+                "stay_annual_co2_kg": 4.51,
+                "stay_annual_time_minutes": 980.7,
+                "suggested_shift": {
+                    "to_category": "bike_sharing",
+                    "annual_cost_eur": 171.69,
+                    "annual_co2_kg": 1.13,
+                    "annual_time_minutes": 1066.6,
+                    "feasibility": {"feasible": True, "confidence": "high", "reasoning": "..."},
+                },
+                "excluded_candidates": [],
+            }
+        ],
+    }
+    memo = template_memos("Test User", analysis)
+    assert "60/100" in memo["memo_english"]
+    assert "45/100" in memo["memo_english"]
+    assert "80/100" in memo["memo_english"]
+    assert "Kosten **60/100**" in memo["memo_german"]
+
+
+def test_modal_shift_section_appears_when_a_shift_is_suggested():
+    analysis = {
+        "category_subscription_analysis": [],
+        "modal_shift_suggestions": [
+            {
+                "from_category": "e_scooter",
+                "stay_annual_cost_eur": 422.54,
+                "stay_annual_co2_kg": 4.51,
+                "stay_annual_time_minutes": 980.7,
+                "suggested_shift": {
+                    "to_category": "bike_sharing",
+                    "annual_cost_eur": 171.69,
+                    "annual_co2_kg": 1.13,
+                    "annual_time_minutes": 1066.6,
+                    "feasibility": {"feasible": True, "confidence": "high", "reasoning": "..."},
+                },
+                "excluded_candidates": [],
+            }
+        ],
+    }
+    memo = template_memos("Test User", analysis)
+    assert "Bigger changes worth considering" in memo["memo_english"]
+    assert "E-scooter" in memo["memo_english"] and "Bike sharing" in memo["memo_english"]
+    assert "save an estimated €250.85/year" in memo["memo_english"]
+    assert "Größere Veränderungen" in memo["memo_german"]
+    # Low-confidence caveat must NOT appear for a high-confidence suggestion.
+    assert "tentative" not in memo["memo_english"]
+
+
+def test_modal_shift_section_omitted_when_nothing_beats_staying():
+    analysis = {
+        "category_subscription_analysis": [],
+        "modal_shift_suggestions": [
+            {"from_category": "car_sharing", "stay_annual_cost_eur": 500.0,
+             "stay_annual_co2_kg": 50.0, "stay_annual_time_minutes": 300.0,
+             "suggested_shift": None, "excluded_candidates": []},
+        ],
+    }
+    memo = template_memos("Test User", analysis)
+    assert "Bigger changes worth considering" not in memo["memo_english"]
+    assert "Größere Veränderungen" not in memo["memo_german"]
+
+
+def test_modal_shift_low_confidence_gets_caveat_and_no_raw_english_leaks_into_german():
+    analysis = {
+        "category_subscription_analysis": [],
+        "modal_shift_suggestions": [
+            {
+                "from_category": "car_sharing",
+                "stay_annual_cost_eur": 500.0, "stay_annual_co2_kg": 100.0, "stay_annual_time_minutes": 300.0,
+                "suggested_shift": {
+                    "to_category": "bike_sharing", "annual_cost_eur": 450.0,
+                    "annual_co2_kg": 90.0, "annual_time_minutes": 300.0,
+                    "feasibility": {
+                        "feasible": True, "confidence": "low",
+                        "reasoning": "LLM not available; free-text onboarding constraints were not checked.",
+                    },
+                },
+                "excluded_candidates": [],
+            }
+        ],
+    }
+    memo = template_memos("Test User", analysis)
+    assert "tentative idea" in memo["memo_english"]
+    assert "vorläufige Idee" in memo["memo_german"]
+    # The raw English reasoning string must never leak untranslated into the German memo.
+    assert "not available" not in memo["memo_german"]
+
+
 def test_keep_current_reports_no_action_and_no_savings():
     analysis = {
         "category_subscription_analysis": [

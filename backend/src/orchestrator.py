@@ -235,6 +235,7 @@ class Orchestrator:
                 "category_subscription_analysis": analyst_out.get(
                     "category_subscription_analysis", []
                 ),
+                "modal_shift_suggestions": analyst_out.get("modal_shift_suggestions", []),
                 "memos": {
                     "english": communicator_out["memo_english"],
                     "german": communicator_out["memo_german"],
