@@ -14,6 +14,7 @@ import ThemeToggle from '../components/ThemeToggle.jsx'
 import TravelInsights from './TravelInsights.jsx'
 import CostBreakdown from './CostBreakdown.jsx'
 import PortfolioDetail from './PortfolioDetail.jsx'
+import { modeLabel } from '../lib/travelModes'
 
 export default function Dashboard() {
   const { logout, currentUser } = useAuth()
@@ -210,7 +211,7 @@ export default function Dashboard() {
   const derivedTravelStats = analyst?.mode_breakdown
     ? Object.entries(analyst.mode_breakdown)
         .map(([name, d]) => ({
-          name,
+          name: modeLabel(name, langKey),
           trips: String(d.trips),
           pct: analyst.total_trips ? Math.round((d.trips / analyst.total_trips) * 100) : 0,
         }))
