@@ -7,8 +7,10 @@ import Markdown from '../components/chat/Markdown'
 function recMeta(rec, colors, isDE) {
   switch (rec) {
     case 'keep_current': return { label: isDE ? 'Behalten' : 'Keep', color: colors.successGreen }
-    case 'switch_to_alternative': return { label: isDE ? 'Abo wechseln' : 'Switch plan', color: colors.accentCyan }
+    case 'switch_to_alternative': return { label: isDE ? 'Abo wechseln' : 'Switch plan', color: colors.accentAmber }
     case 'cancel_current_go_pay_as_you_go': return { label: isDE ? 'Kündigen' : 'Cancel', color: colors.accentRed }
+    case 'no_subscription_needed': return { label: isDE ? 'Kein Abo nötig' : 'No subscription needed', color: colors.successGreen }
+    case 'consider_subscribing': return { label: isDE ? 'Abo empfohlen' : 'Consider subscribing', color: colors.accentAmber }
     default: return { label: rec || (isDE ? 'Unbekannt' : 'Unknown'), color: colors.textMuted }
   }
 }
@@ -179,7 +181,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: swatch, display: 'inline-block' }} />
                       <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>{modeLabel(c.category, langKey)}</h3>
                     </div>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}18`, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}40`, border: `1px solid ${meta.color}66`, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
                       {meta.label}
                     </span>
                   </div>
