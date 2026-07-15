@@ -30,6 +30,10 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       forecastTitle: 'Prognose für die nächsten 12 Monate', forecastSub: 'Erwartete Nutzung auf Basis deiner Historie',
       mode: 'Verkehrsmittel', tripsPerYear: 'Fahrten/Jahr',
       lifeEventTitle: (type) => `Lebensereignis erkannt: ${type === 'relocation' ? 'Umzug' : type}`,
+      lifeEventNoun: (type) => (type === 'relocation' ? 'Umzug' : type),
+      moreTrips: 'mehr Fahrten mit', fewerTrips: 'weniger Fahrten mit', expectPrefix: 'Erwartet werden',
+      higherCost: 'höhere Kosten für', lowerCost: 'niedrigere Kosten für', perYearShort: 'Jahr',
+      recDivergesAfterEvent: (event, label) => `Nach dem ${event} wäre voraussichtlich „${label}“ die bessere Wahl.`,
       reEval: (days) => `Empfehlung: Analyse in ca. ${days} Tagen erneut prüfen.`,
       demandChange: 'Erwartete Änderung des Reiseverhaltens', baseline: 'Bisher', afterEvent: 'Nach Ereignis',
       noLifeEvent: 'Aktuell sind keine bevorstehenden Lebensereignisse in deinem Kalender erkannt worden, die deine Empfehlungen ändern würden.',
@@ -60,6 +64,10 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       forecastTitle: 'Forecast for the next 12 months', forecastSub: 'Expected usage based on your history',
       mode: 'Mode', tripsPerYear: 'Trips/yr',
       lifeEventTitle: (type) => `Life event detected: ${type === 'relocation' ? 'Relocation' : type}`,
+      lifeEventNoun: (type) => (type === 'relocation' ? 'the move' : type),
+      moreTrips: 'more trips with', fewerTrips: 'fewer trips with', expectPrefix: 'Expect',
+      higherCost: 'higher costs for', lowerCost: 'lower costs for', perYearShort: 'yr',
+      recDivergesAfterEvent: (event, label) => `After ${event}, "${label}" would likely be the better choice.`,
       reEval: (days) => `Recommendation: re-check this analysis in about ${days} days.`,
       demandChange: 'Expected change in travel behavior', baseline: 'Before', afterEvent: 'After event',
       noLifeEvent: 'No upcoming life events were detected in your calendar that would change these recommendations.',
@@ -113,6 +121,58 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   const eventScenario = scenarios.length > 1 ? scenarios[scenarios.length - 1] : null
   const flags = forecaster?.uncertainty_flags
   const lifeEventDetected = !!flags?.life_event_detected
+  // Historical recommendations (category_subscription_analysis) are scored purely from
+  // past trip legs and never reconsidered against the life-event-adjusted forecast, so
+  // the two can disagree — this projects the post-event scenario's own recommendation
+  // per category to let the card flag it when they diverge.
+  const projectedByCategory = Object.fromEntries(
+    (eventScenario?.projected_category_analysis || []).map((p) => [p.category, p]),
+  )
+
+  // Data-driven impact summary — computed from the two scenarios' own category-level
+  // projections rather than the LLM's free-text rationale, so it's guaranteed to state
+  // real numbers. Per category, prefer a trip-volume clause (e.g. a mode shift) when
+  // trip counts actually move; otherwise fall back to a cost clause, since a life event
+  // can raise costs without changing how often someone travels at all (e.g. moving
+  // farther away makes the same daily commute pricier per trip, not more frequent).
+  const baselineProjByCategory = Object.fromEntries(
+    (baselineScenario?.projected_category_analysis || []).map((p) => [p.category, p]),
+  )
+  const lifeEventImpactClauses = (lifeEventDetected && baselineScenario && eventScenario)
+    ? Object.keys(projectedByCategory)
+        .map((category) => {
+          const before = baselineProjByCategory[category]
+          const after = projectedByCategory[category]
+          if (!before || !after) return null
+          const tripsPct = before.annual_trips
+            ? Math.round(((after.annual_trips - before.annual_trips) / before.annual_trips) * 100)
+            : 0
+          if (Math.abs(tripsPct) >= 10) {
+            return { category, kind: 'trips', pct: tripsPct, magnitude: Math.abs(tripsPct) }
+          }
+          const costDelta = (after.actual_annual_cost_eur ?? 0) - (before.actual_annual_cost_eur ?? 0)
+          const costPct = before.actual_annual_cost_eur ? (costDelta / before.actual_annual_cost_eur) * 100 : 0
+          if (Math.abs(costDelta) >= 20 && Math.abs(costPct) >= 5) {
+            return { category, kind: 'cost', delta: costDelta, magnitude: Math.abs(costPct) }
+          }
+          return null
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.magnitude - a.magnitude)
+    : []
+  const lifeEventImpactSentence = (() => {
+    if (lifeEventImpactClauses.length === 0) return null
+    const clause = (c) => {
+      if (c.kind === 'trips') {
+        const dirWord = c.pct > 0 ? t.moreTrips : t.fewerTrips
+        return `${dirWord} ${modeLabel(c.category, langKey)} (${c.pct > 0 ? '+' : ''}${c.pct}%)`
+      }
+      const dirWord = c.delta > 0 ? t.higherCost : t.lowerCost
+      return `${dirWord} ${modeLabel(c.category, langKey)} (${c.delta > 0 ? '+' : ''}${euro(c.delta, { lang: langKey })}/${t.perYearShort})`
+    }
+    const joiner = isDE ? ' und ' : ' and '
+    return `${t.expectPrefix} ${lifeEventImpactClauses.slice(0, 2).map(clause).join(joiner)}.`
+  })()
 
   const cardStyle = { backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '24px', padding: '1.5rem' }
   const kpi = (icon, label, value) => (
@@ -170,6 +230,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
             {/* Per-category cost comparison — "Vergleich Kosten heute" + "Vergleich mit anderen Abos" */}
             {categoryAnalysis.map((c) => {
               const meta = recMeta(c.recommendation, colors, isDE)
+              const projectedRec = projectedByCategory[c.category]
+              const projectedRecDiverges = projectedRec && projectedRec.recommendation !== c.recommendation
               const shiftSuggestion = shiftByCategory[c.category]
               const shift = shiftSuggestion?.suggested_shift
               const shiftCostDelta = shift ? shift.annual_cost_eur - (shiftSuggestion.stay_annual_cost_eur ?? 0) : null
@@ -207,6 +269,11 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                     </span>
                   </div>
                   <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>{t.categoryTrips(c.annual_trips)}</p>
+                  {projectedRecDiverges && (
+                    <p style={{ fontSize: '0.75rem', color: colors.accentAmber, fontStyle: 'italic', marginTop: '-0.15rem', marginBottom: '0.5rem' }}>
+                      {t.recDivergesAfterEvent(t.lifeEventNoun(flags.life_event_type), recMeta(projectedRec.recommendation, colors, isDE).label)}
+                    </p>
+                  )}
                   {(c.annual_co2_kg != null || c.annual_time_minutes != null) && (
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                       {c.annual_co2_kg != null && (
@@ -418,12 +485,17 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                   {lifeEventDetected ? (
                     <div style={{ border: `1px dashed ${colors.accentCyan}`, borderRadius: '14px', padding: '0.9rem 1rem' }}>
                       <span style={{ fontSize: '0.75rem', fontWeight: '700', color: colors.accentCyan }}>{t.lifeEventTitle(flags.life_event_type)}</span>
+                      {lifeEventImpactSentence && (
+                        <p style={{ fontSize: '0.88rem', fontWeight: '600', color: colors.text, marginTop: '0.5rem', lineHeight: '1.5' }}>
+                          {lifeEventImpactSentence}
+                        </p>
+                      )}
                       {(() => {
                         // Bilingual field (rationale_en/rationale_de) — falls back to
                         // rationale_en for older persisted rows from before the split.
                         const rationale = (isDE ? forecaster.rationale_de : forecaster.rationale_en) || forecaster.rationale_en
                         return rationale && (
-                          <p style={{ fontSize: '0.82rem', color: colors.text, marginTop: '0.5rem', lineHeight: '1.5' }}>{rationale}</p>
+                          <p style={{ fontSize: '0.8rem', color: colors.textMuted, marginTop: '0.5rem', lineHeight: '1.5' }}>{rationale}</p>
                         )
                       })()}
                       {flags.recommend_re_evaluation_in_days && (
