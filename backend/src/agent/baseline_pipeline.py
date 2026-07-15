@@ -219,6 +219,25 @@ def run_baseline(user_id: str) -> dict:
     if ctx.get("error"):
         return {"error": ctx["error"]}
 
+    return run_baseline_from_context(ctx, user_id=user_id)
+
+
+def run_baseline_from_context(ctx: dict, user_id: str | None = None) -> dict:
+    """Run the baseline over an already-loaded ``load_context`` payload.
+
+    Split out from :func:`run_baseline` so callers that already hold the raw
+    context — notably the comparison experiment, which stores it as the dataset
+    item input — can run the single LLM call without touching the database. The
+    ``user_id`` is only used to tag the trace; it falls back to the id carried on
+    ``ctx['user']`` when not supplied.
+
+    Returns ``{"error": ...}`` when no LLM key is configured. Raises ``ValueError``
+    on an unusable LLM reply.
+    """
+    if not llm_available():
+        return {"error": "No LLM configured (UNI_GPT_API_KEY missing); the baseline requires one."}
+
+    user_id = user_id or ctx.get("user", {}).get("user_id")
     grounding = build_grounding(ctx)
 
     from langchain_core.messages import HumanMessage, SystemMessage
