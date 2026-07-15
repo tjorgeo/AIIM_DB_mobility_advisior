@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar, Euro, Leaf, Clock } from 'lucide-react'
 import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 import Markdown from '../components/chat/Markdown'
@@ -323,7 +323,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       ? shift.annual_co2_kg - s.stay_annual_co2_kg : null
                     const timeDeltaHours = shift && shift.annual_time_minutes != null && s.stay_annual_time_minutes != null
                       ? Math.round((shift.annual_time_minutes - s.stay_annual_time_minutes) / 60) : null
-                    const deltaColor = (d) => (d <= 0 ? '#0ca30c' : colors.accentRed)
+                    const deltaColor = (d) => (d <= 0 ? colors.successGreen : colors.accentRed)
                     const excluded = s.excluded_candidates || []
 
                     return (
@@ -335,25 +335,31 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
 
                         {shift ? (
                           <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <span style={{ fontWeight: '600', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: modeColor(shift.to_category, isDark), display: 'inline-block' }} />
                                 {t.shiftTo(modeLabel(shift.to_category, langKey))}
                               </span>
-                              <span style={{ fontWeight: '800', fontSize: '0.95rem' }}>{euro(shift.annual_cost_eur, { lang: langKey })}</span>
+                              <span style={{ textAlign: 'right' }}>
+                                <div style={{ fontWeight: '800', fontSize: '0.95rem' }}>{euro(shift.annual_cost_eur, { lang: langKey })}</div>
+                                <div style={{ fontSize: '0.65rem', color: colors.textMuted, fontWeight: '600' }}>{t.perYear}</div>
+                              </span>
                             </div>
-                            <div style={{ display: 'flex', gap: '0.9rem', marginTop: '0.45rem', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(costDelta) }}>
-                                {costDelta > 0 ? '+' : ''}{euro(costDelta, { lang: langKey })} {t.perYear.toLowerCase()}
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(costDelta), backgroundColor: `${deltaColor(costDelta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                                <Euro size={11} />
+                                {costDelta > 0 ? '+' : ''}{euro(costDelta, { lang: langKey })} {t.perYear}
                               </span>
                               {co2Delta != null && (
-                                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(co2Delta) }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(co2Delta), backgroundColor: `${deltaColor(co2Delta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                                  <Leaf size={11} />
                                   {co2Delta > 0 ? '+' : ''}{number(co2Delta, langKey)} kg {t.co2PerYear}
                                 </span>
                               )}
                               {timeDeltaHours != null && (
-                                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: deltaColor(timeDeltaHours) }}>
-                                  {timeDeltaHours > 0 ? '+' : ''}{number(timeDeltaHours, langKey)} {t.hoursShort} {t.timePerYear.toLowerCase()}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(timeDeltaHours), backgroundColor: `${deltaColor(timeDeltaHours)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                                  <Clock size={11} />
+                                  {timeDeltaHours > 0 ? '+' : ''}{number(timeDeltaHours, langKey)} {t.hoursShort} {t.timePerYear}
                                 </span>
                               )}
                             </div>
