@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Wallet, Leaf, Route, Globe, LogOut, TrendingUp,
+  Wallet, Leaf, Globe, LogOut, TrendingUp,
   Check, ChevronDown, ChevronRight, BarChart3, AlertCircle,
-  PiggyBank, CheckCircle2, AlertTriangle
+  CheckCircle2, AlertTriangle, RefreshCw
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo'
@@ -42,20 +42,20 @@ export default function Dashboard() {
       analyzing: 'Wir analysieren deine Fahrten…',
       analyzingSub: 'Dein persönlicher Plan ist gleich fertig.',
       annualSpend: 'JÄHRLICHE AUSGABEN',
-      distance: 'DISTANZ',
       co2: 'CO₂-FUSABDRUCK (12 MONATE)',
-      acrossTransit: 'Über alle Verkehrsmittel',
       estimatedEmissions: 'Geschätzte Emissionen',
-      realizedSavings: 'ERSPARNIS DURCH ABOS',
-      viaSubscriptions: 'Ggü. Einzelfahrten',
       worthIt: (v) => `Spart ${euro(v, { lang: 'de' })}`,
       notWorthIt: (v) => `${euro(v, { lang: 'de' })} Mehrkosten`,
       howYouTravel: 'Wie du reist',
+      tripsLabel: 'Fahrten',
       viewDetails: 'Alle Details ansehen',
       recommended: 'Für dich empfohlen',
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
-      portfolioTitle: 'Kostenoptimiertes Portfolio',
+      portfolioTitle: 'Dein optimiertes Portfolio',
       estimated: 'Geschätzt',
+      insteadOfBefore: (v) => `statt bisher ${v}`,
+      savingsBadge: (v) => `− ${v} Ersparnis`,
+      extraCostBadge: (v) => `+ ${v} Mehrkosten`,
       currentPlan: 'Dein aktueller Tarif',
       currentSubsTitle: 'Deine aktuellen Abos',
       noSubs: 'Keine aktiven Abos hinterlegt.',
@@ -66,7 +66,8 @@ export default function Dashboard() {
       logout: 'Abmelden',
       settings: 'Einstellungen',
       editProfile: 'Profildaten ändern',
-      subAndTickets: 'Abos + Tickets'
+      subAndTickets: 'Abos + Tickets',
+      refreshTitle: 'Analyse neu berechnen',
     },
     EN: {
       optimized: "You're optimized",
@@ -75,20 +76,20 @@ export default function Dashboard() {
       analyzing: 'Analyzing your trips…',
       analyzingSub: 'Your personalized plan will be ready shortly.',
       annualSpend: 'ANNUAL SPEND',
-      distance: 'DISTANCE',
       co2: 'CO₂ FOOTPRINT (12 MO)',
-      acrossTransit: 'Across all transit',
       estimatedEmissions: 'Estimated emissions',
-      realizedSavings: 'SAVED VIA SUBSCRIPTIONS',
-      viaSubscriptions: 'Vs. paying per trip',
       worthIt: (v) => `Saves ${euro(v, { lang: 'en' })}`,
       notWorthIt: (v) => `Costs ${euro(v, { lang: 'en' })} extra`,
       howYouTravel: 'How you travel',
+      tripsLabel: 'trips',
       viewDetails: 'View all details',
       recommended: 'Recommended for you',
       basedMonths: 'Based on your last 12 months',
-      portfolioTitle: 'Cost-Optimized Portfolio',
+      portfolioTitle: 'Your optimized portfolio',
       estimated: 'Estimated',
+      insteadOfBefore: (v) => `instead of ${v}`,
+      savingsBadge: (v) => `− ${v} savings`,
+      extraCostBadge: (v) => `+ ${v} extra`,
       currentPlan: 'Your current plan',
       currentSubsTitle: 'Your current subscriptions',
       noSubs: 'No active subscriptions on file.',
@@ -99,7 +100,8 @@ export default function Dashboard() {
       logout: 'Sign out',
       settings: 'Settings',
       editProfile: 'Edit Profile',
-      subAndTickets: 'Subscriptions + tickets'
+      subAndTickets: 'Subscriptions + tickets',
+      refreshTitle: 'Recompute analysis',
     }
   }[lang]
 
@@ -110,6 +112,7 @@ export default function Dashboard() {
     card: '#16161a',
     accentCyan: '#00f2fe',
     accentPurple: '#a855f7',
+    accentAmber: '#f59e0b',
     textMuted: '#747C92',
     border: '#26262b',
     successGreen: '#22c55e',
@@ -127,6 +130,7 @@ export default function Dashboard() {
     card: '#ffffff',
     accentCyan: '#0499ad',
     accentPurple: '#7c3aed',
+    accentAmber: '#d97706',
     textMuted: '#5b6472',
     border: '#e3e7eb',
     successGreen: '#16a34a',
@@ -153,6 +157,7 @@ export default function Dashboard() {
   // --- Echte Analyse für den eingeloggten User laden ---
   const [analysis, setAnalysis] = useState(null)
   const [loadingData, setLoadingData] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -165,6 +170,17 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [currentUser?.id])
 
+  // Umgeht den Backend-Cache (siehe orchestrator.py) und erzwingt eine frische
+  // Neuberechnung — z.B. nachdem sich die Optimierungslogik geändert hat.
+  const handleForceRefresh = () => {
+    if (!currentUser?.id || refreshing) return
+    setRefreshing(true)
+    analyze(currentUser.id, { force: true })
+      .then((res) => setAnalysis(res))
+      .catch(() => { /* still leave the previous analysis visible */ })
+      .finally(() => setRefreshing(false))
+  }
+
   const langKey = lang.toLowerCase()
   const analyst = analysis?.raw_agent_payloads?.analyst?.output || null
   const summary = analysis?.summary || null
@@ -174,19 +190,21 @@ export default function Dashboard() {
   // subscription_coverage carries the per-subscription worth-it check (net_savings_eur);
   // joined on subscription_id (the catalog id, shared with current_subscriptions).
   const coverageBySubId = new Map((analyst?.subscription_coverage || []).map((c) => [c.subscription_id, c]))
-  const realizedSavings = (analyst?.subscription_coverage || []).reduce((s, c) => s + (c.realized_savings_eur || 0), 0)
 
   const busy = (v) => (loadingData ? '…' : v)
   const annualSpendStr = analyst ? euro(analyst.current_annual_spend_eur, { lang: langKey }) : busy('—')
-  const distanceStr = analyst ? `${number(analyst.total_distance_km, langKey)} km` : busy('—')
   const co2Str = analyst ? `${number(analyst.total_co2_kg, langKey)} kg` : busy('—')
-  const realizedSavingsStr = analyst ? euro(realizedSavings, { lang: langKey }) : busy('—')
   const recSavings = summary?.total_estimated_savings_eur || 0
   // Recommended annual cost = what you pay today minus the estimated savings if you
   // follow every suggested action (category_subscription_analysis contract).
   const recPriceStr = summary
     ? euro(Math.max((summary.total_actual_annual_cost_eur || 0) - recSavings, 0), { lang: langKey })
     : annualSpendStr
+  // "Before" cost the portfolio card compares against — same basis as recSavings
+  // (total_actual_annual_cost_eur), not analyst.current_annual_spend_eur, which also
+  // includes uncategorized spend (car ownership, taxis, ...) outside the 5
+  // subscribable categories the portfolio recommendation covers.
+  const totalCurrentStr = summary ? euro(summary.total_actual_annual_cost_eur || 0, { lang: langKey }) : busy('—')
   // One "+/−" line per suggested subscription change from the communicator agent.
   const recChanges = (communicator?.actions_required || []).flatMap((a) => {
     const lines = []
@@ -220,8 +238,16 @@ export default function Dashboard() {
     : null
   const modes = derivedTravelStats || travelStats
 
+  // ChatWidget must sit at a stable position in the tree regardless of which view
+  // is active — computed once as `pageContent` per view below, with ChatWidget
+  // always rendered as its sibling in the single return at the bottom. Returning a
+  // differently-shaped tree per view (as this used to do, with ChatWidget nested
+  // inside only the 'overview' branch) would make React remount ChatWidget on every
+  // navigation between views, wiping the conversation each time.
+  let pageContent
+
   if (view === 'insights') {
-    return (
+    pageContent = (
       <TravelInsights
         analysis={analysis}
         lang={lang}
@@ -230,10 +256,8 @@ export default function Dashboard() {
         onBack={() => setView('overview')}
       />
     )
-  }
-
-  if (view === 'cost') {
-    return (
+  } else if (view === 'cost') {
+    pageContent = (
       <CostBreakdown
         analysis={analysis}
         lang={lang}
@@ -242,10 +266,8 @@ export default function Dashboard() {
         onBack={() => setView('overview')}
       />
     )
-  }
-
-  if (view === 'portfolio') {
-    return (
+  } else if (view === 'portfolio') {
+    pageContent = (
       <PortfolioDetail
         analysis={analysis}
         lang={lang}
@@ -254,9 +276,8 @@ export default function Dashboard() {
         onBack={() => setView('overview')}
       />
     )
-  }
-
-  return (
+  } else {
+    pageContent = (
     <div style={{
       backgroundColor: colors.bg,
       color: colors.text,
@@ -269,6 +290,7 @@ export default function Dashboard() {
       
       {/* RESPONSIVE CSS INJEKTION */}
       <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .dashboard-container {
           display: grid;
           grid-template-columns: 1fr;
@@ -287,11 +309,10 @@ export default function Dashboard() {
             grid-template-columns: repeat(12, 1fr);
           }
           .col-hero { grid-column: span 7; }
-          .col-stats-grid { grid-column: span 5; }
-          .col-usage-stats { grid-column: span 5; }
-          .col-travel { grid-column: span 7; }
+          .col-hero-stats { grid-column: span 5; }
           .col-current-subs { grid-column: span 6; }
-          .col-portfolio { grid-column: span 6; }
+          .col-travel { grid-column: span 6; }
+          .col-portfolio { grid-column: span 12; }
         }
       `}</style>
       
@@ -319,6 +340,28 @@ export default function Dashboard() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <ThemeToggle style={{ width: '35px', height: '35px' }} />
+          {/* Unauffälliger Refresh-Button — erzwingt eine frische Analyse statt der
+              gecachten letzten recommendations-Zeile (siehe orchestrator.py) */}
+          <button
+            onClick={handleForceRefresh}
+            disabled={refreshing}
+            title={t.refreshTitle}
+            aria-label={t.refreshTitle}
+            style={{
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: colors.textMuted,
+              width: '28px',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: refreshing ? 'default' : 'pointer',
+              opacity: refreshing ? 0.5 : 1,
+            }}
+          >
+            <RefreshCw size={15} style={refreshing ? { animation: 'spin 0.9s linear infinite' } : undefined} />
+          </button>
           {/* Sprachumschalter */}
           <button 
             onClick={() => setLang(lang === 'DE' ? 'EN' : 'DE')}
@@ -516,9 +559,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 2. MONEY STATS — annual spend next to what subscriptions save you, so the two euro figures read together */}
-        <div className="col-stats-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          {/* ANNUAL SPEND — clickable through to the cost-breakdown subpage */}
+        {/* 2. HERO-SIDE STATS — annual spend (wider, clickable through to the
+            cost-breakdown subpage) and CO₂ footprint, side by side. Distance is
+            intentionally left off the main dashboard now. Realized savings via
+            subscriptions lives only on the cost subpage (see CostBreakdown.jsx). */}
+        <div className="col-hero-stats" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '0.85rem' }}>
           <button
             onClick={() => setView('cost')}
             style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left', cursor: 'pointer', color: colors.text, font: 'inherit' }}
@@ -536,32 +581,6 @@ export default function Dashboard() {
             </span>
           </button>
 
-          {/* REALIZED SAVINGS */}
-          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.realizedSavings}</span>
-                <span style={{ color: colors.accentCyan }}><PiggyBank size={14} /></span>
-              </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{realizedSavingsStr}</div>
-            </div>
-            <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.viaSubscriptions}</span>
-          </div>
-        </div>
-
-        {/* 3. USAGE STATS — distance + CO₂ grouped together */}
-        <div className="col-usage-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.05em' }}>{t.distance}</span>
-                <span style={{ color: colors.accentPurple }}><Route size={14} /></span>
-              </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{distanceStr}</div>
-            </div>
-            <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.acrossTransit}</span>
-          </div>
-
           <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
@@ -574,47 +593,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 4. "HOW YOU TRAVEL" DISTRIBUTION */}
-        <div className="col-travel" style={{
-          backgroundColor: colors.card,
-          border: `1px solid ${colors.border}`,
-          borderRadius: '24px',
-          padding: '1.5rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <h3 style={{ color: colors.text, fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
-            <BarChart3 size={18} style={{ color: colors.accentPurple }} />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {modes.map((item, index) => (
-              <div key={index}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.35rem', fontWeight: '500' }}>
-                  <span style={{ color: colors.text }}>{item.name}</span>
-                  <span style={{ color: colors.textMuted }}>
-                    <span style={{ color: colors.text, fontWeight: '600' }}>{item.trips}</span> trips • {item.pct}%
-                  </span>
-                </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: colors.border, borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ width: `${item.pct}%`, height: '100%', backgroundColor: item.color, borderRadius: '3px' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={() => setView('insights')}
-            style={{
-              width: '100%', marginTop: '1.25rem', backgroundColor: 'transparent',
-              border: 'none', color: colors.accentCyan, fontSize: '0.85rem', fontWeight: '700',
-              padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', cursor: 'pointer',
-            }}
-          >
-            {t.viewDetails} <span style={{ fontSize: '1rem' }}>→</span>
-          </button>
-        </div>
-
-        {/* 5. CURRENT SUBSCRIPTIONS + PORTFOLIO RECOMMENDATION — side by side, matching format so they read as a pair */}
+        {/* 4. CURRENT SUBSCRIPTIONS — left */}
         <div className="col-current-subs" style={{
           backgroundColor: colors.card,
           border: `1px solid ${colors.border}`,
@@ -663,6 +642,47 @@ export default function Dashboard() {
           )}
         </div>
 
+        {/* 5. "HOW YOU TRAVEL" DISTRIBUTION — right */}
+        <div className="col-travel" style={{
+          backgroundColor: colors.card,
+          border: `1px solid ${colors.border}`,
+          borderRadius: '24px',
+          padding: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <h3 style={{ color: colors.text, fontSize: '1.15rem', fontWeight: '700' }}>{t.howYouTravel}</h3>
+            <BarChart3 size={18} style={{ color: colors.accentPurple }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {modes.map((item, index) => (
+              <div key={index}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.35rem', fontWeight: '500' }}>
+                  <span style={{ color: colors.text }}>{item.name}</span>
+                  <span style={{ color: colors.textMuted }}>
+                    <span style={{ color: colors.text, fontWeight: '600' }}>{item.trips}</span> {t.tripsLabel} • {item.pct}%
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: '6px', backgroundColor: colors.border, borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${item.pct}%`, height: '100%', backgroundColor: item.color, borderRadius: '3px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setView('insights')}
+            style={{
+              width: '100%', marginTop: '1.25rem', backgroundColor: 'transparent',
+              border: 'none', color: colors.accentCyan, fontSize: '0.85rem', fontWeight: '700',
+              padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', cursor: 'pointer',
+            }}
+          >
+            {t.viewDetails} <span style={{ fontSize: '1rem' }}>→</span>
+          </button>
+        </div>
+
+        {/* 6. OPTIMIZED PORTFOLIO — full-width block */}
         <div className="col-portfolio" style={{
           backgroundColor: colors.card,
           border: `2px solid ${colors.accentCyan}`,
@@ -693,9 +713,21 @@ export default function Dashboard() {
             <TrendingUp size={18} style={{ color: colors.accentCyan }} />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.estimated} · {t.recommended}</span>
-            <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+            <span style={{ fontSize: '0.75rem', color: colors.textMuted, paddingTop: '0.15rem' }}>{t.estimated} · {t.recommended}</span>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: '800', color: colors.accentCyan }}>{recPriceStr}<span style={{ fontSize: '0.75rem', color: colors.textMuted, fontWeight: '400' }}> / yr</span></div>
+              {summary && (
+                <div style={{ fontSize: '0.72rem', color: colors.textMuted, marginTop: '0.2rem' }}>
+                  {t.insteadOfBefore(totalCurrentStr)}
+                  {recSavings !== 0 && (
+                    <span style={{ fontWeight: '700', color: recSavings > 0 ? '#0ca30c' : colors.accentRed, marginLeft: '0.4rem' }}>
+                      {recSavings > 0 ? t.savingsBadge(euro(Math.abs(recSavings), { lang: langKey })) : t.extraCostBadge(euro(Math.abs(recSavings), { lang: langKey }))}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.85rem', marginTop: 'auto' }}>
@@ -732,7 +764,13 @@ export default function Dashboard() {
         </div>
 
       </main>
+    </div>
+    )
+  }
 
+  return (
+    <>
+      {pageContent}
       {currentUser?.id && (
         <ChatWidget
           user={currentUser}
@@ -740,8 +778,9 @@ export default function Dashboard() {
           advisorMemo={summary?.memos?.[lang === 'DE' ? 'german' : 'english']}
           getContext={() => ({ recommendation: recommended, analysis })}
           actions={{ optimize: async () => summary?.category_subscription_analysis || [], approve: async () => true }}
+          onOpenPortfolio={() => setView('portfolio')}
         />
       )}
-    </div>
+    </>
   )
 }

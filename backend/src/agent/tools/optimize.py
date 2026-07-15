@@ -18,6 +18,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from agent.engines.reoptimize import reoptimize_from_analysis
+from agent.engines.scoring import resolve_weights
 
 
 def _user_id_from_config(config: RunnableConfig | None) -> str | None:
@@ -64,10 +65,12 @@ def _latest_analyst_out(user_id: str, row: dict | None) -> dict | None:
     ctx = load_context(user_id)
     if ctx.get("error"):
         return None
-    return analyze_portfolio(
+    analyst_out = analyze_portfolio(
         ctx["travel_history"], ctx["subscriptions"], ctx["pricing_catalog"],
-        user_age=ctx["user"].get("age"),
+        user_age=ctx["user"].get("age"), preferences=ctx["user_preferences"],
     )
+    analyst_out["preferences"] = ctx["user_preferences"]
+    return analyst_out
 
 
 def _latest_forecaster_out(row: dict | None) -> dict | None:
@@ -127,6 +130,15 @@ def reoptimize(
         return json.dumps({"error": "No analysis available for this user."})
     forecaster_out = _latest_forecaster_out(row)
 
+    # Same preferences the original analysis weighted its recommendation by (persisted
+    # on analyst_out since pipeline.py sets it there) — a chat-driven re-optimisation
+    # without explicit keep/drop/prefer constraints must stay consistent with what a
+    # fresh /api/analyze would have recommended, not silently reset to equal weights.
+    prefs = analyst_out.get("preferences") or {}
+    weights = resolve_weights(
+        prefs.get("cost_priority"), prefs.get("co2_priority"), prefs.get("convenience_priority"),
+    )
+
     constraints = {
         "keep": keep or [],
         "drop": drop or [],
@@ -134,7 +146,7 @@ def reoptimize(
         "exclude_plans": exclude_plans or [],
     }
     result = reoptimize_from_analysis(
-        analyst_out.get("category_subscription_analysis", []), constraints, forecaster_out
+        analyst_out.get("category_subscription_analysis", []), constraints, forecaster_out, weights,
     )
 
     # Code-level confirmation gate: a change can only ever be applied starting from the

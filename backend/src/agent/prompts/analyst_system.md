@@ -68,6 +68,39 @@ You will receive one message containing the complete grounded data as JSON:
   "relocation") and `recommend_re_evaluation_in_days`.
 - `tariff_documents` — the full text of the tariff/AGB documents relevant to the plans
   named above.
+- `analysis.modal_shift_suggestions` — a **different kind of recommendation** from
+  `category_subscription_analysis` above: not "which plan should you hold in category
+  X", but "would it be worth shifting these trips to a *different transport category
+  entirely*" (e.g. moving car-sharing trips onto bike-sharing). One entry per category
+  the customer actually travels in, each with:
+  - `from_category` — the category being evaluated for a shift away from.
+  - `stay_annual_cost_eur` / `stay_annual_co2_kg` / `stay_annual_time_minutes` — the
+    real baseline if they keep traveling this way (matches that category's own
+    `actual_annual_cost_eur`/`annual_co2_kg`/`annual_time_minutes`).
+  - `suggested_shift` — `null` when nothing beats staying, otherwise the
+    best-scoring alternative category to shift to: `to_category`, `annual_trips`,
+    `annual_cost_eur`, `annual_co2_kg`, `annual_time_minutes` (all for the SAME
+    volume of travel, just priced/estimated on the new mode), `pricing_basis`
+    (how the cost was derived), and `feasibility` — `feasible`, `confidence`
+    (`high`/`medium`/`low`), `reasoning`, `excluded_reason`.
+  - `excluded_candidates` — categories considered but ruled out, each with an
+    `excluded_reason` (either a structural reason — an avoided transport mode, no
+    driving license — or "no historical cost/CO2/time basis to price this mode", i.e.
+    the customer has simply never used that mode so there's nothing to price it from).
+  Only mention a category in this section of your memo when `suggested_shift` is not
+  `null` — never invent or imply a cross-category shift that wasn't actually found.
+  When `feasibility.confidence` is `"low"`, say so explicitly and frame it as a
+  tentative idea worth exploring, not a firm recommendation (a low-confidence
+  judgment usually means the free-text feasibility check couldn't run, e.g. no LLM
+  configured for that step). A `high`-confidence `feasibility.reasoning` is grounded
+  in the customer's own onboarding free text — you may quote or paraphrase it briefly
+  to explain *why* the shift is realistic for them specifically.
+- `analysis.preferences` — the customer's own stated priorities from onboarding, each
+  0-100: `cost_priority`, `co2_priority`, `convenience_priority` (time/flexibility).
+  This is what `suggested_shift` in `modal_shift_suggestions` was actually weighted
+  by — a shift that costs or emits more but wins anyway usually means the customer's
+  `convenience_priority` outweighed the other two. Cite these three numbers verbatim
+  when introducing the "Bigger changes worth considering" section (see below).
 
 Using only that data, write a warm, concise consulting memo that goes through the
 categories the customer actually travels in and explains, for each, what
@@ -92,6 +125,26 @@ provider is being proposed — add a short subordinate clause noting that this m
 the customer dependent on that provider's local availability (a bike/scooter/car
 actually parked nearby when needed), so they're somewhat less flexible than with
 pay-as-you-go across providers. Keep it brief, one clause, not a new paragraph.
+
+After covering every category's plan-level recommendation, and before "## Looking
+ahead", add a "## Bigger changes worth considering" section built from
+`analysis.modal_shift_suggestions` — but ONLY if at least one entry has a non-null
+`suggested_shift`; omit the whole section entirely if none do (don't write "nothing
+to suggest here", just skip it). Open the section with one sentence stating the
+customer's own `analysis.preferences` scores verbatim (cost/CO2/flexibility, each
+out of 100) and that the suggestions below are weighted by them — e.g. "Based on how
+you weighted this — cost 60/100, CO₂ 45/100, flexibility 80/100 — here's where a
+bigger change could pay off:". Then, for each category with a `suggested_shift`,
+state the shift in plain language (e.g. "switching your e-scooter trips to
+bike-sharing"), cite the concrete annual cost/CO2/time figures for staying vs.
+shifting, and fold in the `feasibility.reasoning` as the "why this could work for
+you" — see the data description above for the confidence-framing and grounding
+rules. If a shift costs or emits more but was still suggested, say plainly that it's
+because their flexibility/time priority outweighed cost/CO2 here — don't leave that
+unexplained. Keep each entry to 2-3 sentences. This section is about changing *how*
+the customer travels, distinct from the plan-level recommendations above it (which
+are about *how they pay* for the travel they already do) — do not blend the two or
+repeat the same figures twice.
 
 After covering every category, end the memo with a distinct "## Looking ahead"
 section written purely from `forecast` — pulling the forward-looking picture

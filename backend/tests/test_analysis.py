@@ -66,6 +66,40 @@ def test_attributed_subscription_reports_positive_realized_savings(travel_histor
     assert dt["trips"] == 4
 
 
+def test_category_entries_carry_co2_and_time_totals(travel_history, subscriptions, pricing_catalog):
+    """New multi-criteria fields: every category entry must carry its own real
+    annual CO2/time/distance totals (not just cost), sourced from the same per-leg
+    aggregation as total_co2_kg."""
+    out = analyze_portfolio(travel_history, subscriptions, pricing_catalog)
+    for entry in out["category_subscription_analysis"]:
+        assert "annual_co2_kg" in entry
+        assert "annual_time_minutes" in entry
+        assert "annual_distance_km" in entry
+        assert "recommended_alternative" in entry
+        assert "score_breakdown" in entry
+
+
+def test_recommended_alternative_matches_cheapest_when_co2_time_are_invariant(
+    travel_history, subscriptions, pricing_catalog,
+):
+    """Within one category, CO2/time are the SAME real total regardless of which
+    plan is chosen (same physical trips/mode) — so even heavily CO2-weighted
+    preferences must not change which alternative wins; recommended_alternative
+    stays the cost-cheapest one, exactly like the old pure-cost behaviour."""
+    cost_only = analyze_portfolio(
+        travel_history, subscriptions, pricing_catalog,
+        preferences={"cost_priority": 100, "co2_priority": 0, "convenience_priority": 0},
+    )
+    co2_heavy = analyze_portfolio(
+        travel_history, subscriptions, pricing_catalog,
+        preferences={"cost_priority": 0, "co2_priority": 100, "convenience_priority": 0},
+    )
+    for a, b in zip(cost_only["category_subscription_analysis"], co2_heavy["category_subscription_analysis"]):
+        assert a["recommendation"] == b["recommendation"]
+        assert a["recommended_alternative"] == b["recommended_alternative"]
+        assert a["recommended_alternative"] == a["cheapest_alternative"]
+
+
 def test_reproducible(travel_history, subscriptions):
     a = analyze_portfolio(travel_history, subscriptions)
     b = analyze_portfolio(travel_history, subscriptions)
@@ -350,17 +384,22 @@ def test_alternative_cost_breakdown_sums_to_estimated_and_reports_savings():
     assert alt["annual_savings_vs_current_eur"] > 0
 
 
-def test_no_current_subscription_alternative_has_no_vs_current_savings():
-    """With nothing currently held in this category, 'savings vs current' is
-    meaningless — must be None, not silently equal to the pay-as-you-go savings."""
+def test_no_current_subscription_alternative_vs_current_equals_vs_no_subscription():
+    """With nothing currently held in this category, 'what you actually pay today'
+    IS the pay-as-you-go cost — actual_annual_cost_eur is a real, known number
+    either way (subscription or not), so annual_savings_vs_current_eur must be
+    computed, not withheld as None. It necessarily equals
+    annual_savings_vs_no_subscription_eur in this case, since actual_annual_cost_eur
+    == no_subscription_annual_cost_eur when nothing is held."""
     history = [_leg(i, 4, 20.0, 20.0, None, mode="car_sharing") for i in range(80)]
     catalog = [{"id": "flat_car", "name": "Car Flat", "category": "car_sharing",
                 "monthly_cost": 50.0, "annual_cost": None, "pricing_model": "flat_monthly"}]
     out = analyze_portfolio(history, [], catalog)
     entry = out["category_subscription_analysis"][0]
     alt = entry["cheapest_alternative"]
-    assert alt["annual_savings_vs_current_eur"] is None
-    assert alt["annual_savings_vs_no_subscription_eur"] > 0
+    assert entry["actual_annual_cost_eur"] == entry["no_subscription_annual_cost_eur"]
+    assert alt["annual_savings_vs_current_eur"] == alt["annual_savings_vs_no_subscription_eur"]
+    assert alt["annual_savings_vs_current_eur"] > 0
 
 
 def _bahncard_50_1st_class_sub_and_catalog():

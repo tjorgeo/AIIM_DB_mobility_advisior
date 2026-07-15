@@ -11,8 +11,8 @@ function pickRec(result) {
 export function greetingText(user, lang) {
   const name = user.firstName
   return lang === 'de'
-    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus — dein persönlicher Plan erscheint gleich hier.`
-    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — your personalized plan will appear here in a moment.`
+    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus — ich sag dir Bescheid, sobald dein persönlicher Plan fertig ist.`
+    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — I'll let you know once your personalized plan is ready.`
 }
 
 // Frontend-only scripted assistant — used whenever POST /api/chat is unavailable.
@@ -104,14 +104,22 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
   const push = (role, content, traceId = null) =>
     setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
-  // When the analysis finishes, the advisor delivers the personalized memo
-  // straight into the chat (once).
+  // When the analysis finishes, post a short ready notice — NOT the full memo text.
+  // The memo itself lives only on the "Dein optimiertes Portfolio" page now; posting
+  // it here too used to duplicate that entire page's content into the chat
+  // unprompted. This notice just tells the user it's ready and invites questions,
+  // once per analysis (guarded the same way the old full-memo post was).
   const advisorPostedRef = useRef(false)
   useEffect(() => {
     if (!advisorMemo || advisorPostedRef.current) return
     advisorPostedRef.current = true
-    const intro = lang === 'de' ? 'Hier ist dein persönlicher Plan 📋\n\n' : 'Here’s your personalized plan 📋\n\n'
-    setMessages((m) => [...m, { role: 'assistant', content: intro + advisorMemo }])
+    const notice = lang === 'de'
+      ? 'Deine Analyse ist fertig 📋 Alle Details findest du unter „Dein optimiertes Portfolio", oder frag mich gerne direkt dazu.'
+      : 'Your analysis is ready 📋 Find all the details under "Your optimized portfolio", or feel free to ask me directly.'
+    // `action` flags this message for ChatWidget to render a real navigation
+    // button under it (there's no router here — the portfolio page is a `view`
+    // state switch in Dashboard.jsx, so a plain markdown link couldn't trigger it).
+    setMessages((m) => [...m, { role: 'assistant', content: notice, action: 'open-portfolio' }])
   }, [advisorMemo, lang])
 
   const send = useCallback(async (raw) => {

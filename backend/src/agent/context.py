@@ -81,6 +81,13 @@ def load_context(user_id: str) -> dict:
     )
     onboarding_row = cursor.fetchone()
     preferences = preferences_from_onboarding(onboarding_row)
+    # Full onboarding row (structured constraints + free text) the modal-shift engine
+    # needs (avoided_transport_modes, car_access, has_driving_license,
+    # mobility_constraints, travel_statement, activity_statement) — preferences_from_
+    # onboarding above only extracts the 3 priority scores, so this is read
+    # separately rather than growing that function's return shape for a use case it
+    # isn't otherwise involved in.
+    onboarding_raw = clean_row(onboarding_row) if onboarding_row else {}
 
     # Subscriptions joined to the catalog. The engines key on the catalog PK
     # (subscription_id) and the subscription category, not on a service slug.
@@ -199,6 +206,7 @@ def load_context(user_id: str) -> dict:
     return {
         "user": user,
         "user_preferences": preferences,
+        "onboarding_raw": onboarding_raw,
         "subscriptions": subscriptions,
         "travel_history": travel_history,
         "pricing_catalog": pricing_catalog,
