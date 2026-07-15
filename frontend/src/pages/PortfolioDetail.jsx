@@ -39,7 +39,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       co2PerYear: 'CO₂/Jahr', timePerYear: 'Zeit/Jahr', hoursShort: 'Std',
       recommendedBadge: 'EMPFOHLEN',
       recommendedNotCheapest: 'Nicht die günstigste Option, aber besser nach deiner Kosten-/CO₂-/Zeit-Gewichtung.',
-      modalShiftTitle: 'Andere Verkehrsmittel im Vergleich', modalShiftSub: 'Basierend auf deinen bisherigen Fahrten in der jeweiligen Kategorie',
+      orDifferentMode: 'Oder: anderes Verkehrsmittel',
       stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`,
       noBetterShift: 'Kein anderes Verkehrsmittel schneidet nach deiner Gewichtung besser ab.',
       excludedNote: 'Geprüft, aber nicht vorgeschlagen:',
@@ -69,7 +69,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       co2PerYear: 'CO₂/yr', timePerYear: 'Time/yr', hoursShort: 'hrs',
       recommendedBadge: 'RECOMMENDED',
       recommendedNotCheapest: "Not the cheapest option, but scores better on your cost/CO₂/time weighting.",
-      modalShiftTitle: 'Other modes compared', modalShiftSub: 'Based on your past trips in each category',
+      orDifferentMode: 'Or: different mode',
       stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`,
       noBetterShift: 'No other mode scores better under your weighting.',
       excludedNote: 'Checked, but not suggested:',
@@ -99,6 +99,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   const tripsByCategory = Object.fromEntries(categoryAnalysis.map((c) => [c.category, c.annual_trips || 0]))
   const modalShiftSuggestions = [...(summary?.modal_shift_suggestions || [])]
     .sort((a, b) => (tripsByCategory[b.from_category] || 0) - (tripsByCategory[a.from_category] || 0))
+  const shiftByCategory = Object.fromEntries(modalShiftSuggestions.map((s) => [s.from_category, s]))
+  const anyShiftSuggested = modalShiftSuggestions.some((s) => s.suggested_shift)
   const preferences = analysis?.preferences || {}
   const totalCurrent = summary?.total_actual_annual_cost_eur || 0
   const totalSavings = summary?.total_estimated_savings_eur || 0
@@ -155,9 +157,28 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               {kpi(<PiggyBank size={14} />, t.savings.toUpperCase(), euro(totalSavings, { lang: langKey }))}
             </div>
 
+            {anyShiftSuggested && (
+              <p style={{ fontSize: '0.78rem', color: colors.textMuted, fontWeight: '600', margin: 0 }}>
+                {t.priorityIntro(
+                  preferences.cost_priority ?? 50,
+                  preferences.co2_priority ?? 50,
+                  preferences.convenience_priority ?? 50,
+                )}
+              </p>
+            )}
+
             {/* Per-category cost comparison — "Vergleich Kosten heute" + "Vergleich mit anderen Abos" */}
             {categoryAnalysis.map((c) => {
               const meta = recMeta(c.recommendation, colors, isDE)
+              const shiftSuggestion = shiftByCategory[c.category]
+              const shift = shiftSuggestion?.suggested_shift
+              const shiftCostDelta = shift ? shift.annual_cost_eur - (shiftSuggestion.stay_annual_cost_eur ?? 0) : null
+              const shiftCo2Delta = shift && shift.annual_co2_kg != null && shiftSuggestion.stay_annual_co2_kg != null
+                ? shift.annual_co2_kg - shiftSuggestion.stay_annual_co2_kg : null
+              const shiftTimeDeltaHours = shift && shift.annual_time_minutes != null && shiftSuggestion.stay_annual_time_minutes != null
+                ? Math.round((shift.annual_time_minutes - shiftSuggestion.stay_annual_time_minutes) / 60) : null
+              const shiftDeltaColor = (d) => (d <= 0 ? colors.successGreen : colors.accentRed)
+              const shiftExcluded = shiftSuggestion?.excluded_candidates || []
               const swatch = modeColor(c.category, isDark)
               const currentSubs = c.current_subscriptions || []
               const alternatives = [...(c.alternatives || [])].sort((a, b) => a.estimated_annual_cost_eur - b.estimated_annual_cost_eur)
@@ -299,91 +320,57 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                   ) : (
                     <p style={{ fontSize: '0.78rem', color: colors.textMuted }}>{t.noAlternatives}</p>
                   )}
+
+                  {shiftSuggestion && shift && (
+                    <div style={{ border: `1px dashed ${colors.accentCyan}`, borderRadius: '14px', padding: '0.75rem 1rem', marginTop: '1rem' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentCyan, letterSpacing: '0.04em' }}>
+                        {t.orDifferentMode.toUpperCase()}
+                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
+                        <span style={{ fontWeight: '600', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: modeColor(shift.to_category, isDark), display: 'inline-block' }} />
+                          {t.shiftTo(modeLabel(shift.to_category, langKey))}
+                        </span>
+                        <span style={{ fontWeight: '800', fontSize: '1rem', color: colors.accentCyan }}>{euro(shift.annual_cost_eur, { lang: langKey })}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: shiftDeltaColor(shiftCostDelta), backgroundColor: `${shiftDeltaColor(shiftCostDelta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                          <Euro size={11} />
+                          {shiftCostDelta > 0 ? '+' : ''}{euro(shiftCostDelta, { lang: langKey })} {t.perYear}
+                        </span>
+                        {shiftCo2Delta != null && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: shiftDeltaColor(shiftCo2Delta), backgroundColor: `${shiftDeltaColor(shiftCo2Delta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                            <Leaf size={11} />
+                            {shiftCo2Delta > 0 ? '+' : ''}{number(shiftCo2Delta, langKey)} kg {t.co2PerYear}
+                          </span>
+                        )}
+                        {shiftTimeDeltaHours != null && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: shiftDeltaColor(shiftTimeDeltaHours), backgroundColor: `${shiftDeltaColor(shiftTimeDeltaHours)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
+                            <Clock size={11} />
+                            {shiftTimeDeltaHours > 0 ? '+' : ''}{number(shiftTimeDeltaHours, langKey)} {t.hoursShort} {t.timePerYear}
+                          </span>
+                        )}
+                      </div>
+                      {shift.feasibility?.confidence === 'low' && (
+                        <div style={{ fontSize: '0.68rem', color: colors.textMuted, marginTop: '0.4rem', fontStyle: 'italic' }}>
+                          ({t.confidenceLow}{shift.feasibility?.reasoning ? `: ${shift.feasibility.reasoning}` : ''})
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {shiftSuggestion && !shift && (
+                    <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginTop: '1rem' }}>{t.noBetterShift}</p>
+                  )}
+
+                  {shiftSuggestion && shiftExcluded.length > 0 && (
+                    <div style={{ fontSize: '0.7rem', color: colors.textMuted, marginTop: '0.5rem' }}>
+                      {t.excludedNote} {shiftExcluded.map((e) => modeLabel(e.to_category, langKey)).join(', ')}
+                    </div>
+                  )}
                 </div>
               )
             })}
-
-            {/* Cross-category modal-shift suggestions */}
-            {modalShiftSuggestions.length > 0 && (
-              <div style={cardStyle}>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '0.15rem' }}>{t.modalShiftTitle}</h3>
-                <p style={{ fontSize: '0.8rem', color: colors.textMuted, marginBottom: '0.35rem' }}>{t.modalShiftSub}</p>
-                <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginBottom: '1.1rem', fontWeight: '600' }}>
-                  {t.priorityIntro(
-                    preferences.cost_priority ?? 50,
-                    preferences.co2_priority ?? 50,
-                    preferences.convenience_priority ?? 50,
-                  )}
-                </p>
-                <div style={{ display: 'grid', gap: '0.9rem' }}>
-                  {modalShiftSuggestions.map((s) => {
-                    const shift = s.suggested_shift
-                    const costDelta = shift ? shift.annual_cost_eur - (s.stay_annual_cost_eur ?? 0) : null
-                    const co2Delta = shift && shift.annual_co2_kg != null && s.stay_annual_co2_kg != null
-                      ? shift.annual_co2_kg - s.stay_annual_co2_kg : null
-                    const timeDeltaHours = shift && shift.annual_time_minutes != null && s.stay_annual_time_minutes != null
-                      ? Math.round((shift.annual_time_minutes - s.stay_annual_time_minutes) / 60) : null
-                    const deltaColor = (d) => (d <= 0 ? colors.successGreen : colors.accentRed)
-                    const excluded = s.excluded_candidates || []
-
-                    return (
-                      <div key={s.from_category} style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '0.9rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: modeColor(s.from_category, isDark), display: 'inline-block' }} />
-                          <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>{modeLabel(s.from_category, langKey)}</span>
-                        </div>
-
-                        {shift ? (
-                          <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <span style={{ fontWeight: '600', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: modeColor(shift.to_category, isDark), display: 'inline-block' }} />
-                                {t.shiftTo(modeLabel(shift.to_category, langKey))}
-                              </span>
-                              <span style={{ textAlign: 'right' }}>
-                                <div style={{ fontWeight: '800', fontSize: '0.95rem' }}>{euro(shift.annual_cost_eur, { lang: langKey })}</div>
-                                <div style={{ fontSize: '0.65rem', color: colors.textMuted, fontWeight: '600' }}>{t.perYear}</div>
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(costDelta), backgroundColor: `${deltaColor(costDelta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
-                                <Euro size={11} />
-                                {costDelta > 0 ? '+' : ''}{euro(costDelta, { lang: langKey })} {t.perYear}
-                              </span>
-                              {co2Delta != null && (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(co2Delta), backgroundColor: `${deltaColor(co2Delta)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
-                                  <Leaf size={11} />
-                                  {co2Delta > 0 ? '+' : ''}{number(co2Delta, langKey)} kg {t.co2PerYear}
-                                </span>
-                              )}
-                              {timeDeltaHours != null && (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', fontWeight: '700', color: deltaColor(timeDeltaHours), backgroundColor: `${deltaColor(timeDeltaHours)}22`, padding: '0.25rem 0.55rem', borderRadius: '999px' }}>
-                                  <Clock size={11} />
-                                  {timeDeltaHours > 0 ? '+' : ''}{number(timeDeltaHours, langKey)} {t.hoursShort} {t.timePerYear}
-                                </span>
-                              )}
-                            </div>
-                            {shift.feasibility?.confidence === 'low' && (
-                              <div style={{ fontSize: '0.68rem', color: colors.textMuted, marginTop: '0.4rem', fontStyle: 'italic' }}>
-                                ({t.confidenceLow}{shift.feasibility?.reasoning ? `: ${shift.feasibility.reasoning}` : ''})
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p style={{ fontSize: '0.8rem', color: colors.textMuted }}>{t.noBetterShift}</p>
-                        )}
-
-                        {excluded.length > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: colors.textMuted, marginTop: '0.5rem' }}>
-                            {t.excludedNote} {excluded.map((e) => modeLabel(e.to_category, langKey)).join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
             {/* Forecast + life events */}
             <div style={cardStyle}>
