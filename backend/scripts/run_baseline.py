@@ -65,13 +65,21 @@ def main() -> int:
     user_ids = _all_user_ids() if args.all else args.user_ids
 
     results = []
-    for user_id in user_ids:
-        print(f"Running baseline for {user_id} ...", file=sys.stderr)
-        try:
-            results.append(run_baseline(user_id))
-        except Exception as exc:  # keep going: one bad reply shouldn't kill the batch
-            results.append({"pipeline": "baseline", "user_id": user_id, "error": str(exc)})
-            print(f"  failed: {exc}", file=sys.stderr)
+    try:
+        for user_id in user_ids:
+            print(f"Running baseline for {user_id} ...", file=sys.stderr)
+            try:
+                results.append(run_baseline(user_id))
+            except Exception as exc:  # keep going: one bad reply shouldn't kill the batch
+                results.append({"pipeline": "baseline", "user_id": user_id, "error": str(exc)})
+                print(f"  failed: {exc}", file=sys.stderr)
+    finally:
+        # This short-lived script can exit before Langfuse's background thread ships
+        # the buffered baseline-recommendation traces, so drain them explicitly (no-op
+        # when Langfuse is disabled). Matches scripts/seed_dataset.py + seed_prompts.py.
+        from agent.observability import flush
+
+        flush()
 
     doc = json.dumps({"results": results}, ensure_ascii=False, indent=2, default=str)
     if args.json:
