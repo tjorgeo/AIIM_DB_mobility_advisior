@@ -23,6 +23,15 @@ from pathlib import Path
 _BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_BACKEND / "src"))  # agent.*
 
+# Running standalone (not via docker-compose, which injects env_file: .env), so
+# load the repo-root .env ourselves before agent.llm reads UNI_GPT_API_KEY.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_BACKEND.parent / ".env")
+except ImportError:
+    pass
+
 
 def _all_user_ids() -> list:
     from database import get_connection
@@ -40,6 +49,7 @@ def main() -> int:
     parser.add_argument("user_ids", nargs="*", help="user_id(s) to run the baseline for")
     parser.add_argument("--all", action="store_true", help="run for every user in the DB")
     parser.add_argument("--out", help="also write the JSON results to this file")
+    parser.add_argument("--json", action="store_true", help="print the raw JSON instead of the text message")
     args = parser.parse_args()
 
     if bool(args.user_ids) == args.all:
@@ -64,7 +74,15 @@ def main() -> int:
             print(f"  failed: {exc}", file=sys.stderr)
 
     doc = json.dumps({"results": results}, ensure_ascii=False, indent=2, default=str)
-    print(doc)
+    if args.json:
+        print(doc)
+    else:
+        # Default: the human-readable text message per user, blank-line separated.
+        blocks = [
+            r.get("message") or f"Baseline could not run: {r.get('error', 'unknown error')}"
+            for r in results
+        ]
+        print(("\n\n" + "=" * 60 + "\n\n").join(blocks))
     if args.out:
         Path(args.out).write_text(doc, encoding="utf-8")
         print(f"Wrote {args.out}", file=sys.stderr)

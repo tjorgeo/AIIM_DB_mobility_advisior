@@ -131,6 +131,79 @@ def parse_baseline_response(text: str) -> dict:
     }
 
 
+# Human-readable phrasing for each action verb, used by render_message. Keyed by
+# the same vocabulary as VALID_ACTIONS; unknown actions fall back to the raw string.
+_ACTION_PHRASING = {
+    "keep_current": "Keep current plan",
+    "switch_to_alternative": "Switch plan",
+    "cancel_current_go_pay_as_you_go": "Cancel and pay as you go",
+    "consider_subscribing": "Consider subscribing",
+    "no_subscription_needed": "No subscription needed",
+    "insufficient_cost_data": "Insufficient data to price",
+}
+
+
+def _describe_change(change: dict) -> str:
+    """One readable line for a single recommended change, e.g.
+    ``• public_transport — Switch plan: Deutschlandticket → Call a Bike Member (saves €52.20/yr)``."""
+    category = str(change.get("category", "?"))
+    action = str(change.get("action", "?"))
+    verb = _ACTION_PHRASING.get(action, action)
+
+    frm = change.get("from")
+    frm_names = ", ".join(frm) if isinstance(frm, list) else (frm or "")
+    to = change.get("to")
+    if frm_names and to:
+        plans = f": {frm_names} → {to}"
+    elif to:
+        plans = f": {to}"
+    elif frm_names:
+        plans = f": {frm_names}"
+    else:
+        plans = ""
+
+    try:
+        savings = float(change.get("estimated_annual_savings_eur") or 0.0)
+    except (TypeError, ValueError):
+        savings = 0.0
+    savings_note = f" (saves €{savings:.2f}/yr)" if savings > 0 else ""
+
+    reasoning = str(change.get("reasoning") or "").strip()
+    reasoning_note = f"\n    {reasoning}" if reasoning else ""
+
+    return f"• {category} — {verb}{plans}{savings_note}{reasoning_note}"
+
+
+def render_message(result: dict) -> str:
+    """Turn a ``run_baseline`` result into a plain-text message summarizing the
+    findings: the model's summary prose, the per-category recommended changes, and
+    the total annual saving. Returns the error string unchanged for failed runs."""
+    if result.get("error"):
+        return f"Baseline could not run: {result['error']}"
+
+    name = result.get("user_name") or result.get("user_id", "the customer")
+    lines = [f"Mobility recommendation for {name}", ""]
+
+    summary = str(result.get("summary") or "").strip()
+    if summary:
+        lines += [summary, ""]
+
+    changes = result.get("recommended_changes") or []
+    if changes:
+        lines.append("Recommended changes:")
+        lines += [_describe_change(c) for c in changes if isinstance(c, dict)]
+    else:
+        lines.append("No portfolio changes recommended.")
+
+    try:
+        total = float(result.get("total_estimated_savings_eur") or 0.0)
+    except (TypeError, ValueError):
+        total = 0.0
+    lines += ["", f"Estimated total annual savings: €{total:.2f}"]
+
+    return "\n".join(lines)
+
+
 def run_baseline(user_id: str) -> dict:
     """Run the baseline for one user: load raw context, make exactly one LLM call,
     return the recommended portfolio changes.
@@ -181,5 +254,7 @@ def run_baseline(user_id: str) -> dict:
         )
     result["pipeline"] = "baseline"
     result["user_id"] = user_id
+    result["user_name"] = ctx["user"].get("name")
     result["trace_id"] = trace_id
+    result["message"] = render_message(result)
     return result
