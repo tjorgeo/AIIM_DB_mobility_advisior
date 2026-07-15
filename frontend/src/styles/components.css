@@ -643,14 +643,15 @@
 .msg--assistant { align-self: flex-start; background: var(--white); border: 1px solid var(--slate-200); border-bottom-left-radius: var(--radius-xs); box-shadow: var(--shadow-xs); }
 .msg--user { align-self: flex-end; background: var(--db-red); color: var(--white); border-bottom-right-radius: var(--radius-xs); }
 
-/* Rendered markdown inside assistant bubbles (see components/chat/Markdown.jsx) */
-.msg--assistant .md-p { margin: 0 0 8px; }
-.msg--assistant .md-heading { margin: 10px 0 4px; font-size: 1em; font-weight: 700; }
-.msg--assistant .md-p:first-child, .msg--assistant .md-heading:first-child { margin-top: 0; }
-.msg--assistant .md-p:last-child, .msg--assistant .md-list:last-child { margin-bottom: 0; }
-.msg--assistant .md-list { margin: 0 0 8px; padding-left: 1.15em; }
-.msg--assistant .md-list li { margin-bottom: 2px; }
-.msg--assistant code { background: var(--slate-100); padding: 1px 4px; border-radius: 4px; font-size: 0.85em; }
+/* Rendered markdown (see components/chat/Markdown.jsx) — used both inside chat
+   bubbles and standalone (e.g. the full advisor memo on PortfolioDetail.jsx). */
+.md-p { margin: 0 0 8px; }
+.md-heading { margin: 10px 0 4px; font-size: 1em; font-weight: 700; }
+.md-p:first-child, .md-heading:first-child { margin-top: 0; }
+.md-p:last-child, .md-list:last-child { margin-bottom: 0; }
+.md-list { margin: 0 0 8px; padding-left: 1.15em; }
+.md-list li { margin-bottom: 2px; }
+.msg--assistant code, .md-p code, .md-list code { background: var(--slate-100); padding: 1px 4px; border-radius: 4px; font-size: 0.85em; }
 
 .msg__feedback { display: flex; gap: 4px; margin-top: 6px; }
 .msg__thumb { display: inline-flex; align-items: center; justify-content: center; padding: 3px; border: none; background: transparent; color: var(--slate-400); border-radius: var(--radius-xs); cursor: pointer; transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out); }
@@ -755,7 +756,7 @@
 /* Nachrichten */
 [data-theme="dark"] .chat__body { background: #0e0e10; }
 [data-theme="dark"] .msg--assistant { background: #1c1c1f; border: 1px solid #26262b; color: #e6e9ef; box-shadow: none; }
-[data-theme="dark"] .msg--assistant code { background: #26262b; color: #cbd2dd; }
+[data-theme="dark"] .msg--assistant code, [data-theme="dark"] .md-p code, [data-theme="dark"] .md-list code { background: #26262b; color: #cbd2dd; }
 [data-theme="dark"] .msg--user { background: #00f2fe; color: #04141a; }
 
 /* Quick-Replies */

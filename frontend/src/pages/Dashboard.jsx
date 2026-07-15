@@ -13,12 +13,13 @@ import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 import TravelInsights from './TravelInsights.jsx'
 import CostBreakdown from './CostBreakdown.jsx'
+import PortfolioDetail from './PortfolioDetail.jsx'
 
 export default function Dashboard() {
   const { logout, currentUser } = useAuth()
   const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
   const [profileMenuOpen, setProfileMenuOpen] = useState(false) // State für das kleine Fenster
-  const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' — kein Router nötig, gleiches Muster wie Login.jsx currentView
+  const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' | 'portfolio' — kein Router nötig, gleiches Muster wie Login.jsx currentView
 
   // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
   const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
@@ -233,6 +234,18 @@ export default function Dashboard() {
   if (view === 'cost') {
     return (
       <CostBreakdown
+        analysis={analysis}
+        lang={lang}
+        colors={colors}
+        isDark={isDark}
+        onBack={() => setView('overview')}
+      />
+    )
+  }
+
+  if (view === 'portfolio') {
+    return (
+      <PortfolioDetail
         analysis={analysis}
         lang={lang}
         colors={colors}
@@ -703,6 +716,17 @@ export default function Dashboard() {
                 {t.noChanges}
               </div>
             )}
+
+            <button
+              onClick={() => setView('portfolio')}
+              style={{
+                width: '100%', marginTop: '1rem', backgroundColor: 'transparent',
+                border: 'none', color: colors.accentCyan, fontSize: '0.85rem', fontWeight: '700',
+                padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', cursor: 'pointer',
+              }}
+            >
+              {t.viewDetails} <span style={{ fontSize: '1rem' }}>→</span>
+            </button>
           </div>
         </div>
 
