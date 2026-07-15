@@ -864,7 +864,7 @@ def analyze_portfolio(
         )
         cheapest_alternative = alternatives[0] if alternatives else None
 
-        _, recommendation = _pick_recommendation(
+        best_cost, recommendation = _pick_recommendation(
             actual_annual_cost, no_subscription_annual_cost, cheapest_alternative, bool(held_subs)
         )
 
@@ -873,6 +873,12 @@ def analyze_portfolio(
             "annual_trips": stats["annual_trips"],
             "no_subscription_annual_cost_eur": no_subscription_annual_cost,
             "actual_annual_cost_eur": actual_annual_cost,
+            # Cost of the option the recommendation points at (the cheapest of
+            # current / pay-as-you-go / best alternative). Exposed so consumers can
+            # derive the annual saving as actual_annual_cost_eur - best_option_cost_eur
+            # without re-running the comparison. None only when every option is
+            # unpriceable (recommendation == "insufficient_cost_data").
+            "best_option_cost_eur": best_cost,
             "applies_to_modes": sorted(m for m in raw_mode_stats if mode_filter(m)),
             "current_subscriptions": current_subscriptions_detail,
             # Full ranked comparison (cheapest first) — cheapest_alternative is just
