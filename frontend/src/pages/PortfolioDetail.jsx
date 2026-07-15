@@ -284,8 +284,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                                         {'–'}
                                       </td>
                                     ) : (
-                                      <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: a.annual_savings_vs_current_eur >= 0 ? '#0ca30c' : colors.accentRed, fontWeight: '600' }}>
-                                        {a.annual_savings_vs_current_eur >= 0 ? '+' : ''}{euro(a.annual_savings_vs_current_eur, { lang: langKey })}
+                                      <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: a.annual_savings_vs_current_eur >= 0 ? colors.successGreen : colors.accentRed, fontWeight: '600' }}>
+                                        {a.annual_savings_vs_current_eur <= 0 ? '+' : ''}{euro(-a.annual_savings_vs_current_eur, { lang: langKey })}
                                       </td>
                                     )}
                                   </tr>
