@@ -11,8 +11,8 @@ function pickRec(result) {
 export function greetingText(user, lang) {
   const name = user.firstName
   return lang === 'de'
-    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus — dein persönlicher Plan erscheint gleich hier.`
-    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — your personalized plan will appear here in a moment.`
+    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus, soll ich sie dir anzeigen?`
+    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — shall I show it to you?`
 }
 
 // Frontend-only scripted assistant — used whenever POST /api/chat is unavailable.
@@ -104,20 +104,42 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
   const push = (role, content, traceId = null) =>
     setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
-  // When the analysis finishes, the advisor delivers the personalized memo
-  // straight into the chat (once).
-  const advisorPostedRef = useRef(false)
-  useEffect(() => {
-    if (!advisorMemo || advisorPostedRef.current) return
-    advisorPostedRef.current = true
+  // Keep the personalized memo ready, but DON'T post it automatically anymore.
+  // The greeting now *offers* to show it ("soll ich sie dir anzeigen?"), so the
+  // plan is delivered only once the user says yes.
+  const advisorMemoRef = useRef(advisorMemo)
+  const memoShownRef = useRef(false)
+  useEffect(() => { advisorMemoRef.current = advisorMemo }, [advisorMemo])
+
+  const postMemo = () => {
+    const memo = advisorMemoRef.current
+    if (!memo || memoShownRef.current) return false
+    memoShownRef.current = true
     const intro = lang === 'de' ? 'Hier ist dein persönlicher Plan 📋\n\n' : 'Here’s your personalized plan 📋\n\n'
-    setMessages((m) => [...m, { role: 'assistant', content: intro + advisorMemo }])
-  }, [advisorMemo, lang])
+    setMessages((m) => [...m, { role: 'assistant', content: intro + memo }])
+    return true
+  }
 
   const send = useCallback(async (raw) => {
     const text = String(raw || '').trim()
     if (!text || sending) return
     push('user', text)
+
+    // If the user accepts the greeting's offer ("soll ich sie dir anzeigen?"),
+    // deliver the already-prepared personalized plan instead of calling the model.
+    if (!memoShownRef.current && advisorMemoRef.current) {
+      const q = text.toLowerCase().trim()
+      const yesWords = ['ja', 'jo', 'jap', 'yes', 'yep', 'yeah', 'klar', 'gerne', 'gern', 'okay', 'ok', 'sure', 'jawohl', 'bitte']
+      const showWords = ['zeig', 'anzeig', 'show', 'sehen']
+      const affirmative =
+        yesWords.some((w) => q === w || q.startsWith(w + ' ') || q.startsWith(w + ',') || q.startsWith(w + '!')) ||
+        showWords.some((w) => q.includes(w))
+      if (affirmative) {
+        postMemo()
+        return
+      }
+    }
+
     setSending(true)
 
     const history = [...messagesRef.current, { role: 'user', content: text }]

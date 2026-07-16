@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { ChevronLeft, Wallet, PiggyBank, TrendingUp, Calendar } from 'lucide-react'
 import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
@@ -13,8 +13,10 @@ function recMeta(rec, colors, isDE) {
   }
 }
 
-export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack }) {
+export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions }) {
   const isDE = lang === 'DE'
+  // Welche Kategorie zeigt gerade die „Wirklich kündigen?"-Rückfrage
+  const [confirmingCategory, setConfirmingCategory] = useState(null)
   const langKey = isDE ? 'de' : 'en'
   const t = isDE
     ? {
@@ -116,6 +118,10 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const meta = recMeta(c.recommendation, colors, isDE)
               const swatch = modeColor(c.category, isDark)
               const currentSubs = c.current_subscriptions || []
+              const subNames = currentSubs.map((s) => s.provider_plan_name).filter(Boolean)
+              const isCancelled = subNames.length > 0 && subNames.every((n) => cancelledSubs.includes(n))
+              const canCancel = c.recommendation === 'cancel_current_go_pay_as_you_go' && subNames.length > 0 && !!onCancelSubscriptions
+              const isConfirming = confirmingCategory === c.category
               const alternatives = [...(c.alternatives || [])].sort((a, b) => a.estimated_annual_cost_eur - b.estimated_annual_cost_eur)
               const best = c.cheapest_alternative
 
@@ -126,19 +132,52 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: swatch, display: 'inline-block' }} />
                       <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>{modeLabel(c.category, langKey)}</h3>
                     </div>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}18`, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
-                      {meta.label}
-                    </span>
+                    {isCancelled ? (
+                      <span style={{ fontSize: '0.72rem', fontWeight: '700', color: colors.textMuted, backgroundColor: colors.inputBg, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
+                        {isDE ? 'Gekündigt' : 'Cancelled'}
+                      </span>
+                    ) : canCancel ? (
+                      <button type="button" onClick={() => setConfirmingCategory(isConfirming ? null : c.category)} style={{ fontSize: '0.72rem', fontWeight: '700', color: colors.accentRed, backgroundColor: `${colors.accentRed}18`, padding: '0.25rem 0.7rem', borderRadius: '999px', border: `1px solid ${colors.accentRed}55`, cursor: 'pointer' }}>
+                        {meta.label}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.72rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}18`, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
+                        {meta.label}
+                      </span>
+                    )}
                   </div>
+
+                  {/* Doppelte Bestätigung vor dem Kündigen */}
+                  {isConfirming && !isCancelled && (
+                    <div style={{ backgroundColor: `${colors.accentRed}12`, border: `1px solid ${colors.accentRed}55`, borderRadius: '14px', padding: '0.85rem 1rem', marginBottom: '1rem' }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.text, marginBottom: '0.15rem' }}>
+                        {isDE ? 'Dieses Abo wirklich kündigen?' : 'Really cancel this subscription?'}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.75rem' }}>
+                        {subNames.join(', ')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button type="button" onClick={() => { onCancelSubscriptions(subNames); setConfirmingCategory(null) }} style={{ flex: 1, padding: '0.6rem', borderRadius: '10px', border: 'none', backgroundColor: colors.accentRed, color: '#ffffff', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
+                          {isDE ? 'Ja, kündigen' : 'Yes, cancel'}
+                        </button>
+                        <button type="button" onClick={() => setConfirmingCategory(null)} style={{ flex: 1, padding: '0.6rem', borderRadius: '10px', border: `1px solid ${colors.border}`, backgroundColor: colors.card, color: colors.text, fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
+                          {isDE ? 'Nein' : 'No'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '1rem' }}>{t.categoryTrips(c.annual_trips)}</p>
 
                   <div className="portfolio-compare" style={{ marginBottom: '1rem' }}>
                     <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
                       <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.04em', display: 'block', marginBottom: '0.3rem' }}>{t.todayLabel}</span>
                       <div style={{ fontSize: '1.1rem', fontWeight: '800' }}>{euro(c.actual_annual_cost_eur, { lang: langKey })}</div>
-                      {currentSubs.map((s) => (
-                        <div key={s.provider_plan_name} style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.15rem' }}>{s.provider_plan_name}</div>
-                      ))}
+                      {currentSubs.map((s) => {
+                        const struck = cancelledSubs.includes(s.provider_plan_name)
+                        return (
+                          <div key={s.provider_plan_name} style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.15rem', textDecoration: struck ? 'line-through' : 'none', opacity: struck ? 0.6 : 1 }}>{s.provider_plan_name}{struck ? (isDE ? ' · gekündigt' : ' · cancelled') : ''}</div>
+                        )
+                      })}
                     </div>
                     <div style={{ backgroundColor: colors.inputBg, borderRadius: '14px', padding: '0.75rem 1rem' }}>
                       <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.textMuted, letterSpacing: '0.04em', display: 'block', marginBottom: '0.3rem' }}>{t.noSubLabel}</span>
