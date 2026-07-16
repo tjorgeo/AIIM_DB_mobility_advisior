@@ -94,7 +94,11 @@ async function scriptedReply(text, { user, lang, getContext, actions }) {
 }
 
 export function useChat({ user, lang, getContext, actions, advisorMemo }) {
-  const [messages, setMessages] = useState(() => [{ role: 'assistant', content: greetingText(user, lang) }])
+  // Chat starts empty on purpose — the only opening message is the short
+  // "analysis is ready" notice (posted below once the analysis finishes), which
+  // carries the "View portfolio" button. No separate greeting, so the two no
+  // longer contradict each other.
+  const [messages, setMessages] = useState(() => [])
   const [sending, setSending] = useState(false)
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
@@ -104,42 +108,28 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
   const push = (role, content, traceId = null) =>
     setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
-  // Keep the personalized memo ready, but DON'T post it automatically anymore.
-  // The greeting now *offers* to show it ("soll ich sie dir anzeigen?"), so the
-  // plan is delivered only once the user says yes.
-  const advisorMemoRef = useRef(advisorMemo)
-  const memoShownRef = useRef(false)
-  useEffect(() => { advisorMemoRef.current = advisorMemo }, [advisorMemo])
-
-  const postMemo = () => {
-    const memo = advisorMemoRef.current
-    if (!memo || memoShownRef.current) return false
-    memoShownRef.current = true
-    const intro = lang === 'de' ? 'Hier ist dein persönlicher Plan 📋\n\n' : 'Here’s your personalized plan 📋\n\n'
-    setMessages((m) => [...m, { role: 'assistant', content: intro + memo }])
-    return true
-  }
+  // When the analysis finishes, post a short ready notice — NOT the full memo text.
+  // The memo itself lives only on the "Dein optimiertes Portfolio" page now; posting
+  // it here too used to duplicate that entire page's content into the chat
+  // unprompted. This notice just tells the user it's ready and invites questions,
+  // once per analysis (guarded the same way the old full-memo post was).
+  const advisorPostedRef = useRef(false)
+  useEffect(() => {
+    if (!advisorMemo || advisorPostedRef.current) return
+    advisorPostedRef.current = true
+    const notice = lang === 'de'
+      ? 'Deine Analyse ist fertig 📋 Alle Details findest du unter „Dein optimiertes Portfolio", oder frag mich gerne direkt dazu.'
+      : 'Your analysis is ready 📋 Find all the details under "Your optimized portfolio", or feel free to ask me directly.'
+    // `action` flags this message for ChatWidget to render a real navigation
+    // button under it (there's no router here — the portfolio page is a `view`
+    // state switch in Dashboard.jsx, so a plain markdown link couldn't trigger it).
+    setMessages((m) => [...m, { role: 'assistant', content: notice, action: 'open-portfolio' }])
+  }, [advisorMemo, lang])
 
   const send = useCallback(async (raw) => {
     const text = String(raw || '').trim()
     if (!text || sending) return
     push('user', text)
-
-    // If the user accepts the greeting's offer ("soll ich sie dir anzeigen?"),
-    // deliver the already-prepared personalized plan instead of calling the model.
-    if (!memoShownRef.current && advisorMemoRef.current) {
-      const q = text.toLowerCase().trim()
-      const yesWords = ['ja', 'jo', 'jap', 'yes', 'yep', 'yeah', 'klar', 'gerne', 'gern', 'okay', 'ok', 'sure', 'jawohl', 'bitte']
-      const showWords = ['zeig', 'anzeig', 'show', 'sehen']
-      const affirmative =
-        yesWords.some((w) => q === w || q.startsWith(w + ' ') || q.startsWith(w + ',') || q.startsWith(w + '!')) ||
-        showWords.some((w) => q.includes(w))
-      if (affirmative) {
-        postMemo()
-        return
-      }
-    }
-
     setSending(true)
 
     const history = [...messagesRef.current, { role: 'user', content: text }]

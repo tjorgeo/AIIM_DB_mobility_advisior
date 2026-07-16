@@ -4,7 +4,7 @@ import { MessageCircle, X, Send, ThumbsUp, ThumbsDown, Maximize2, Minimize2 } fr
 import { useChat } from './useChat'
 import Markdown from './Markdown'
 
-export default function ChatWidget({ user, lang, getContext, actions, advisorMemo }) {
+export default function ChatWidget({ user, lang, getContext, actions, advisorMemo, onOpenPortfolio }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [unread, setUnread] = useState(0)
@@ -30,6 +30,18 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
 
   // Opening the chat clears the notification.
   useEffect(() => { if (open) setUnread(0) }, [open])
+
+  // Reserve room for the panel so it never overlaps page content — every page's
+  // main content is centered with `margin: 0 auto`, so shrinking body's available
+  // width (see the .chat-open/.chat-expanded rules in components.css) reflows the
+  // whole page left instead of leaving it to sit underneath the fixed-position
+  // panel. Cleaned up on unmount since body is shared, outside this component's
+  // own DOM subtree.
+  useEffect(() => {
+    document.body.classList.toggle('chat-open', open)
+    document.body.classList.toggle('chat-expanded', open && expanded)
+    return () => { document.body.classList.remove('chat-open', 'chat-expanded') }
+  }, [open, expanded])
 
   // Keep the conversation scrolled to the latest message.
   useEffect(() => {
@@ -95,6 +107,14 @@ export default function ChatWidget({ user, lang, getContext, actions, advisorMem
         {messages.map((m, i) => (
           <div className={`msg msg--${m.role}`} key={i}>
             {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
+            {m.role === 'assistant' && m.action === 'open-portfolio' && onOpenPortfolio && (
+              <button
+                className="msg__action"
+                onClick={onOpenPortfolio}
+              >
+                {t('View portfolio', 'Portfolio ansehen')} →
+              </button>
+            )}
             {m.role === 'assistant' && m.traceId && (
               <div className="msg__feedback">
                 <button

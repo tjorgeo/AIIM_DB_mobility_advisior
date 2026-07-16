@@ -18,6 +18,8 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
+from agent.json_extract import extract_json
+
 
 # ---------------------------------------------------------------------------
 # Input schema
@@ -75,7 +77,12 @@ class PredictedDemand(BaseModel):
 
 class Scenario(BaseModel):
     label: str
-    description: str
+    # Bilingual, mirroring analyst_agent.py's memo (english/german) — description_en/
+    # description_de must be the same content in each language, not two different
+    # texts. Consumers (memo.py, PortfolioDetail.jsx) pick whichever matches the UI
+    # language rather than rendering one language's text unconditionally.
+    description_en: str
+    description_de: str
     predicted_demand: List[PredictedDemand]
 
 
@@ -89,7 +96,8 @@ class ForecastOutput(BaseModel):
     forecast_horizon_days: int
     scenarios: List[Scenario]
     uncertainty_flags: UncertaintyFlags
-    rationale: str
+    rationale_en: str
+    rationale_de: str
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +110,8 @@ _JSON_SCHEMA = """\
   "scenarios": [
     {{
       "label": <str>,
-      "description": <str>,
+      "description_en": <str>,
+      "description_de": <str>,
       "predicted_demand": [
         {{
           "mode": <str>,
@@ -119,7 +128,8 @@ _JSON_SCHEMA = """\
     "life_event_type": <str | null>,
     "recommend_re_evaluation_in_days": <int | null>
   }},
-  "rationale": <str>
+  "rationale_en": <str>,
+  "rationale_de": <str>
 }}"""
 
 _RULES = """\
@@ -154,6 +164,12 @@ Rules:
    monthly_mode_breakdown or the earliest calendar entry — and use it to judge how
    recent monthly_mode_breakdown's months are and how near-term or far-out each
    calendar entry is.
+8. Every "_en"/"_de" field pair (each scenario's description_en/description_de, and
+   the top-level rationale_en/rationale_de) must be a complete, self-contained
+   explanation in exactly ONE language — never mix English and German within a
+   single field, never leave one empty, and never concatenate both languages into
+   one field (e.g. joined by a separator). The "_en" and "_de" fields must convey
+   the same content as natural translations of each other, not different text.
 
 Respond with STRICT JSON matching the schema below — no markdown fences, no prose outside the JSON.
 """
@@ -205,21 +221,6 @@ def _parse_ics(ics_text: str) -> list[dict]:
             "description": str(component.get("DESCRIPTION", "")),
         })
     return events
-
-
-def _extract_json(text: str):
-    """Pull the first complete JSON object out of an LLM reply (tolerates prose or
-    ```json fences before/after it). Uses raw_decode from the first ``{`` so it stops
-    at that object's actual matching closing brace, instead of a greedy regex that
-    would span to the *last* ``}`` in the whole text if any stray braces follow."""
-    start = text.find("{")
-    if start == -1:
-        return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text, start)
-        return obj
-    except json.JSONDecodeError:
-        return None
 
 
 # A calendar month's historical average must deviate from the mode's flat full-history
@@ -372,17 +373,30 @@ def _deterministic_fallback(
             )
         )
 
-    rationale = (
+    rationale_en = (
         "Deterministic fallback: LLM not available. Each mode uses the average over "
         "all available months of data, overridden by a same-calendar-month prior-year "
         "average where that reveals a strong seasonal signal (>="
         f"{_SEASONAL_DEVIATION_THRESHOLD:.0%} deviation from the flat average)."
     )
+    rationale_de = (
+        "Deterministischer Fallback: Kein LLM verfügbar. Jedes Verkehrsmittel nutzt den "
+        "Durchschnitt über alle verfügbaren Monate, überschrieben durch einen "
+        "Vorjahres-Durchschnitt für dieselben Kalendermonate, wenn dieser ein starkes "
+        f"saisonales Signal zeigt (>={_SEASONAL_DEVIATION_THRESHOLD:.0%} Abweichung vom "
+        "Durchschnitt)."
+    )
     if calendar_supplied:
-        rationale += (
+        rationale_en += (
             " Upcoming calendar entries were supplied but not analyzed — detecting life "
             "events or trip-specific demand from calendar data requires an LLM; re-run "
             "once one is configured to factor these in."
+        )
+        rationale_de += (
+            " Bevorstehende Kalendereinträge wurden übermittelt, aber nicht analysiert — "
+            "die Erkennung von Lebensereignissen oder fahrtspezifischer Nachfrage aus "
+            "Kalenderdaten erfordert ein LLM; erneut ausführen, sobald eines konfiguriert "
+            "ist, um diese zu berücksichtigen."
         )
 
     return ForecastOutput(
@@ -390,16 +404,22 @@ def _deterministic_fallback(
         scenarios=[
             Scenario(
                 label="baseline",
-                description=(
+                description_en=(
                     "Forecast derived from historical averages across the full available "
                     "history, adjusted for strong seasonal signals where present (LLM not "
                     "configured — deterministic fallback)."
+                ),
+                description_de=(
+                    "Prognose basierend auf historischen Durchschnittswerten über den "
+                    "gesamten verfügbaren Zeitraum, angepasst an starke saisonale Signale, "
+                    "sofern vorhanden (kein LLM konfiguriert — deterministischer Fallback)."
                 ),
                 predicted_demand=predicted,
             )
         ],
         uncertainty_flags=UncertaintyFlags(life_event_detected=False),
-        rationale=rationale,
+        rationale_en=rationale_en,
+        rationale_de=rationale_de,
     ).model_dump()
 
 
@@ -488,7 +508,7 @@ def forecast(
             SystemMessage(content=system_prompt),
             HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
         ])
-        data = _extract_json(response.content)
+        data = extract_json(response.content)
         if data:
             return ForecastOutput(**data).model_dump()
         print("[forecast] Could not parse LLM response; using deterministic fallback.")

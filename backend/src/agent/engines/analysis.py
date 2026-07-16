@@ -18,6 +18,8 @@ import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from agent import mode_factors
+from agent.engines.scoring import pick_best_category_option, resolve_weights
 from agent.schema_map import category_covers_mode
 
 logger = logging.getLogger(__name__)
@@ -320,7 +322,6 @@ def _rank_alternatives(
     no_subscription_annual_cost: float | None,
     remainder_fn,
     actual_annual_cost: float | None,
-    has_held_subs: bool,
 ) -> tuple[list[dict], list[str]]:
     """Search ``pricing_catalog`` for this category's eligible alternatives, price
     each via ``remainder_fn(plan) -> (remainder_eur, basis_label) | None``, and rank
@@ -329,6 +330,14 @@ def _rank_alternatives(
     projection (bound to ``_estimate_projected_alternative_remainder``, no legs) — the
     eligibility/travel-class filtering and ranking logic is identical either way, only
     how a plan's remainder gets priced differs.
+
+    ``actual_annual_cost`` is what the customer is really paying today in this
+    category — a real number whether or not they hold a subscription there (pure
+    pay-as-you-go is still "what they're actually paying"). Only the forecast
+    projection can leave it ``None`` (a currently-held metered plan whose cost can't
+    be projected without duration data) — never withhold
+    ``annual_savings_vs_current_eur`` just because no subscription is held; that's a
+    real, known comparison either way.
 
     ``no_subscription_annual_cost`` may be ``None`` when the caller has no reference
     cost basis at all for this category (e.g. a forecast scenario introducing a mode
@@ -379,7 +388,7 @@ def _rank_alternatives(
             ),
             "annual_savings_vs_current_eur": (
                 round(actual_annual_cost - estimated_annual_cost, 2)
-                if has_held_subs and actual_annual_cost is not None
+                if actual_annual_cost is not None
                 else None
             ),
         })
@@ -390,43 +399,70 @@ def _rank_alternatives(
 def _pick_recommendation(
     actual_annual_cost: float | None,
     no_subscription_annual_cost: float | None,
-    cheapest_alternative: dict | None,
+    alternatives: list[dict],
     has_held_subs: bool,
-) -> tuple[float | None, str]:
-    """Pick the genuinely cheapest of the three options — current setup, pure
-    pay-as-you-go, and the cheapest priceable alternative — rather than only
-    checking the alternative against the current setup. Without this, a case
-    where pay-as-you-go actually beats *both* the current subscription and the
-    best alternative would still recommend switching to that (pricier-than-payg)
-    alternative instead of dropping subscriptions in this bucket entirely.
+    category_co2_kg: float | None,
+    category_time_minutes: float | None,
+    weights: dict[str, float],
+) -> tuple[float | None, dict | None, dict | None, str]:
+    """Pick the best of the three options — current setup, pure pay-as-you-go, and
+    every priceable alternative (not just the cheapest) — by a weighted cost/CO2/time
+    score (see ``scoring.pick_best_category_option``), rather than only checking the
+    cheapest alternative against the current setup. Considering every alternative
+    (not just the cheapest) matters once CO2/time can outweigh a small cost gap: a
+    pricier-but-greener alternative can now win even when the cheapest one wouldn't.
+
+    ``category_co2_kg``/``category_time_minutes`` are the SAME real, already-computed
+    category totals applied to current/no-subscription/every alternative alike —
+    switching which plan pays for this category's trips doesn't change which
+    physical mode/trips those are, only the price. This is not a no-op: it's what
+    keeps the score in the common case reducing to the historical pure-cost
+    ranking (see scoring.py's module docstring on degenerate-range handling), while
+    staying meaningful once real per-mode CO2/time variance exists (the
+    cross-category modal-shift comparison in modal_shift.py uses this same primitive
+    with genuinely different CO2/time per candidate).
 
     Any of the three costs may be ``None`` (unknown — only possible for the forecast
     projection, e.g. a currently-held metered plan whose cost can't be projected
-    without duration data). A ``None`` cost simply can't win a comparison; if every
-    cost is ``None``, the recommendation is ``"insufficient_cost_data"`` rather than
-    silently defaulting to "keep current" with no actual number behind it.
+    without duration data). A ``None`` cost simply can't win; if every cost is
+    ``None``, the recommendation is ``"insufficient_cost_data"`` rather than silently
+    defaulting to "keep current" with no actual number behind it.
 
-    Returns ``(best_known_cost, recommendation)``.
+    Returns ``(best_known_cost, winning_alternative, score_breakdown, recommendation)``.
     """
-    best_cost = actual_annual_cost
-    recommendation = "keep_current" if has_held_subs else "no_subscription_needed"
+    current = (
+        {
+            "annual_cost_eur": actual_annual_cost,
+            "annual_co2_kg": category_co2_kg,
+            "annual_time_minutes": category_time_minutes,
+        }
+        if actual_annual_cost is not None else None
+    )
+    no_subscription = (
+        {
+            "annual_cost_eur": no_subscription_annual_cost,
+            "annual_co2_kg": category_co2_kg,
+            "annual_time_minutes": category_time_minutes,
+        }
+        if no_subscription_annual_cost is not None else None
+    )
+    scored_alternatives = [
+        {
+            "annual_cost_eur": alt["estimated_annual_cost_eur"],
+            "annual_co2_kg": category_co2_kg,
+            "annual_time_minutes": category_time_minutes,
+            "_ref": alt,
+        }
+        for alt in alternatives
+    ]
 
-    if no_subscription_annual_cost is not None and (
-        best_cost is None or no_subscription_annual_cost < best_cost
-    ):
-        best_cost = no_subscription_annual_cost
-        recommendation = "cancel_current_go_pay_as_you_go" if has_held_subs else "no_subscription_needed"
-
-    if cheapest_alternative is not None and (
-        best_cost is None or cheapest_alternative["estimated_annual_cost_eur"] < best_cost
-    ):
-        best_cost = cheapest_alternative["estimated_annual_cost_eur"]
-        recommendation = "switch_to_alternative" if has_held_subs else "consider_subscribing"
-
-    if best_cost is None:
-        recommendation = "insufficient_cost_data"
-
-    return best_cost, recommendation
+    result = pick_best_category_option(current, no_subscription, scored_alternatives, has_held_subs, weights)
+    return (
+        result["best_cost"],
+        result["winning_alternative"],
+        result["score_breakdown"],
+        result["recommendation"],
+    )
 
 
 def _category_definitions() -> list[tuple]:
@@ -459,6 +495,7 @@ def analyze_portfolio(
     current_subscriptions: list,
     pricing_catalog: list | None = None,
     user_age: int | None = None,
+    preferences: dict | None = None,
 ) -> dict:
     """
     Parameters
@@ -477,6 +514,11 @@ def analyze_portfolio(
         The user's age, for filtering out age-gated catalog plans they're not
         eligible for when proposing alternatives (e.g. a Senioren BahnCard for a
         30-year-old). ``None`` (unknown) doesn't exclude age-gated plans.
+    preferences:
+        ``schema_map.preferences_from_onboarding``'s output (``cost_priority``/
+        ``co2_priority``/``convenience_priority``, 0-100), used to weight the
+        keep/switch/cancel decision (see ``scoring.resolve_weights``). ``None``
+        (or all-zero/unknown) falls back to an equal three-way weighting.
 
     Returns a dict with two logical sections:
     - Full output — usage stats, subscription value audit, and the per-category
@@ -485,6 +527,12 @@ def analyze_portfolio(
       AnalystSummary schema that ``forecast()`` in forecasting.py expects.
     """
     pricing_catalog = pricing_catalog or []
+    preferences = preferences or {}
+    weights = resolve_weights(
+        preferences.get("cost_priority"),
+        preferences.get("co2_priority"),
+        preferences.get("convenience_priority"),
+    )
 
     # ------------------------------------------------------------------ #
     # 1. Data window — capped to the last 12 months                      #
@@ -533,7 +581,10 @@ def analyze_portfolio(
     # raw production transport_mode individually, e.g. regional_train and
     # long_distance_train are never merged into one "train" figure)
     raw_mode_stats: dict[str, dict] = defaultdict(
-        lambda: {"trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0}
+        lambda: {
+            "trips": 0, "intrinsic": 0.0, "effective": 0.0, "distance": 0.0, "co2": 0.0,
+            "duration": 0.0,
+        }
     )
     # sub_stats: per-subscription attribution, keyed by user_subscription_id.
     # Drives subscription_coverage directly from what each leg actually used,
@@ -595,6 +646,7 @@ def analyze_portfolio(
         raw_mode_stats[raw_mode]["effective"] += effective
         raw_mode_stats[raw_mode]["distance"] += dist
         raw_mode_stats[raw_mode]["co2"] += co2
+        raw_mode_stats[raw_mode]["duration"] += duration
 
         dt = _parse_dt(leg.get("started_at"))
         legs_by_raw_mode[raw_mode].append({
@@ -734,7 +786,7 @@ def analyze_portfolio(
     # its own analysis bucket below (see "8b."), not lumped in here.        #
     # ------------------------------------------------------------------ #
     def _category_annual_stats(mode_filter) -> dict:
-        trips = intrinsic = effective = co2 = distance = 0.0
+        trips = intrinsic = effective = co2 = distance = duration = 0.0
         for raw_mode, st in raw_mode_stats.items():
             if mode_filter(raw_mode):
                 trips += st["trips"]
@@ -742,12 +794,14 @@ def analyze_portfolio(
                 effective += st["effective"]
                 co2 += st["co2"]
                 distance += st["distance"]
+                duration += st["duration"]
         return {
             "annual_trips": round(trips / months_of_data * 12, 1),
             "annual_cost_eur": round(intrinsic / months_of_data * 12, 2),
             "annual_effective_cost_eur": round(effective / months_of_data * 12, 2),
             "annual_co2_kg": round(co2 / months_of_data * 12, 2),
             "annual_distance_km": round(distance / months_of_data * 12, 2),
+            "annual_time_minutes": round(duration / months_of_data * 12, 1),
         }
 
     category_annual_stats = {
@@ -860,12 +914,13 @@ def analyze_portfolio(
             lambda plan: _estimate_alternative_remainder(
                 plan, no_subscription_annual_cost, category_legs, months_of_data
             ),
-            actual_annual_cost, bool(held_subs),
+            actual_annual_cost,
         )
         cheapest_alternative = alternatives[0] if alternatives else None
 
-        _, recommendation = _pick_recommendation(
-            actual_annual_cost, no_subscription_annual_cost, cheapest_alternative, bool(held_subs)
+        best_cost, winning_alternative, score_breakdown, recommendation = _pick_recommendation(
+            actual_annual_cost, no_subscription_annual_cost, alternatives, bool(held_subs),
+            stats["annual_co2_kg"], stats["annual_time_minutes"], weights,
         )
 
         return {
@@ -873,15 +928,29 @@ def analyze_portfolio(
             "annual_trips": stats["annual_trips"],
             "no_subscription_annual_cost_eur": no_subscription_annual_cost,
             "actual_annual_cost_eur": actual_annual_cost,
+            # Cost of the option the recommendation points at (the cheapest of
+            # current / pay-as-you-go / best alternative). Exposed so consumers can
+            # derive the annual saving as actual_annual_cost_eur - best_option_cost_eur
+            # without re-running the comparison. None only when every option is
+            # unpriceable (recommendation == "insufficient_cost_data").
+            "best_option_cost_eur": best_cost,
+            "annual_co2_kg": stats["annual_co2_kg"],
+            "annual_time_minutes": stats["annual_time_minutes"],
+            "annual_distance_km": stats["annual_distance_km"],
             "applies_to_modes": sorted(m for m in raw_mode_stats if mode_filter(m)),
             "current_subscriptions": current_subscriptions_detail,
             # Full ranked comparison (cheapest first) — cheapest_alternative is just
-            # alternatives[0], kept alongside for convenience since most callers only
-            # care about the winner.
+            # alternatives[0], kept alongside for transparency/the "all alternatives"
+            # table even though it may not be the plan actually recommended (see
+            # recommended_alternative — the multi-criteria scoring winner, which
+            # every switch_to_alternative/consider_subscribing recommendation and the
+            # memo now refer to).
             "alternatives": alternatives,
             "cheapest_alternative": cheapest_alternative,
+            "recommended_alternative": winning_alternative,
             "non_comparable_alternatives": non_comparable_alternatives,
             "recommendation": recommendation,
+            "score_breakdown": score_breakdown,
         }
 
     category_subscription_analysis = []
@@ -984,13 +1053,15 @@ def analyze_portfolio(
 # projectable — see _estimate_projected_alternative_remainder.                #
 # --------------------------------------------------------------------------- #
 
-def _implied_rate_by_mode(mode_breakdown: dict) -> dict[str, tuple[float, str]]:
+def implied_rate_by_mode(mode_breakdown: dict) -> dict[str, tuple[float, str]]:
     """mode -> (rate, basis) where basis is "per_km" or "per_trip", implied from real
     historical mode_breakdown figures (intrinsic_cost_eur / distance_km, falling back
     to /trips for a mode with no meaningful distance signal). Modes absent from
     mode_breakdown (never used historically) are absent from the returned dict
     entirely — callers must treat that as "no cost basis to project from", not "$0
-    to travel this much".
+    to travel this much". Not underscore-prefixed: also imported by modal_shift.py
+    to price a hypothetical cross-category candidate off the same real historical
+    rate, rather than inventing a second pricing formula.
     """
     rates: dict[str, tuple[float, str]] = {}
     for mode, st in mode_breakdown.items():
@@ -1046,6 +1117,7 @@ def project_category_subscription_analysis(
     current_subscriptions: list,
     pricing_catalog: list | None = None,
     user_age: int | None = None,
+    preferences: dict | None = None,
 ) -> list[dict]:
     """Forecast-scenario analogue of ``category_subscription_analysis``: the same
     current-vs-alternative-vs-no-subscription comparison, computed from one forecast
@@ -1061,8 +1133,18 @@ def project_category_subscription_analysis(
     See the module note above for exactly which catalog plans can be projected this
     way; anything that can't lands in ``non_comparable_alternatives`` with a reason,
     never silently mispriced.
+
+    ``preferences``: same as ``analyze_portfolio``'s — weights the projected
+    keep/switch/cancel verdict the same way, so a forecast scenario can't recommend
+    something the historical analysis wouldn't under the same preferences.
     """
     pricing_catalog = pricing_catalog or []
+    preferences = preferences or {}
+    weights = resolve_weights(
+        preferences.get("cost_priority"),
+        preferences.get("co2_priority"),
+        preferences.get("convenience_priority"),
+    )
     horizon_days = forecast_horizon_days or 365
     annual_factor = 365.0 / horizon_days
 
@@ -1077,7 +1159,7 @@ def project_category_subscription_analysis(
     catalog_by_id = {p.get("id"): p for p in pricing_catalog if p.get("id")}
 
     held_subs_by_category = _active_subscriptions(current_subscriptions)["held_subs_by_category"]
-    rates = _implied_rate_by_mode(mode_breakdown)
+    rates = implied_rate_by_mode(mode_breakdown)
     demand_by_mode = {d["mode"]: d for d in predicted_demand if d.get("mode")}
 
     projected_category_analysis = []
@@ -1091,6 +1173,33 @@ def project_category_subscription_analysis(
         ) * annual_factor
         if projected_trips <= 0:
             continue
+
+        # Projected CO2/time from mode_factors' distance-based estimate, applied to
+        # this scenario's own projected per-mode trips/km — the same estimation
+        # model modal_shift.py uses for a hypothetical mode, here applied to a
+        # hypothetical *future* volume on already-used modes instead. co2/time are
+        # None (not guessed at) when any matching mode isn't in mode_factors' tables.
+        category_co2_kg = 0.0
+        category_time_minutes = 0.0
+        co2_computable = True
+        time_computable = True
+        for m in matching_modes:
+            mode_trips = (demand_by_mode[m].get("estimated_trips") or 0) * annual_factor
+            mode_km = (demand_by_mode[m].get("estimated_km") or 0) * annual_factor
+            if mode_trips <= 0:
+                continue
+            mode_co2 = mode_factors.estimate_co2_kg(m, mode_km)
+            if mode_co2 is None:
+                co2_computable = False
+            else:
+                category_co2_kg += mode_co2
+            per_trip_minutes = mode_factors.estimate_time_minutes(m, mode_km / mode_trips)
+            if per_trip_minutes is None:
+                time_computable = False
+            else:
+                category_time_minutes += per_trip_minutes * mode_trips
+        category_co2_kg = round(category_co2_kg, 2) if co2_computable else None
+        category_time_minutes = round(category_time_minutes, 1) if time_computable else None
 
         no_subscription_annual_cost = 0.0
         modes_without_rate = []
@@ -1182,18 +1291,21 @@ def project_category_subscription_analysis(
             lambda plan: _estimate_projected_alternative_remainder(
                 plan, no_subscription_annual_cost, projected_trips, projected_km
             ),
-            actual_annual_cost, bool(held_subs),
+            actual_annual_cost,
         )
         cheapest_alternative = alternatives[0] if alternatives else None
 
-        _, recommendation = _pick_recommendation(
-            actual_annual_cost, no_subscription_annual_cost, cheapest_alternative, bool(held_subs)
+        _, winning_alternative, score_breakdown, recommendation = _pick_recommendation(
+            actual_annual_cost, no_subscription_annual_cost, alternatives, bool(held_subs),
+            category_co2_kg, category_time_minutes, weights,
         )
 
         projected_category_analysis.append({
             "category": key,
             "annual_trips": round(projected_trips, 1),
             "annual_distance_km": round(projected_km, 2),
+            "annual_co2_kg": category_co2_kg,
+            "annual_time_minutes": category_time_minutes,
             "no_subscription_annual_cost_eur": no_subscription_annual_cost,
             "actual_annual_cost_eur": actual_annual_cost,
             "actual_annual_cost_note": actual_annual_cost_note,
@@ -1201,8 +1313,10 @@ def project_category_subscription_analysis(
             "current_subscriptions": current_subscriptions_detail,
             "alternatives": alternatives,
             "cheapest_alternative": cheapest_alternative,
+            "recommended_alternative": winning_alternative,
             "non_comparable_alternatives": non_comparable_alternatives,
             "recommendation": recommendation,
+            "score_breakdown": score_breakdown,
             "pricing_basis_note": (
                 "Costs projected from this scenario's forecasted trips/km using historical "
                 "€/km (or €/trip) rates per mode observed in the last 12 months — not measured "
@@ -1223,6 +1337,7 @@ def attach_projected_category_analysis(
     current_subscriptions: list,
     pricing_catalog: list | None,
     user_age: int | None,
+    preferences: dict | None = None,
 ) -> None:
     """Mutates ``forecaster_out["scenarios"]`` in place, adding
     ``projected_category_analysis`` to each scenario — the forecast-demand analogue of
@@ -1237,6 +1352,7 @@ def attach_projected_category_analysis(
             scenario["projected_category_analysis"] = project_category_subscription_analysis(
                 scenario.get("predicted_demand", []),
                 horizon, mode_breakdown, current_subscriptions, pricing_catalog, user_age,
+                preferences=preferences,
             )
         except Exception:
             logger.exception(

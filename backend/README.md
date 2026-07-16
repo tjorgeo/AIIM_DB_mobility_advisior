@@ -270,6 +270,73 @@ After the graph runs, the orchestrator inserts a row into `recommendations`
 }
 ```
 
+### 6.1 The single-call LLM baseline (evaluation only)
+
+[`src/agent/baseline_pipeline.py`](src/agent/baseline_pipeline.py) is the
+evaluation counterpart to this pipeline: the same raw context `load_context`
+produces (profile, preferences, subscriptions, full leg-level travel history,
+catalog, calendar) is handed to the LLM in **one call**, and the LLM derives the
+recommended portfolio changes itself — no deterministic engines, no forecaster,
+no number guard. Its output uses the same action vocabulary as
+`category_subscription_analysis[*].recommendation` / `actions_required`
+(`keep_current`, `switch_to_alternative`, `cancel_current_go_pay_as_you_go`,
+`consider_subscribing`, `no_subscription_needed`, `insufficient_cost_data`), so
+main-pipeline and baseline recommendations can be judged against the same rubric.
+
+It is not wired into any endpoint or the frontend. Run it from `backend/` (needs
+`DATABASE_URL` + `UNI_GPT_API_KEY`):
+
+```bash
+python scripts/run_baseline.py <user_id> [...]   # or --all, optionally --out results.json
+```
+
+### 6.2 Baseline-vs-main comparison (Langfuse experiment)
+
+To quantify **how close the bare-LLM baseline gets to the deterministic main
+pipeline**, `scripts/run_comparison.py` runs both over the same four seed personas
+as two Langfuse experiment runs and scores their *recommendations* (not prose). The
+deterministic engine's own output is the ground truth — its per-category
+`recommendation` uses the same action vocabulary as the baseline (see §6.1), so the
+two are directly comparable, and the main arm scores a perfect 1.0 as the ceiling.
+
+Each recommendation set is scored by five evaluators in
+[`eval/recommendation_judges.py`](eval/recommendation_judges.py) — four deterministic
+code checks (`plan-in-catalog`, `action-in-vocabulary`, `savings-non-negative`, and
+the headline `category-agreement`) plus one LLM judge (`recommendation-soundness`).
+Both pipelines are mapped to one shape by [`eval/normalize.py`](eval/normalize.py).
+
+**Prerequisites**
+
+* Postgres running — seeding reads the personas' context from the DB
+  (`docker compose up -d db`). The comparison run itself needs no DB (it uses the
+  context stored in the dataset).
+* `UNI_GPT_API_KEY` (baseline + judge) and `LANGFUSE_PUBLIC_KEY` /
+  `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` set. All three scripts auto-load the
+  repo-root `.env`, so no manual `export` is needed.
+
+**How to run** (from `backend/`, in order):
+
+```bash
+# 1. one-time: create the score configs (types/ranges) in Langfuse — idempotent
+python scripts/seed_score_configs.py
+
+# 2. seed the `recommendation-comparison` dataset from the four personas
+#    (raw context as input, deterministic recommendations as expected_output)
+python scripts/seed_comparison_dataset.py
+
+# 3. run both arms, print the side-by-side score table, push scores to Langfuse
+python scripts/run_comparison.py                     # add --assert-main-agreement for a CI smoke check
+```
+
+Re-run step 2 whenever the personas or the analysis engine change; step 3 as often as
+you like — **each run creates a fresh Langfuse run**, so run it several times to average
+out the baseline's run-to-run variance.
+
+**Where the results appear.** This is not a UI "Evaluator" — the evaluators run
+locally inside the script and attach **scores** to the experiment runs. See them under
+**Datasets → `recommendation-comparison` → Runs** (baseline vs main side-by-side) and
+**Evaluation → Scores**; the score configs live under **Settings → Scores**.
+
 ---
 
 ## 7. HTTP API

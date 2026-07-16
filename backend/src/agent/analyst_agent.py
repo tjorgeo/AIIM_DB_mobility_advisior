@@ -24,6 +24,7 @@ from pathlib import Path
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
+from agent.json_extract import extract_json
 from agent.llm import get_llm
 from agent.observability import get_prompt, trace
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
@@ -56,21 +57,6 @@ def _looks_like_language_mix(english: str, german: str) -> bool:
     if "---" in english or "---" in german:
         return True
     return english.strip() == german.strip()
-
-
-def _extract_json(text: str):
-    """Pull the first complete JSON object out of an LLM reply (tolerates prose or
-    ```json fences before/after it). Uses raw_decode from the first ``{`` so it stops
-    at that object's actual matching closing brace, instead of a greedy regex that
-    would span to the *last* ``}`` in the whole text if any stray braces follow."""
-    start = text.find("{")
-    if start == -1:
-        return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text, start)
-        return obj
-    except json.JSONDecodeError:
-        return None
 
 
 def _read_doc_by_markdown_ref(markdown_ref: str):
@@ -178,6 +164,12 @@ def run_briefing(
         for entry in analyst_out.get("category_subscription_analysis", [])
         for plan_name in (
             [c["provider_plan_name"] for c in entry.get("current_subscriptions", [])]
+            # recommended_alternative is the plan the memo actually narrates as the
+            # switch/consider-subscribing suggestion (the multi-criteria scoring
+            # winner, not necessarily the cheapest — see analysis.py); cheapest_
+            # alternative is included too since the memo may still cite it for
+            # comparison, and older persisted rows won't carry recommended_alternative.
+            + ([entry["recommended_alternative"]["provider_plan_name"]] if entry.get("recommended_alternative") else [])
             + ([entry["cheapest_alternative"]["provider_plan_name"]] if entry.get("cheapest_alternative") else [])
         )
         if plan_name
@@ -222,7 +214,7 @@ def run_briefing(
         trace_id = tr.trace_id
         for attempt in range(2):
             response = llm.invoke(messages, config=tr.config(prompt=prompt))
-            data = _extract_json(response.content)
+            data = extract_json(response.content)
             if not data or "english" not in data or "german" not in data:
                 raise ValueError("Analyst memo response missing english/german keys")
             
