@@ -112,6 +112,7 @@ def run_analysis(user_id: str) -> dict:
     return {
         "user": ctx["user"],
         "user_preferences": preferences,
+        "onboarding_raw": ctx.get("onboarding_raw") or {},
         "subscriptions": subscriptions,
         "travel_history": travel_history,
         "pricing_catalog": ctx["pricing_catalog"],

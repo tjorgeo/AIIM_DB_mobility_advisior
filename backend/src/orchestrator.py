@@ -6,6 +6,7 @@ from datetime import datetime
 from database import get_connection
 from agent.context import load_context
 from agent.pipeline import run_analysis as run_pipeline
+from agent.session import create_session, latest_session_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +21,26 @@ class Orchestrator:
 
     Latency guard:
     * **Read-through cache** — ``/api/analyze`` auto-runs on every dashboard mount, so
-      an unforced call reuses the user's most recent ``recommendations`` row (rebuilt
-      from stored JSON + a cheap ``load_context``) instead of re-running the pipeline.
-      Pass ``force=True`` to recompute. A forced/fresh run is fully synchronous — it
-      waits for the LLM forecast and Analyst memo (when an LLM is configured) before
-      returning, so the response always reflects the final result, calendar-driven
-      life events included, with no follow-up call needed to see the upgraded memo.
+      an unforced call rebuilds the payload from the user's most recent **session
+      snapshot** (no ``load_context``, no engines, no LLM), falling back to the legacy
+      ``recommendations`` row for pre-session records. Pass ``force=True`` to recompute.
+      A forced/fresh run is fully synchronous — it waits for the LLM forecast and Analyst
+      memo before returning, so the response always reflects the final result,
+      calendar-driven life events included, with no follow-up call needed.
+
+    Session model: a fresh run persists both a ``recommendations`` row (approval trail)
+    and an ``analysis_sessions`` row (the full snapshot) sharing one id — the session is
+    the read-through source of truth; the recommendations row keeps ``/approve`` working.
     """
 
     def run_analysis(self, user_id: str, force: bool = False) -> dict:
-        # --- CACHE: reuse the latest recommendation unless a refresh is forced ---
+        # --- CACHE: reuse the latest analysis unless a refresh is forced ---
+        # Prefer the session snapshot (self-contained, no re-query); fall back to the
+        # legacy recommendations-row cache for records created before the session model.
         if not force:
+            cached = self._load_cached_session(user_id)
+            if cached is not None:
+                return cached
             cached = self._load_cached(user_id)
             if cached is not None:
                 return cached
@@ -112,6 +122,28 @@ class Orchestrator:
         conn.commit()
         conn.close()
 
+        # Persist the full analysis snapshot as a session (same id as the recommendations
+        # row) so the read-through cache can rebuild the dashboard payload without a
+        # load_context / engine / LLM re-run, and the advisor can ground from it later.
+        snapshot = {
+            "created_at": created_at_str,
+            "status": "ready",
+            "user": user,
+            "user_preferences": user_preferences,
+            "onboarding_raw": state.get("onboarding_raw") or {},
+            "subscriptions": subscriptions,
+            "travel_history_len": len(travel_history),
+            "pricing_catalog_size": len(pricing_catalog),
+            "analyst_out": analyst_out,
+            "forecaster_out": forecaster_out,
+            "total_actual_annual_cost_eur": total_actual_annual_cost,
+            "total_estimated_savings_eur": total_estimated_savings,
+            "actions_required": actions_required,
+            "memos": memos,
+            "memo_source": memo_source,
+        }
+        create_session(rec_id, user_id, snapshot)
+
         payload = self._shape_payload(
             rec_id=rec_id,
             created_at=created_at_str,
@@ -130,6 +162,55 @@ class Orchestrator:
             memo_source=memo_source,
         )
         return payload
+
+    def _load_cached_session(self, user_id: str):
+        """Rebuild the frontend payload purely from the user's most recent **session
+        snapshot** — no ``load_context``, no engines, no LLM. Returns ``None`` (→ caller
+        tries the legacy cache, then a fresh run) when there is no session or its snapshot
+        is missing/partial.
+
+        The session shares its id with the ``recommendations`` row from the same run, so
+        the current approval status is read from there (a trivial indexed lookup) to keep
+        an approved recommendation showing as approved without a full re-derivation.
+        """
+        session = latest_session_for_user(user_id)
+        if session is None:
+            return None
+        snap = session["snapshot"]
+        if not isinstance(snap, dict) or "analyst_out" not in snap or "user" not in snap:
+            return None  # partial/pre-session snapshot — fall through
+
+        status = self._recommendation_status(session["session_id"]) or snap.get("status", "ready")
+        return self._shape_payload(
+            rec_id=session["session_id"],
+            created_at=snap.get("created_at", session["created_at"]),
+            status=status,
+            user=snap["user"],
+            preferences=snap.get("user_preferences", {}),
+            subscriptions=snap.get("subscriptions", []),
+            travel_history_len=snap.get("travel_history_len", 0),
+            pricing_catalog_size=snap.get("pricing_catalog_size", 0),
+            analyst_out=snap["analyst_out"],
+            forecaster_out=snap.get("forecaster_out", {}),
+            total_actual_annual_cost=snap.get("total_actual_annual_cost_eur", 0.0),
+            total_estimated_savings=snap.get("total_estimated_savings_eur", 0.0),
+            actions_required=snap.get("actions_required", []),
+            memos=snap.get("memos", {}),
+            memo_source=snap.get("memo_source", "template"),
+        )
+
+    def _recommendation_status(self, rec_id: str):
+        """Current ``analysis_status`` of the recommendations row sharing this id, or
+        ``None`` if there isn't one. Trivial indexed lookup — no engines/LLM."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT analysis_status FROM recommendations WHERE recommendation_id = ?",
+            (rec_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row).get("analysis_status") if row else None
 
     def _load_cached(self, user_id: str):
         """Rebuild the frontend payload from the user's most recent recommendation.
@@ -318,6 +399,26 @@ class Orchestrator:
         )
         conn.commit()
         conn.close()
+
+        # Mirror the revision into a session (same id) so the read-through session cache
+        # serves it instead of the pre-revision snapshot. Reuse the latest session's
+        # display fields (user / subscriptions / onboarding); save_revision only recomputes
+        # the per-category analysis and totals. If no base session exists yet, skip — the
+        # legacy recommendations-row cache serves the new row.
+        base = latest_session_for_user(user_id)
+        if base and isinstance(base.get("snapshot"), dict) and base["snapshot"].get("user"):
+            snap = dict(base["snapshot"])
+            snap.update({
+                "created_at": datetime.now().isoformat(),
+                "status": "ready",
+                "analyst_out": revised_analyst,
+                "total_actual_annual_cost_eur": revision["total_actual_annual_cost_eur"],
+                "total_estimated_savings_eur": revision["total_estimated_savings_eur"],
+                "actions_required": revision["actions_required"],
+                "memo_source": "chat_revision",
+                "memos": {"english": "", "german": ""},
+            })
+            create_session(rec_id, user_id, snap)
         return rec_id
 
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
