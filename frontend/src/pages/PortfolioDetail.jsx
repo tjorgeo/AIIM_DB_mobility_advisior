@@ -15,6 +15,61 @@ function recMeta(rec, colors, isDE) {
   }
 }
 
+// Life-event types are free text from the forecaster LLM (see backend
+// forecasting.py's _RULES: "relocation", "new_job", "start_of_studies",
+// "Elternzeit", "major_life_change" are the named examples, nothing enforces
+// exactly these strings). Mirrors backend/src/agent/engines/memo.py's noun
+// tables so the same event reads the same way in the UI as in the memo text.
+const _LIFE_EVENT_LABEL_DE = {
+  relocation: 'Umzug',
+  new_job: 'Jobwechsel',
+  start_of_studies: 'Studienbeginn',
+  parental_leave: 'Elternzeit',
+  elternzeit: 'Elternzeit',
+  major_life_change: 'größere Veränderung',
+}
+const _LIFE_EVENT_LABEL_EN = {
+  relocation: 'Relocation',
+  new_job: 'New job',
+  start_of_studies: 'Start of studies',
+  parental_leave: 'Parental leave',
+  elternzeit: 'Parental leave',
+  major_life_change: 'Life change',
+}
+// Dative phrase ("nach ...") with gender-agreed article for German; English needs
+// only a definite noun phrase since "after" takes no article agreement.
+const _LIFE_EVENT_DATIVE_DE = {
+  relocation: 'dem Umzug',
+  new_job: 'dem Jobwechsel',
+  start_of_studies: 'dem Studienbeginn',
+  parental_leave: 'der Elternzeit',
+  elternzeit: 'der Elternzeit',
+  major_life_change: 'der Veränderung',
+}
+const _LIFE_EVENT_NOUN_EN = {
+  relocation: 'the move',
+  new_job: 'the new job',
+  start_of_studies: 'the start of studies',
+  parental_leave: 'the parental leave',
+  elternzeit: 'the parental leave',
+  major_life_change: 'the life change',
+}
+
+function lifeEventLabel(type, isDE) {
+  const key = (type || '').trim().toLowerCase()
+  const humanized = (type || '').replace(/_/g, ' ')
+  if (isDE) return _LIFE_EVENT_LABEL_DE[key] || humanized || 'Lebensereignis'
+  const fallback = humanized ? humanized.charAt(0).toUpperCase() + humanized.slice(1) : 'Life event'
+  return _LIFE_EVENT_LABEL_EN[key] || fallback
+}
+
+function lifeEventDativePhrase(type, isDE) {
+  const key = (type || '').trim().toLowerCase()
+  const humanized = (type || '').replace(/_/g, ' ')
+  if (isDE) return _LIFE_EVENT_DATIVE_DE[key] || (humanized ? `dem Ereignis „${humanized}“` : 'dem Ereignis')
+  return _LIFE_EVENT_NOUN_EN[key] || (humanized ? `the ${humanized}` : 'the event')
+}
+
 export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions }) {
   const isDE = lang === 'DE'
   // Welche Kategorie zeigt gerade die „Wirklich kündigen?"-Rückfrage
@@ -22,7 +77,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   const langKey = isDE ? 'de' : 'en'
   const t = isDE
     ? {
-      back: 'Zurück zum Dashboard', title: 'Kostenoptimiertes Portfolio', subtitle: 'Kosten heute, Alternativen im Vergleich, Ausblick',
+      back: 'Zurück zum Dashboard', title: 'Optimiertes Portfolio', subtitle: 'Kosten heute, Alternativen im Vergleich, Ausblick',
       current: 'Aktuell', optimized: 'Optimiert', savings: 'Ersparnis',
       categoryTrips: (n) => `Basierend auf ${number(n, langKey)} Fahrten/Jahr`,
       todayLabel: 'AKTUELLE KOSTEN', noSubLabel: 'KOSTEN OHNE ABO',
@@ -31,11 +86,13 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       noAlternatives: 'Keine Alternative im Katalog gefunden — das aktuelle Abo ist bereits die einzige sinnvolle Option.',
       forecastTitle: 'Prognose für die nächsten 12 Monate', forecastSub: 'Erwartete Nutzung auf Basis deiner Historie',
       mode: 'Verkehrsmittel', tripsPerYear: 'Fahrten/Jahr',
-      lifeEventTitle: (type) => `Lebensereignis erkannt: ${type === 'relocation' ? 'Umzug' : type}`,
-      lifeEventNoun: (type) => (type === 'relocation' ? 'Umzug' : type),
+      lifeEventTitle: (type) => `Lebensereignis erkannt: ${lifeEventLabel(type, true)}`,
+      lifeEventNoun: (type) => lifeEventDativePhrase(type, true),
       moreTrips: 'mehr Fahrten mit', fewerTrips: 'weniger Fahrten mit', expectPrefix: 'Erwartet werden',
       higherCost: 'höhere Kosten für', lowerCost: 'niedrigere Kosten für', perYearShort: 'Jahr',
-      recDivergesAfterEvent: (event, label) => `Nach dem ${event} wäre voraussichtlich „${label}“ die bessere Wahl.`,
+      recDivergesAfterEvent: (event, label) => `Nach ${event} wäre voraussichtlich „${label}“ die bessere Wahl.`,
+      newRecommendation: (list) => `Neue Empfehlung durch dieses Ereignis: ${list}.`,
+      recommendationUnchanged: 'Die Empfehlung ändert sich dadurch nicht.',
       reEval: (days) => `Empfehlung: Analyse in ca. ${days} Tagen erneut prüfen.`,
       demandChange: 'Erwartete Änderung des Reiseverhaltens', baseline: 'Bisher', afterEvent: 'Nach Ereignis',
       noLifeEvent: 'Aktuell sind keine bevorstehenden Lebensereignisse in deinem Kalender erkannt worden, die deine Empfehlungen ändern würden.',
@@ -48,7 +105,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       orDifferentMode: 'Oder: anderes Verkehrsmittel',
       stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`,
       noBetterShift: 'Kein anderes Verkehrsmittel schneidet nach deiner Gewichtung besser ab.',
-      excludedNote: 'Geprüft, aber nicht vorgeschlagen:',
       confidenceLow: 'geringe Sicherheit',
       priorityIntro: (cost, co2, time) => `Gewichtet nach deinen Prioritäten: Kosten ${cost}/100, CO₂ ${co2}/100, Flexibilität/Zeit ${time}/100`,
       noCurrentToCompare: 'kein aktuelles Abo zum Vergleich',
@@ -65,11 +121,13 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       noAlternatives: 'No alternative found in the catalog — the current plan is already the only sensible option.',
       forecastTitle: 'Forecast for the next 12 months', forecastSub: 'Expected usage based on your history',
       mode: 'Mode', tripsPerYear: 'Trips/yr',
-      lifeEventTitle: (type) => `Life event detected: ${type === 'relocation' ? 'Relocation' : type}`,
-      lifeEventNoun: (type) => (type === 'relocation' ? 'the move' : type),
+      lifeEventTitle: (type) => `Life event detected: ${lifeEventLabel(type, false)}`,
+      lifeEventNoun: (type) => lifeEventDativePhrase(type, false),
       moreTrips: 'more trips with', fewerTrips: 'fewer trips with', expectPrefix: 'Expect',
       higherCost: 'higher costs for', lowerCost: 'lower costs for', perYearShort: 'yr',
       recDivergesAfterEvent: (event, label) => `After ${event}, "${label}" would likely be the better choice.`,
+      newRecommendation: (list) => `New recommendation due to this event: ${list}.`,
+      recommendationUnchanged: 'This does not change the recommendation.',
       reEval: (days) => `Recommendation: re-check this analysis in about ${days} days.`,
       demandChange: 'Expected change in travel behavior', baseline: 'Before', afterEvent: 'After event',
       noLifeEvent: 'No upcoming life events were detected in your calendar that would change these recommendations.',
@@ -82,7 +140,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       orDifferentMode: 'Or: different mode',
       stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`,
       noBetterShift: 'No other mode scores better under your weighting.',
-      excludedNote: 'Checked, but not suggested:',
       confidenceLow: 'low confidence',
       priorityIntro: (cost, co2, time) => `Weighted by your priorities: cost ${cost}/100, CO₂ ${co2}/100, flexibility/time ${time}/100`,
       noCurrentToCompare: 'no current plan to compare against',
@@ -176,6 +233,23 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
     return `${t.expectPrefix} ${lifeEventImpactClauses.slice(0, 2).map(clause).join(joiner)}.`
   })()
 
+  // Whether the life event actually flips any category's recommendation — the
+  // expected-usage change above can be non-trivial (e.g. -89% long-distance trips)
+  // without changing what we'd tell the customer to do, so this is called out
+  // separately rather than left implicit.
+  const recDivergences = lifeEventDetected
+    ? categoryAnalysis
+        .map((c) => {
+          const projectedRec = projectedByCategory[c.category]
+          if (!projectedRec || projectedRec.recommendation === c.recommendation) return null
+          return `${modeLabel(c.category, langKey)}: ${recMeta(projectedRec.recommendation, colors, isDE).label}`
+        })
+        .filter(Boolean)
+    : []
+  const recChangeSentence = lifeEventDetected
+    ? (recDivergences.length > 0 ? t.newRecommendation(recDivergences.join(', ')) : t.recommendationUnchanged)
+    : null
+
   const cardStyle = { backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '24px', padding: '1.5rem' }
   const kpi = (icon, label, value) => (
     <div style={{ ...cardStyle, padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -242,7 +316,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const shiftTimeDeltaHours = shift && shift.annual_time_minutes != null && shiftSuggestion.stay_annual_time_minutes != null
                 ? Math.round((shift.annual_time_minutes - shiftSuggestion.stay_annual_time_minutes) / 60) : null
               const shiftDeltaColor = (d) => (d <= 0 ? colors.successGreen : colors.accentRed)
-              const shiftExcluded = shiftSuggestion?.excluded_candidates || []
               const swatch = modeColor(c.category, isDark)
               const currentSubs = c.current_subscriptions || []
               const subNames = currentSubs.map((s) => s.provider_plan_name).filter(Boolean)
@@ -271,15 +344,15 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>{modeLabel(c.category, langKey)}</h3>
                     </div>
 {isCancelled ? (
-                      <span style={{ fontSize: '0.72rem', fontWeight: '700', color: colors.textMuted, backgroundColor: colors.inputBg, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.textMuted, backgroundColor: colors.inputBg, padding: '0.4rem 0.85rem', borderRadius: '999px' }}>
                         {isDE ? 'Gekündigt' : 'Cancelled'}
                       </span>
                     ) : canCancel ? (
-                      <button type="button" onClick={() => setConfirmingCategory(isConfirming ? null : c.category)} style={{ fontSize: '0.72rem', fontWeight: '700', color: colors.accentRed, backgroundColor: `${colors.accentRed}18`, padding: '0.25rem 0.7rem', borderRadius: '999px', border: `1px solid ${colors.accentRed}55`, cursor: 'pointer' }}>
+                      <button type="button" onClick={() => setConfirmingCategory(isConfirming ? null : c.category)} style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.accentRed, backgroundColor: `${colors.accentRed}18`, padding: '0.4rem 0.95rem', borderRadius: '999px', border: `1px solid ${colors.accentRed}55`, cursor: 'pointer' }}>
                         {meta.label}
                       </button>
                     ) : (
-                      <span style={{ fontSize: '0.72rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}40`, border: `1px solid ${meta.color}66`, padding: '0.25rem 0.6rem', borderRadius: '999px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}40`, border: `1px solid ${meta.color}66`, padding: '0.4rem 0.85rem', borderRadius: '999px' }}>
                         {meta.label}
                       </span>
                     )}
@@ -468,11 +541,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                     <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginTop: '1rem' }}>{t.noBetterShift}</p>
                   )}
 
-                  {shiftSuggestion && shiftExcluded.length > 0 && (
-                    <div style={{ fontSize: '0.7rem', color: colors.textMuted, marginTop: '0.5rem' }}>
-                      {t.excludedNote} {shiftExcluded.map((e) => modeLabel(e.to_category, langKey)).join(', ')}
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -526,6 +594,11 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       {lifeEventImpactSentence && (
                         <p style={{ fontSize: '0.88rem', fontWeight: '600', color: colors.text, marginTop: '0.5rem', lineHeight: '1.5' }}>
                           {lifeEventImpactSentence}
+                        </p>
+                      )}
+                      {recChangeSentence && (
+                        <p style={{ fontSize: '0.85rem', fontWeight: '700', color: recDivergences.length > 0 ? colors.accentAmber : colors.textMuted, marginTop: '0.5rem', lineHeight: '1.5' }}>
+                          {recChangeSentence}
                         </p>
                       )}
                       {(() => {

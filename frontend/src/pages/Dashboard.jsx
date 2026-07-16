@@ -51,7 +51,7 @@ export default function Dashboard() {
       viewDetails: 'Alle Details ansehen',
       recommended: 'Für dich empfohlen',
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
-      portfolioTitle: 'Dein optimiertes Portfolio',
+      portfolioTitle: 'Optimiertes Portfolio',
       estimated: 'Geschätzt',
       insteadOfBefore: (v) => `statt bisher ${v}`,
       savingsBadge: (v) => `− ${v} Ersparnis`,
