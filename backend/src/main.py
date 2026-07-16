@@ -69,9 +69,12 @@ class AnalyzeRequest(BaseModel):
 class ApproveRequest(BaseModel):
     scenario_id: str
 
-class ChatRequest(BaseModel):
-    user_id: str
-    messages: list
+class SessionChatRequest(BaseModel):
+    # The conversation so far (roles user/assistant). An empty list — or a list with no
+    # user message yet — requests the opening briefing (turn 0). ``lang`` selects the
+    # briefing language ("de"/"en").
+    messages: list = []
+    lang: str = "de"
 
 class LoginRequest(BaseModel):
     identifier: str
@@ -249,43 +252,54 @@ def approve_recommendation(rec_id: str, req: ApproveRequest):
         "scenario_id": req.scenario_id
     }
 
-@app.post("/api/chat")
-def chat(req: ChatRequest):
+@app.post("/api/chat/{session_id}")
+def chat_session(session_id: str, req: SessionChatRequest):
+    """The single conversational surface — the Advisor agent grounded in one analysis
+    session. With no user message yet it returns the opening briefing (turn 0, which
+    replaces the old memo and works even without an LLM via the template fallback);
+    otherwise it answers the follow-up (requires an LLM key, else 503).
     """
-    Conversational mobility advisor (agentic ReAct loop with catalogue tool use).
-    Requires an LLM key; without one we return 503 and the frontend falls back to
-    its scripted assistant.
-    """
+    from agent.session import get_session
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+
+    from agent.advisor import opening_briefing, run_turn
+    has_user_message = any(m.get("role") == "user" for m in (req.messages or []))
+    if not has_user_message:
+        reply, trace_id = opening_briefing(session_id, lang=req.lang)
+        return {"reply": reply, "trace_id": trace_id, "session_id": session_id}
+
     from agent.llm import llm_available
     if not llm_available():
         raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
     try:
-        from agent.communicator_agent import run_chat
-        reply, trace_id = run_chat(req.user_id, req.messages)
-        # trace_id lets the frontend attach a thumbs up/down score to this reply
-        # (null when Langfuse tracing is disabled).
-        return {"reply": reply, "trace_id": trace_id}
+        reply, trace_id = run_turn(session_id, req.messages)
+        return {"reply": reply, "trace_id": trace_id, "session_id": session_id}
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
-@app.post("/api/chat/stream")
-def chat_stream(req: ChatRequest):
-    """Streaming variant of /api/chat — Server-Sent Events. Each event is a JSON line:
-    ``{"type":"token","text":"…"}`` per token, then ``{"type":"done","trace_id":…}``.
-    Requires an LLM key (503 otherwise); the frontend falls back to /api/chat and then
-    to its scripted assistant.
+@app.post("/api/chat/{session_id}/stream")
+def chat_session_stream(session_id: str, req: SessionChatRequest):
+    """Streaming variant of the follow-up chat — Server-Sent Events. Each event is a JSON
+    line: ``{"type":"token","text":"…"}`` per token, then ``{"type":"done","trace_id":…}``.
+    Requires an LLM key (503 otherwise); the opening briefing is served non-streamed via
+    ``POST /api/chat/{session_id}``.
     """
+    from agent.session import get_session
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+
     from agent.llm import llm_available
     if not llm_available():
         raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
 
-    from agent.communicator_agent import stream_chat
+    from agent.advisor import stream_turn
 
     def event_stream():
         try:
-            for event in stream_chat(req.user_id, req.messages):
+            for event in stream_turn(session_id, req.messages):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             import traceback

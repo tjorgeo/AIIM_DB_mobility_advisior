@@ -1,7 +1,7 @@
 """Seed the Langfuse-managed prompts from the local prompt files.
 
 Run once (and again whenever you want to push the local .md text as a new
-version) to create/update the `analyst-memo` and `communicator-chat` prompts in
+version) to create/update the `analyst-memo` and `advisor-chat` prompts in
 Langfuse with the `production` label. After seeding, iterate on the prompts in
 the Langfuse UI — the app fetches the `production` label at runtime, so changes
 take effect without a redeploy. The local .md files remain the offline fallback.
@@ -21,11 +21,12 @@ from pathlib import Path
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "src" / "agent" / "prompts"
 
 # name -> (source file, type). Both are single system-prompt templates: the
-# analyst has no variables (grounding data is passed in the human message); the
-# communicator uses {{context}}.
+# analyst-memo has no variables (grounding data is passed in the human message; kept for
+# the eval memo-comparison experiment); the advisor uses {{context}} (filled from the
+# session snapshot).
 PROMPTS = {
     "analyst-memo": ("analyst_system.md", "text"),
-    "communicator-chat": ("communicator_system.md", "text"),
+    "advisor-chat": ("advisor_system.md", "text"),
 }
 
 

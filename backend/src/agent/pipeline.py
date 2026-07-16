@@ -7,10 +7,9 @@ Steps 1–2 are pure deterministic engines, so every euro / CO₂ figure is exac
 reproducible. ``analyze`` computes, per travel category, whether the currently-held
 subscription (if any), a comparable catalog alternative, or paying as you go would be
 cheapest — see ``category_subscription_analysis`` in agent/engines/analysis.py. The
-communicate step runs the deterministic template memo first (the fallback), then —
-when an LLM is configured — replaces the memo prose with the Analyst agent's version
-(which may consult the OKF tariff knowledge base). If the LLM is missing or errors, the
-template memo stands.
+communicate step produces the deterministic template memo only; the rich, LLM-written
+briefing is now the Advisor agent's opening turn (agent/advisor), fetched on demand via
+``POST /api/chat/{session_id}`` rather than generated on this synchronous path.
 
 ``run_analysis`` returns the computed components; :class:`orchestrator.Orchestrator`
 persists them and shapes the exact response payload the frontend consumes.
@@ -21,7 +20,6 @@ import logging
 from agent.context import load_context
 from agent.engines import analyze_portfolio, attach_projected_category_analysis, template_memos
 from agent.engines.modal_shift import build_modal_shift_suggestions
-from agent.llm import llm_available
 from agent.llm_steps.feasibility_judge import judge as feasibility_judge
 from agent.llm_steps.forecast_reasoner import forecast
 
@@ -82,32 +80,14 @@ def run_analysis(user_id: str) -> dict:
         ctx["pricing_catalog"], ctx["user"].get("age"), preferences=preferences,
     )
 
-    # --- communicate: template memo, upgraded to LLM prose when available ---
+    # --- communicate: deterministic template memo only ---
+    # The rich, LLM-written briefing is now the Advisor agent's opening turn (agent/advisor),
+    # fetched on demand via POST /api/chat/{session_id}, not generated on the synchronous
+    # analyze path. The template memo stays as the dashboard's structured fallback text.
     name = ctx["user"]["name"]
     communicator_out = template_memos(name, analyst_out, forecaster_out)
     communicator_out["memo_source"] = "template"
     memo_trace_id = None
-
-    if llm_available():
-        try:
-            from agent.analyst_agent import run_briefing
-
-            # Every figure is already computed above; the Analyst makes one grounded
-            # LLM call instead of re-deriving them through a tool loop. pricing_catalog
-            # carries markdown_ref so the memo cites the exact tariff doc per plan.
-            memo_en, memo_de, memo_trace_id = run_briefing(
-                name,
-                analyst_out,
-                forecaster_out,
-                ctx["pricing_catalog"],
-                user_id=user_id,
-            )
-            communicator_out["memo_english"] = memo_en
-            communicator_out["memo_german"] = memo_de
-            communicator_out["memo_source"] = "llm"
-        except Exception:
-            logger.exception("Analyst memo generation failed; using template memo")
-            communicator_out["memo_source"] = "template_fallback"
 
     return {
         "user": ctx["user"],
