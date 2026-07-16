@@ -353,73 +353,13 @@ class Orchestrator:
         }
 
     def save_revision(self, user_id: str, analyst_out: dict, revision: dict) -> str:
-        """Persist a chat-driven re-optimisation as a new ``recommendations`` row.
+        """Persist a chat-applied re-optimisation. Thin wrapper kept for backward compat —
+        the persistence (recommendations row + mirrored session, sharing one id) now lives
+        in the session layer, ``agent.session.commit_revision``, which the ``apply_change``
+        tool calls directly (so tools no longer reach into the Orchestrator)."""
+        from agent.session import commit_revision
 
-        ``revision`` is the output of ``agent.engines.reoptimize.reoptimize_from_analysis``.
-        The revised per-category analysis is folded back into a copy of ``analyst_out`` so
-        the stored row stays shape-compatible with a fresh ``/api/analyze`` run, and the
-        dashboard's read-through cache serves it on the next mount. Returns the new
-        recommendation id.
-        """
-        revised_analyst = dict(analyst_out)
-        revised_analyst["category_subscription_analysis"] = revision["category_subscription_analysis"]
-
-        stored_payload = {
-            "category_subscription_analysis": revision["category_subscription_analysis"],
-            "total_actual_annual_cost_eur": revision["total_actual_annual_cost_eur"],
-            "total_co2_kg": analyst_out.get("total_co2_kg"),
-            "total_estimated_savings_eur": revision["total_estimated_savings_eur"],
-            "actions_required": revision["actions_required"],
-            "memo_source": "chat_revision",
-            "memos": {"english": "", "german": ""},
-            "applied_constraints": revision.get("applied_constraints", {}),
-        }
-
-        rec_id = str(uuid.uuid4())
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-        INSERT INTO recommendations (
-            recommendation_id, user_id,
-            analyst_output, forecaster_output, optimizer_scenarios,
-            analysis_status, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                rec_id,
-                user_id,
-                json.dumps(revised_analyst),
-                json.dumps({}),
-                json.dumps(stored_payload),
-                "ready",
-                datetime.now().isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
-
-        # Mirror the revision into a session (same id) so the read-through session cache
-        # serves it instead of the pre-revision snapshot. Reuse the latest session's
-        # display fields (user / subscriptions / onboarding); save_revision only recomputes
-        # the per-category analysis and totals. If no base session exists yet, skip — the
-        # legacy recommendations-row cache serves the new row.
-        base = latest_session_for_user(user_id)
-        if base and isinstance(base.get("snapshot"), dict) and base["snapshot"].get("user"):
-            snap = dict(base["snapshot"])
-            snap.update({
-                "created_at": datetime.now().isoformat(),
-                "status": "ready",
-                "analyst_out": revised_analyst,
-                "total_actual_annual_cost_eur": revision["total_actual_annual_cost_eur"],
-                "total_estimated_savings_eur": revision["total_estimated_savings_eur"],
-                "actions_required": revision["actions_required"],
-                "memo_source": "chat_revision",
-                "memos": {"english": "", "german": ""},
-            })
-            create_session(rec_id, user_id, snap)
-        return rec_id
+        return commit_revision(user_id, analyst_out, revision)
 
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
         """Marks a recommendation approved and records the selected scenario.

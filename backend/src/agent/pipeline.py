@@ -52,8 +52,8 @@ def run_analysis(user_id: str) -> dict:
         travel_history, subscriptions, ctx["pricing_catalog"], user_age=ctx["user"].get("age"),
         preferences=preferences,
     )
-    analyst_out["preferences"] = preferences  # referenced by the memo, and re-derived
-    # from in tools/optimize.py so a chat re-optimisation stays weighted the same way
+    analyst_out["preferences"] = preferences  # referenced by the memo, and re-derived from
+    # in tools/simulate.py + tools/apply.py so a chat re-optimisation stays weighted the same way
 
     # Cross-category modal-shift comparison — deterministic candidate pricing/CO2/time
     # plus one batched LLM call judging free-text feasibility (see modal_shift.py's
