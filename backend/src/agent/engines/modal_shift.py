@@ -15,29 +15,21 @@ Money, CO2 and time all stay strictly deterministic:
 * CO2/time are priced off ``mode_factors.py``'s distance-based reference tables (see
   that module for why this, not an LLM, estimates them).
 
-The one place an LLM is used is judging whether a structurally-eligible candidate
-shift is realistic given the user's own free-text onboarding answers
-(``mobility_constraints``/``travel_statement``/``activity_statement``) — a
-health condition, a caregiving responsibility, a stated need for a car — the kind of
-real-world constraint no fixed rule set can reliably catch, but which the user has
-often already told the app about in their own words and which currently goes unused
-by every other engine. The LLM never computes a euro/CO2/minute figure and never
-overrides the deterministic hard-filter below; it only returns feasible/not-feasible
-plus a reason, mirroring forecasting.py's structured-output pattern (pydantic-
-validated JSON via ``json_extract.extract_json``, a deterministic fallback when no
-LLM key is configured or the call/parse fails — this call runs fresh on every
-``/api/analyze``, no caching).
+Whether a structurally-eligible candidate shift is realistic given the user's own
+free-text onboarding answers (``mobility_constraints``/``travel_statement``/
+``activity_statement`` — a health condition, a caregiving responsibility, a stated
+need for a car, the kind of real-world constraint no fixed rule set can reliably
+catch) is a judgment for the LLM. That call is NOT made here: it lives in
+``agent/llm_steps/feasibility_judge.py`` and is *injected* as the ``judge`` callable,
+so this engine stays pure — no LLM, no I/O. When no ``judge`` is passed, every priced
+candidate defaults to a feasible/low-confidence judgment. The injected judge never
+computes a euro/CO2/minute figure and never overrides the deterministic hard-filter
+below; it only returns feasible/not-feasible plus a reason.
 """
-
-import json
-from typing import Literal, Optional
-
-from pydantic import BaseModel
 
 from agent import mode_factors
 from agent.engines.analysis import implied_rate_by_mode
 from agent.engines.scoring import resolve_weights, score_candidates
-from agent.json_extract import extract_json
 
 # category key -> the one raw transport_mode used to price/estimate a shift INTO that
 # category (and to check against avoided_transport_modes). Mirrors
@@ -53,48 +45,6 @@ _SHIFT_TARGET_MODE = {
     "public_transport": "public_transport",
     "long_distance_rail": "long_distance_train",
 }
-
-
-class FeasibilityJudgment(BaseModel):
-    candidate_id: str
-    feasible: bool
-    confidence: Literal["high", "medium", "low"]
-    reasoning: str
-    excluded_reason: Optional[str] = None
-
-
-class ModalShiftFeasibilityOutput(BaseModel):
-    judgments: list[FeasibilityJudgment]
-    rationale: str
-
-
-_SYSTEM_PROMPT = """\
-You are judging whether it is realistic for a mobility customer to shift a set of \
-trips from one transport category to another, based ONLY on the customer's own \
-free-text onboarding answers in the payload below.
-
-Every candidate you are given has ALREADY passed structural eligibility checks \
-(avoided transport modes, driving license) — your job is to catch real-world \
-constraints that only free text can reveal (a stated health condition, a caregiving \
-responsibility, an explicit need for a car, etc.), not to re-derive cost, CO2 or \
-time — those are not shown to you and are not your job.
-
-Default every candidate to feasible=true unless the free text gives a CONCRETE reason \
-against it. Never invent a constraint that is not actually stated. Use confidence \
-"low" when the text is vague or does not mention anything relevant to that specific \
-candidate. excluded_reason is required only when feasible is false, and must
-reference the actual free text, not a generic assumption.
-
-Respond with STRICT JSON matching this schema — no markdown fences, no prose outside \
-the JSON:
-{
-  "judgments": [
-    {"candidate_id": <str>, "feasible": <bool>, "confidence": "high" | "medium" | "low",
-     "reasoning": <str>, "excluded_reason": <str | null>}
-  ],
-  "rationale": <str>
-}
-"""
 
 
 def _hard_exclusion_reason(
@@ -171,70 +121,17 @@ def _price_candidate(
     }
 
 
-def _fallback_judgment(candidate_id: str, reason: str) -> FeasibilityJudgment:
-    return FeasibilityJudgment(
-        candidate_id=candidate_id, feasible=True, confidence="low", reasoning=reason,
-    )
-
-
-def _judge_feasibility(candidates: list[dict], onboarding: dict) -> dict[str, FeasibilityJudgment]:
-    """One batched structured-output LLM call judging every candidate's free-text
-    feasibility, mirroring ``forecasting.py``'s pattern (pydantic-validated
-    ``extract_json``, deterministic fallback). Always returns exactly one judgment per
-    candidate passed in, so callers never need to handle a missing entry.
-    """
-    if not candidates:
-        return {}
-
-    fallback = {
-        c["candidate_id"]: _fallback_judgment(
-            c["candidate_id"],
-            "LLM not available; free-text onboarding constraints were not checked.",
-        )
-        for c in candidates
+def _fallback_feasibility(candidate_id: str, reason: str) -> dict:
+    """Feasible/low judgment (plain dict, same shape as the injected judge returns)
+    used when no ``judge`` is provided — surfaced as such rather than silently
+    dropping the candidate."""
+    return {
+        "candidate_id": candidate_id,
+        "feasible": True,
+        "confidence": "low",
+        "reasoning": reason,
+        "excluded_reason": None,
     }
-
-    try:
-        from agent.llm import llm_available, get_llm
-        from langchain_core.messages import HumanMessage, SystemMessage
-        if not llm_available():
-            return fallback
-    except ImportError:
-        return fallback
-
-    payload = {
-        "candidates": [
-            {
-                "candidate_id": c["candidate_id"],
-                "from_category": c["from_category"],
-                "to_category": c["to_category"],
-                "annual_trips": c["annual_trips"],
-            }
-            for c in candidates
-        ],
-        "mobility_constraints": onboarding.get("mobility_constraints") or [],
-        "travel_statement": onboarding.get("travel_statement"),
-        "activity_statement": onboarding.get("activity_statement"),
-    }
-    try:
-        response = get_llm().invoke([
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
-        data = extract_json(response.content)
-        if not data:
-            return fallback
-        parsed = ModalShiftFeasibilityOutput(**data)
-        by_id = {j.candidate_id: j for j in parsed.judgments}
-        # A partial reply (LLM dropped a candidate) is still useful for the ones it
-        # did cover — fall back only for the specific candidate(s) missing, not the
-        # whole batch.
-        return {
-            c["candidate_id"]: by_id.get(c["candidate_id"]) or fallback[c["candidate_id"]]
-            for c in candidates
-        }
-    except Exception:
-        return fallback
 
 
 def build_modal_shift_suggestions(
@@ -242,13 +139,17 @@ def build_modal_shift_suggestions(
     category_subscription_analysis: list[dict],
     onboarding: dict,
     preferences: dict | None,
-    use_llm: bool = True,
+    judge=None,
 ) -> list[dict]:
     """For each category the user actually travels in, evaluate whether shifting
     those trips onto one of the other categories would beat staying, on the shared
     weighted cost/CO2/time score. Returns one entry per FROM category with
     ``annual_trips > 0`` (every one of the other 4 categories is always either priced
     or excluded with a reason, so there's always something to report).
+
+    ``judge`` is an optional callable ``(candidates, onboarding) -> {candidate_id: dict}``
+    (see ``agent.llm_steps.feasibility_judge.judge``) — injected so this engine stays
+    LLM-free. When ``None``, every priced candidate defaults to feasible/low-confidence.
     """
     onboarding = onboarding or {}
     preferences = preferences or {}
@@ -295,14 +196,18 @@ def build_modal_shift_suggestions(
         priced_by_from[from_category] = priced
         excluded_by_from[from_category] = excluded
 
-    # Pass 2: one batched LLM feasibility call across every from-category's priced
-    # candidates this run (never per-category — one call total per /api/analyze).
+    # Pass 2: one batched feasibility judgment across every from-category's priced
+    # candidates this run (never per-category — one call total per /api/analyze). The
+    # judge (an LLM step) is injected so this engine stays LLM-free; with no judge,
+    # everything defaults to feasible/low.
     all_priced = [c for candidates in priced_by_from.values() for c in candidates]
-    if use_llm:
-        judgments = _judge_feasibility(all_priced, onboarding)
+    if judge is not None:
+        judgments = judge(all_priced, onboarding)
     else:
         judgments = {
-            c["candidate_id"]: _fallback_judgment(c["candidate_id"], "LLM feasibility check skipped (use_llm=False).")
+            c["candidate_id"]: _fallback_feasibility(
+                c["candidate_id"], "No feasibility judge configured; free-text onboarding constraints were not checked."
+            )
             for c in all_priced
         }
 
@@ -317,15 +222,15 @@ def build_modal_shift_suggestions(
         feasible_candidates = []
         for c in priced:
             judgment = judgments.get(c["candidate_id"])
-            if judgment is not None and not judgment.feasible:
+            if judgment is not None and not judgment["feasible"]:
                 excluded_candidates.append({
                     "from_category": c["from_category"], "to_category": c["to_category"],
                     "to_mode": c["to_mode"],
-                    "excluded_reason": judgment.excluded_reason or judgment.reasoning,
+                    "excluded_reason": judgment.get("excluded_reason") or judgment.get("reasoning"),
                 })
                 continue
             enriched = dict(c)
-            enriched["feasibility"] = judgment.model_dump() if judgment else None
+            enriched["feasibility"] = judgment if judgment else None
             feasible_candidates.append(enriched)
 
         stay = {

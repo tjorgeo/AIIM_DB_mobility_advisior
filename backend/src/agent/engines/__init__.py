@@ -4,13 +4,13 @@ from agent.engines.analysis import (
     attach_projected_category_analysis,
     project_category_subscription_analysis,
 )
-from agent.engines.forecasting import forecast
+from agent.engines.forecasting import seasonal_projection
 from agent.engines.memo import template_memos
 
 __all__ = [
     "analyze_portfolio",
     "attach_projected_category_analysis",
     "project_category_subscription_analysis",
-    "forecast",
+    "seasonal_projection",
     "template_memos",
 ]

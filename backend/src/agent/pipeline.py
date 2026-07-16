@@ -19,9 +19,11 @@ persists them and shapes the exact response payload the frontend consumes.
 import logging
 
 from agent.context import load_context
-from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast, template_memos
+from agent.engines import analyze_portfolio, attach_projected_category_analysis, template_memos
 from agent.engines.modal_shift import build_modal_shift_suggestions
 from agent.llm import llm_available
+from agent.llm_steps.feasibility_judge import judge as feasibility_judge
+from agent.llm_steps.forecast_reasoner import forecast
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,7 @@ def run_analysis(user_id: str) -> dict:
     # module docstring). Runs fresh every analysis, no caching.
     analyst_out["modal_shift_suggestions"] = build_modal_shift_suggestions(
         analyst_out["mode_breakdown"], analyst_out["category_subscription_analysis"],
-        ctx.get("onboarding_raw") or {}, preferences, use_llm=True,
+        ctx.get("onboarding_raw") or {}, preferences, judge=feasibility_judge,
     )
 
     # Forecaster consumes the analyst's forecaster_summary (dominant patterns +

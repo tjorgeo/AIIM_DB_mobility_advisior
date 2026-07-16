@@ -1,20 +1,14 @@
-"""Unit tests for agent.engines.forecasting.forecast on the DETERMINISTIC path.
+"""Unit tests for agent.engines.forecasting.seasonal_projection — the pure
+deterministic demand projection.
 
-The LLM path is forced off with monkeypatch so these are fully reproducible and need
-no API key. forecast() does ``from agent.llm import llm_available`` at call time, so
-patching the attribute on ``agent.llm`` is sufficient.
+No LLM, no monkeypatching, no API key needed: the engine has no LLM path to force off
+(the LLM demand reasoning now lives in agent/llm_steps/forecast_reasoner.py and is
+covered separately in test_llm_steps.py).
 """
 
 import json
 
-import pytest
-
-from agent.engines import forecast
-
-
-@pytest.fixture(autouse=True)
-def _force_deterministic(monkeypatch):
-    monkeypatch.setattr("agent.llm.llm_available", lambda: False)
+from agent.engines.forecasting import seasonal_projection
 
 
 # Fixed anchor date for every test below. Its 90-day forecast window falls in
@@ -32,7 +26,7 @@ def _month(trips, distance_km):
 
 
 def test_output_shape(analyst_summary):
-    out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
+    out = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
     assert out["forecast_horizon_days"] == 90
     assert len(out["scenarios"]) == 1
     assert out["scenarios"][0]["label"] == "baseline"
@@ -45,7 +39,7 @@ def test_output_shape(analyst_summary):
 
 
 def test_one_prediction_per_dominant_pattern_mode(analyst_summary):
-    out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
+    out = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
     modes = {p["mode"] for p in out["scenarios"][0]["predicted_demand"]}
     assert modes == {"public_transport", "regional_train"}
 
@@ -60,7 +54,7 @@ def test_full_window_average_used_when_no_seasonal_signal(analyst_summary):
     average (4/mo -> 12)."""
     demand = {
         p["mode"]: p
-        for p in forecast(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)["scenarios"][0]["predicted_demand"]
+        for p in seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)["scenarios"][0]["predicted_demand"]
     }
     assert demand["public_transport"]["estimated_trips"] == 36
     assert "3 available month" in demand["public_transport"]["basis"]
@@ -89,7 +83,7 @@ def test_full_window_average_smooths_a_short_recent_spike():
         "monthly_mode_breakdown": monthly,
     }
     # Window Aug-Oct: doesn't match any month above, so no seasonal override applies.
-    out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
+    out = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
     demand = out["scenarios"][0]["predicted_demand"][0]
 
     full_window_avg = (10 * 4 + 30 * 3) / 7  # 17.14 trips/month
@@ -118,7 +112,7 @@ def test_strong_seasonal_signal_overrides_full_window_average():
         "current_contracts": [],
         "monthly_mode_breakdown": monthly,
     }
-    out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
+    out = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
     demand = out["scenarios"][0]["predicted_demand"][0]
 
     assert demand["estimated_trips"] == 120  # 40 trips/month x 3, not the flat ~10.6/mo average
@@ -146,7 +140,7 @@ def test_mild_seasonal_variation_does_not_override():
         "current_contracts": [],
         "monthly_mode_breakdown": monthly,
     }
-    out = forecast(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
+    out = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date="2026-08-01")
     demand = out["scenarios"][0]["predicted_demand"][0]
 
     full_window_avg = (20 * 13 + 22 * 3) / 16  # ~20.375 trips/month
@@ -155,7 +149,7 @@ def test_mild_seasonal_variation_does_not_override():
 
 
 def test_calendar_entries_are_flagged_not_analyzed(analyst_summary):
-    out = forecast(
+    out = seasonal_projection(
         analyst_summary,
         raw_calendar_entries=[{"summary": "Umzug nach Berlin", "date": "2026-05-01", "location": "Berlin", "description": ""}],
         forecast_horizon_days=90,
@@ -166,6 +160,6 @@ def test_calendar_entries_are_flagged_not_analyzed(analyst_summary):
 
 
 def test_reproducible(analyst_summary):
-    a = forecast(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
-    b = forecast(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
+    a = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
+    b = seasonal_projection(analyst_summary, forecast_horizon_days=90, as_of_date=_AS_OF)
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)

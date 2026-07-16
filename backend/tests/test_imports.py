@@ -21,7 +21,7 @@ HANDLER_DEPS = [
     ("agent.analyst_agent", "run_briefing"),
     ("agent.pipeline", "run_analysis"),
     ("agent.engines", "analyze_portfolio"),
-    ("agent.engines", "forecast"),
+    ("agent.llm_steps.forecast_reasoner", "forecast"),  # forecaster endpoints import it here now
     ("agent.engines", "template_memos"),
     ("agent.context", "load_context"),
     ("register_endpoint", "register"),

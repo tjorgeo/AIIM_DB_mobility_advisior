@@ -365,7 +365,8 @@ def test_forecaster_for_user(user_id: str, forecast_horizon_days: int = 365, as_
     Same six personas as /api/analyst/{user_id} work here.
     """
     from agent.context import load_context
-    from agent.engines import analyze_portfolio, attach_projected_category_analysis, forecast
+    from agent.engines import analyze_portfolio, attach_projected_category_analysis
+    from agent.llm_steps.forecast_reasoner import forecast
 
     ctx = load_context(user_id)
     if ctx.get("error"):
@@ -398,10 +399,10 @@ def test_forecaster(req: ForecasterTestRequest):
     without going through the full analysis pipeline.
 
     Pass any analyst_summary and calendar_events you like — see
-    agent/engines/forecasting.py MOCK_ANALYST_SUMMARY / MOCK_CALENDAR_EVENTS for
+    agent/llm_steps/forecast_reasoner.py MOCK_ANALYST_SUMMARY / MOCK_CALENDAR_EVENTS for
     the expected shape of each field.
     """
-    from agent.engines import forecast
+    from agent.llm_steps.forecast_reasoner import forecast
     try:
         result = forecast(
             req.analyst_summary,
