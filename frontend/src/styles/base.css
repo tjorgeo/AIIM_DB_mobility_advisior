@@ -33,6 +33,18 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.01em;
 }
 
+/* Dark mode: headings default to dark slate-900 (light-mode value), which is
+   invisible on dark backgrounds. Pages that set their own heading color inline
+   are unaffected (inline styles win); unstyled headings become readable. */
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+  color: #ffffff;
+}
+
 button,
 input,
 textarea {
@@ -53,7 +65,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--db-red);
+  outline: 2px solid #00f2fe;
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
@@ -104,14 +116,14 @@ a {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulseRing {
-  0%   { box-shadow: 0 0 0 0 rgba(236, 0, 22, 0.45); }
-  70%  { box-shadow: 0 0 0 14px rgba(236, 0, 22, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(236, 0, 22, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(0, 242, 254, 0.45); }
+  70%  { box-shadow: 0 0 0 14px rgba(0, 242, 254, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 242, 254, 0); }
 }
 @keyframes dotPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(0, 135, 90, 0.6); }
-  70%  { box-shadow: 0 0 0 7px rgba(0, 135, 90, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 135, 90, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.6); }
+  70%  { box-shadow: 0 0 0 7px rgba(168, 85, 247, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
 }
 @keyframes shimmer {
   0%   { background-position: -480px 0; }

@@ -1,6 +1,12 @@
 import React from 'react';
+import { useTheme } from '../context/ThemeContext.jsx';
 
 export default function Logo({ className = '', showText = true }) {
+  const { isDark } = useTheme();
+  // The inner arc is white so it reads on dark UI; on a light background white
+  // disappears, so use a dark ink there instead (matches the browser-tab favicon).
+  const innerStroke = isDark ? '#ffffff' : '#0a2540';
+  const wordColor = isDark ? '#ffffff' : '#0a2540';
   return (
     <div className={`flex items-center gap-3 ${className}`}>
       {/* Das neue Premium Fintech-Icon */}
@@ -30,7 +36,7 @@ export default function Logo({ className = '', showText = true }) {
         {/* Innerer Bogen (Optimierung/Sparen) */}
         <path 
           d="M38 22C38 30.8366 30.8366 38 22 38C15.5 38 9.8 34.2 7.2 28.5" 
-          stroke="#ffffff" 
+          stroke={innerStroke} 
           strokeWidth="4" 
           strokeLinecap="round" 
           style={{ opacity: 0.9 }}
@@ -45,7 +51,7 @@ export default function Logo({ className = '', showText = true }) {
         <span style={{ 
           fontSize: '1.5rem', 
           fontWeight: '300', /* Schön dünn und elegant wie bei modernen Banken */
-          color: '#ffffff',
+          color: wordColor,
           letterSpacing: '-0.02em',
           fontFamily: 'system-ui, -apple-system, sans-serif'
         }}>

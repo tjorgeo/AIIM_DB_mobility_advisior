@@ -304,6 +304,21 @@ export default function Login() {
   const [regPassword, setRegPassword] = useState('')
   const [gender, setGender] = useState('')
 
+  // Partner-Konten (Schritt 14): simuliertes Verbinden von Mobilitäts-Anbietern.
+  // Es wird nichts eingegeben oder übertragen — ein Klick startet nur eine kurze
+  // Ladeanimation, danach gilt der Anbieter als verbunden.
+  const [connectedAccounts, setConnectedAccounts] = useState({}) // { [serviceId]: true }
+  const [connectingId, setConnectingId] = useState('')           // welcher Anbieter gerade „verbindet" (Spinner)
+
+  const simulateConnect = (sid) => {
+    if (connectingId || connectedAccounts[sid]) return
+    setConnectingId(sid)
+    setTimeout(() => {
+      setConnectedAccounts((prev) => ({ ...prev, [sid]: true }))
+      setConnectingId('')
+    }, 1200)
+  }
+
   const setSubDetail = (sid, field, value) => {
     setSubscriptionDetails(prev => ({ ...prev, [sid]: { ...(prev[sid] || {}), [field]: value } }))
   }
@@ -813,7 +828,7 @@ export default function Login() {
             
             {/* Visual Progress Bar (Basiert auf 14 Schritten) */}
             <div style={{ width: '100%', height: '4px', backgroundColor: colors.border, borderRadius: '99px', marginBottom: '1.5rem', overflow: 'hidden' }}>
-              <div style={{ width: `${(onboardingStep / 14) * 100}%`, height: '100%', backgroundColor: colors.accentCyan, borderRadius: '99px', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+              <div style={{ width: `${(onboardingStep / 15) * 100}%`, height: '100%', backgroundColor: colors.accentCyan, borderRadius: '99px', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }} />
             </div>
 
             {/* Header mit Zurück-Button & Schrittanzeige */}
@@ -838,7 +853,7 @@ export default function Login() {
               </button>
 
               <span style={{ fontSize: '0.82rem', color: colors.textMuted, fontWeight: '700', letterSpacing: '0.02em' }}>
-                Schritt {onboardingStep} von 14
+                Schritt {onboardingStep} von 15
               </span>
             </div>
 
@@ -1422,8 +1437,65 @@ export default function Login() {
                 </div>
               )}
 
-              {/* SCHRITT 14: KONTO ERSTELLEN */}
-              {onboardingStep === 14 && (
+              {/* SCHRITT 14: PARTNER-KONTEN VERBINDEN (simuliert) */}
+              {onboardingStep === 14 && (() => {
+                const linkable = services.filter((s) => s !== 'none')
+                const connectedCount = linkable.filter((s) => connectedAccounts[s]).length
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <div style={{ overflowY: 'auto', paddingRight: '2px' }}>
+                      <h1 style={{ fontSize: '1.9rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.25' }}>Verbinde deine Mobilitäts-Konten</h1>
+                      <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', textAlign: 'left', lineHeight: '1.4' }}>Melde dich bei deinen Anbietern an, damit wir deine Fahrten und Kosten automatisch importieren können. Die Anmeldung ist eine Demo und wird nur simuliert.</p>
+
+                      {linkable.length === 0 ? (
+                        <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '16px', padding: '1.1rem', textAlign: 'left', color: colors.textMuted, fontSize: '0.9rem', lineHeight: '1.4' }}>
+                          Du hast keine Abos angegeben — diesen Schritt kannst du einfach überspringen.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                          {linkable.map((sid) => {
+                            const label = SUBSCRIPTION_OPTIONS[sid]?.label || sid
+                            const isConnected = !!connectedAccounts[sid]
+                            const isConnecting = connectingId === sid
+                            const initial = String(label).replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase() || '•'
+                            return (
+                              <div key={sid} style={{ backgroundColor: colors.card, border: `1px solid ${isConnected ? colors.accentCyan : colors.border}`, borderRadius: '16px', padding: '0.95rem 1.05rem', transition: 'border-color 0.2s' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', minWidth: 0 }}>
+                                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #00f2fe, #4facfe)', color: '#04141a', fontWeight: '800', fontSize: '0.95rem' }}>{initial}</div>
+                                    <span style={{ fontWeight: '700', color: colors.text, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                                  </div>
+                                  {isConnected ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: colors.accentCyan, fontWeight: '700', fontSize: '0.85rem', flexShrink: 0 }}><Check size={16} /> Verbunden</span>
+                                  ) : isConnecting ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', color: colors.textMuted, fontWeight: '600', fontSize: '0.85rem', flexShrink: 0 }}>
+                                      <span style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${colors.border}`, borderTopColor: colors.accentCyan, animation: 'spin 0.8s linear infinite', display: 'inline-block' }} />
+                                      Verbinden…
+                                    </span>
+                                  ) : (
+                                    <button type="button" onClick={() => simulateConnect(sid)} disabled={!!connectingId} style={{ flexShrink: 0, padding: '0.55rem 1rem', borderRadius: '10px', border: `1px solid ${colors.accentPurple}`, backgroundColor: 'transparent', color: colors.accentPurple, fontWeight: '700', fontSize: '0.85rem', cursor: connectingId ? 'not-allowed' : 'pointer', opacity: connectingId ? 0.5 : 1, transition: 'all 0.15s' }}>Verbinden</button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ flex: 1 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
+                      {linkable.length > 0 && (
+                        <span style={{ fontSize: '0.8rem', color: colors.textMuted, textAlign: 'center' }}>{connectedCount} von {linkable.length} verbunden</span>
+                      )}
+                      <button type="button" onClick={() => setOnboardingStep(15)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>Weiter</button>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* SCHRITT 15: KONTO ERSTELLEN */}
+              {onboardingStep === 15 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div>
                     <h1 style={{ fontSize: '1.9rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left', lineHeight: '1.25' }}>Konto erstellen</h1>

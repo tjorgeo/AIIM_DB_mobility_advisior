@@ -51,7 +51,7 @@ export default function Dashboard() {
       viewDetails: 'Alle Details ansehen',
       recommended: 'Für dich empfohlen',
       basedMonths: 'Basiert auf deinen letzten 12 Monaten',
-      portfolioTitle: 'Dein optimiertes Portfolio',
+      portfolioTitle: 'Optimiertes Portfolio',
       estimated: 'Geschätzt',
       insteadOfBefore: (v) => `statt bisher ${v}`,
       savingsBadge: (v) => `− ${v} Ersparnis`,
@@ -157,7 +157,14 @@ export default function Dashboard() {
   // --- Echte Analyse für den eingeloggten User laden ---
   const [analysis, setAnalysis] = useState(null)
   const [loadingData, setLoadingData] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  // Abos, die der User (in der Portfolio-Detailseite) gekündigt hat — per
+  // provider_plan_name, da dieses Feld in beiden Datenquellen vorhanden ist.
+  const [cancelledSubs, setCancelledSubs] = useState([])
+  const handleCancelSubscriptions = (names) => {
+    const list = (names || []).filter(Boolean)
+    if (list.length === 0) return
+    setCancelledSubs((prev) => Array.from(new Set([...prev, ...list])))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -172,6 +179,7 @@ export default function Dashboard() {
 
   // Umgeht den Backend-Cache (siehe orchestrator.py) und erzwingt eine frische
   // Neuberechnung — z.B. nachdem sich die Optimierungslogik geändert hat.
+  const [refreshing, setRefreshing] = useState(false)
   const handleForceRefresh = () => {
     if (!currentUser?.id || refreshing) return
     setRefreshing(true)
@@ -187,6 +195,7 @@ export default function Dashboard() {
   const communicator = analysis?.raw_agent_payloads?.communicator?.output || null
   const recommended = summary || null
   const currentSubscriptions = analysis?.current_subscriptions || []
+  const visibleSubscriptions = currentSubscriptions.filter((s) => !cancelledSubs.includes(s.provider_plan_name))
   // subscription_coverage carries the per-subscription worth-it check (net_savings_eur);
   // joined on subscription_id (the catalog id, shared with current_subscriptions).
   const coverageBySubId = new Map((analyst?.subscription_coverage || []).map((c) => [c.subscription_id, c]))
@@ -274,6 +283,8 @@ export default function Dashboard() {
         colors={colors}
         isDark={isDark}
         onBack={() => setView('overview')}
+        cancelledSubs={cancelledSubs}
+        onCancelSubscriptions={handleCancelSubscriptions}
       />
     )
   } else {
@@ -604,9 +615,9 @@ export default function Dashboard() {
             <h3 style={{ color: colors.text, fontSize: '1.1rem', fontWeight: '700' }}>{t.currentSubsTitle}</h3>
             <Check size={18} style={{ color: colors.accentCyan }} />
           </div>
-          {currentSubscriptions.length > 0 ? (
+          {visibleSubscriptions.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {currentSubscriptions.map((s) => {
+              {visibleSubscriptions.map((s) => {
                 const label = s.provider_plan_name || s.provider_name || t.currentPlan
                 const priceStr = s.monthly_cost_eur
                   ? `${euro(s.monthly_cost_eur, { lang: langKey })} ${t.perMonth}`

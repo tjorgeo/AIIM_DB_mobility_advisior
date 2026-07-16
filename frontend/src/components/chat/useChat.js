@@ -11,8 +11,8 @@ function pickRec(result) {
 export function greetingText(user, lang) {
   const name = user.firstName
   return lang === 'de'
-    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus — ich sag dir Bescheid, sobald dein persönlicher Plan fertig ist.`
-    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — I'll let you know once your personalized plan is ready.`
+    ? `Hi ${name} 👋 Ich bin dein MoveOptimizer-Assistent. Ich werte gerade deine Fahrten aus, soll ich sie dir anzeigen?`
+    : `Hi ${name} 👋 I'm your MoveOptimizer assistant. I'm reviewing your travel now — shall I show it to you?`
 }
 
 // Frontend-only scripted assistant — used whenever POST /api/chat is unavailable.
@@ -94,7 +94,11 @@ async function scriptedReply(text, { user, lang, getContext, actions }) {
 }
 
 export function useChat({ user, lang, getContext, actions, advisorMemo }) {
-  const [messages, setMessages] = useState(() => [{ role: 'assistant', content: greetingText(user, lang) }])
+  // Chat starts empty on purpose — the only opening message is the short
+  // "analysis is ready" notice (posted below once the analysis finishes), which
+  // carries the "View portfolio" button. No separate greeting, so the two no
+  // longer contradict each other.
+  const [messages, setMessages] = useState(() => [])
   const [sending, setSending] = useState(false)
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
