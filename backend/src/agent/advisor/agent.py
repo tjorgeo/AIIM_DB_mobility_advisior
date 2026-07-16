@@ -20,7 +20,7 @@ from langgraph.prebuilt import create_react_agent
 
 from agent.llm import get_llm, llm_available
 from agent.observability import get_prompt, trace
-from agent.session import append_message, get_session
+from agent.session import append_message, get_messages, get_session
 from agent.tools.apply import apply_change
 from agent.tools.catalog import lookup_subscriptions
 from agent.tools.insights import get_demand_outlook, get_modal_shift
@@ -128,12 +128,27 @@ def _template_briefing(snapshot: dict, lang: str) -> str:
 
 def opening_briefing(session_id: str, lang: str = "de") -> tuple[str, str | None]:
     """Turn 0: the customer's personalised opening briefing, grounded in the session
-    snapshot. Returns ``(text, trace_id)``. Falls back to the deterministic template memo
-    when no LLM key is configured or the agent errors, so a briefing always comes back."""
+    snapshot. Returns ``(text, trace_id)``.
+
+    Idempotent: the briefing is generated once per session and cached in the chat
+    transcript, so a dashboard re-mount reuses it instead of paying for another LLM call.
+    Falls back to the deterministic template memo when no LLM key is configured or the
+    agent errors, so a briefing always comes back."""
     session = get_session(session_id)
     if session is None:
         return "", None
-    snapshot = session["snapshot"]
+    existing = next((m for m in get_messages(session_id) if m["role"] == "assistant"), None)
+    if existing:
+        return existing["content"], existing.get("trace_id")
+
+    reply, trace_id = _generate_briefing(session["snapshot"], session_id, lang)
+    append_message(session_id, "assistant", reply, trace_id)
+    return reply, trace_id
+
+
+def _generate_briefing(snapshot: dict, session_id: str, lang: str) -> tuple[str, str | None]:
+    """Produce the opening briefing via the agent (LLM), or the deterministic template
+    when no key is configured or the agent errors."""
     if not llm_available():
         return _template_briefing(snapshot, lang), None
 
@@ -152,9 +167,7 @@ def opening_briefing(session_id: str, lang: str = "de") -> tuple[str, str | None
                 {"messages": [SystemMessage(content=system_prompt), seed]}, config=config,
             )
             trace_id = tr.trace_id
-        reply = result["messages"][-1].content
-        append_message(session_id, "assistant", reply, trace_id)
-        return reply, trace_id
+        return result["messages"][-1].content, trace_id
     except Exception:
         logger.exception("Advisor briefing failed; using template memo")
         return _template_briefing(snapshot, lang), None

@@ -99,8 +99,8 @@ def _minimal_briefing_args():
         "Jane Doe",
         {"total_trips": 10},
         {"forecast_horizon_days": 90},
-        {"scenarios": []},
         [],
+        None,
     )
 
 
@@ -117,7 +117,7 @@ def test_run_briefing_retries_once_on_language_mix_then_succeeds():
 
     with patch("agent.analyst_agent.get_llm") as mock_get_llm:
         mock_get_llm.return_value.invoke.side_effect = [bad, good]
-        english, german = run_briefing(*_minimal_briefing_args())
+        english, german, _trace_id = run_briefing(*_minimal_briefing_args())
 
     assert english == "English memo"
     assert german == "German memo"

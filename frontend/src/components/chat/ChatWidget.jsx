@@ -4,13 +4,13 @@ import { MessageCircle, X, Send, ThumbsUp, ThumbsDown, Maximize2, Minimize2 } fr
 import { useChat } from './useChat'
 import Markdown from './Markdown'
 
-export default function ChatWidget({ user, lang, getContext, actions, advisorMemo, onOpenPortfolio }) {
+export default function ChatWidget({ user, lang, getContext, actions, sessionId, onOpenPortfolio }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [unread, setUnread] = useState(0)
   const [teaserDismissed, setTeaserDismissed] = useState(false)
   const [input, setInput] = useState('')
-  const { messages, sending, send, sendFeedback } = useChat({ user, lang, getContext, actions, advisorMemo })
+  const { messages, sending, send, sendFeedback } = useChat({ user, lang, getContext, actions, sessionId })
   const bodyRef = useRef(null)
   const prevLenRef = useRef(messages.length)
   const t = (en, de) => (lang === 'de' ? de : en)
