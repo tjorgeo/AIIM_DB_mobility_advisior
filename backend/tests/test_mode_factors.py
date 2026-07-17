@@ -13,11 +13,21 @@ import pytest
 
 from agent.mode_factors import CO2_KG_PER_KM, estimate_co2_kg, estimate_time_minutes
 
-_GEN_PERSONAS_PATH = Path(__file__).resolve().parents[2] / "database" / "seed" / "gen_personas.py"
+
+def _find_gen_personas() -> Path:
+    """Locate database/seed/gen_personas.py by walking up from this test file. Robust to
+    both the local repo layout (backend/ and database/ are siblings under the repo root)
+    and the docker layout (backend mounted at /app, database at /app/database) — a fixed
+    ``parents[N]`` index only works for one of the two."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "database" / "seed" / "gen_personas.py"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError("database/seed/gen_personas.py not found from any ancestor of this test")
 
 
 def _seed_co2_factor() -> dict:
-    tree = ast.parse(_GEN_PERSONAS_PATH.read_text(encoding="utf-8"))
+    tree = ast.parse(_find_gen_personas().read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "CO2_FACTOR" for target in node.targets
