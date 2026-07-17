@@ -677,14 +677,20 @@ def template_memos(persona_name: str, analysis_result: dict, forecaster_out: dic
 
         rec = entry["recommendation"]
         if rec in ("switch_to_alternative", "cancel_current_go_pay_as_you_go", "consider_subscribing"):
+            # A cancel verdict means no alternative subscription is worth it — full
+            # stop. Falling back to cheapest_alternative here (as the other two
+            # verdicts legitimately do) would misreport "the least-bad of the
+            # rejected alternatives" as a recommended switch, even though it's
+            # provably worse than just cancelling (that's *why* it was rejected).
+            to_plan = None
+            if rec != "cancel_current_go_pay_as_you_go":
+                alt = entry.get("recommended_alternative") or entry.get("cheapest_alternative")
+                to_plan = alt["provider_plan_name"] if alt else None
             actions_required.append({
                 "category": entry["category"],
                 "action": rec,
                 "from": _current_names(entry) if entry["current_subscriptions"] else None,
-                "to": (
-                    (entry.get("recommended_alternative") or entry.get("cheapest_alternative"))["provider_plan_name"]
-                    if (entry.get("recommended_alternative") or entry.get("cheapest_alternative")) else None
-                ),
+                "to": to_plan,
                 "estimated_annual_savings_eur": savings_en,
             })
 

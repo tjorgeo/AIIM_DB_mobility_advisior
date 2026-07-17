@@ -84,6 +84,42 @@ def test_switch_to_alternative_reports_positive_savings_and_action():
     assert "Deutschlandticket" in memo["memo_english"]
 
 
+def test_cancel_action_never_names_a_to_plan_even_when_cheapest_alternative_exists():
+    """A cancel verdict means no alternative subscription is worth it - full stop.
+    cheapest_alternative may still be populated (the least-bad of the rejected
+    alternatives, e.g. a BahnCard 50 that's pricier than just cancelling) but must
+    never be reported as a recommended "to" plan, or the action reads as a switch
+    that contradicts the actual cancel recommendation."""
+    analysis = {
+        "category_subscription_analysis": [
+            {
+                "category": "long_distance_rail",
+                "annual_trips": 4.0,
+                "no_subscription_annual_cost_eur": 184.72,
+                "actual_annual_cost_eur": 201.44,
+                "current_subscriptions": [
+                    {"provider_plan_name": "BahnCard 25, 2. Klasse", "annual_cost_eur": 62.9, "annual_net_savings_eur": -16.72}
+                ],
+                "cheapest_alternative": {
+                    "provider_plan_name": "BahnCard 50, 2. Klasse",
+                    "estimated_annual_cost_eur": 336.36,
+                    "pricing_basis": "50% discount card (estimated from plan name)",
+                },
+                "recommended_alternative": None,
+                "non_comparable_alternatives": [],
+                "recommendation": "cancel_current_go_pay_as_you_go",
+            }
+        ]
+    }
+    memo = template_memos("Test User", analysis)
+    assert len(memo["actions_required"]) == 1
+    action = memo["actions_required"][0]
+    assert action["action"] == "cancel_current_go_pay_as_you_go"
+    assert action["from"] == "BahnCard 25, 2. Klasse"
+    assert action["to"] is None
+    assert "BahnCard 50" not in memo["memo_english"]
+
+
 def test_category_line_names_which_modes_it_covers():
     """applies_to_modes is now an entry-level field (one bucket, one scope) — the memo
     must name which specific modes a category's figures cover, so a long_distance_rail
