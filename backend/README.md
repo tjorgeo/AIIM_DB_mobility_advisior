@@ -69,7 +69,7 @@ backend/
 ├── tests/                # fast, deterministic unit + smoke tests (no DB, no LLM) — see §11
 └── src/
     ├── main.py           # FastAPI app + all HTTP endpoints
-    ├── orchestrator.py   # Session/persistence layer over the agent pipeline
+    ├── analysis_service.py # /api/analyze request lifecycle (cache/persist/shape) over the pipeline
     ├── database.py       # Postgres connection helper (get_connection / ping_db)
     └── agent/            # Unified agent package (replaces the old agents/ + graph/)
         ├── llm.py            # University GPT client + llm_available()

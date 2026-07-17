@@ -19,7 +19,7 @@ seed/experiment scripts live in [`../scripts/`](../scripts/).
 | --- | --- | --- |
 | **Tracing** | Every memo (`analyst-memo`) and chat turn (`chat-response`) is one trace: model, tokens, cost, tool calls, latency, prompt version. Tagged by user, release, environment. | [`observability.py`](../src/agent/observability.py), used in [`analyst_agent.py`](../src/agent/analyst_agent.py) & [`communicator_agent.py`](../src/agent/communicator_agent.py) |
 | **Prompt management** | The two system prompts are versioned in Langfuse and fetched at runtime — iterate in the UI without a redeploy. Local `.md` files are the offline fallback. | [`scripts/seed_prompts.py`](../scripts/seed_prompts.py), [`prompts/`](../src/agent/prompts/) |
-| **Feedback → scores** | `recommendation-accepted` (approval) and `user-thumbs` (chat 👍/👎) attach to the trace that produced the output. | [`orchestrator.py`](../src/orchestrator.py), `POST /api/feedback` in [`main.py`](../src/main.py) |
+| **Feedback → scores** | `recommendation-accepted` (approval) and `user-thumbs` (chat 👍/👎) attach to the trace that produced the output. | [`analysis_service.py`](../src/analysis_service.py), `POST /api/feedback` in [`main.py`](../src/main.py) |
 | **Evaluation** | LLM judges score every memo for `memo-groundedness` and `memo-bilingual-complete`. | [`judges.py`](./judges.py), [`calibrate.py`](./calibrate.py) |
 | **Experiments (manual)** | Re-generate memos over the 6 fixed personas and score them, to spot-check quality after changes. Run on demand — no CI gate (see below). | [`scripts/seed_dataset.py`](../scripts/seed_dataset.py), [`scripts/run_experiment.py`](../scripts/run_experiment.py) |
 

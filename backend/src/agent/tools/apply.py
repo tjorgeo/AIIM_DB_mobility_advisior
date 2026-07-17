@@ -4,7 +4,7 @@ Commits a change the user has explicitly confirmed. It takes a ``proposal_id`` m
 a prior ``simulate_change`` (a valid id can't be fabricated, so applying is structurally
 gated behind a proposal the user has already seen), re-derives the revision
 **deterministically** against that proposal's own analysis snapshot, and persists it via
-the session layer (``session.commit_revision`` — no ``Orchestrator`` import in a tool),
+the session layer (``session.commit_revision`` — no ``AnalysisService`` import in a tool),
 promoting the proposal to ``applied``. The dashboard's read-through cache then serves the
 revised plan.
 

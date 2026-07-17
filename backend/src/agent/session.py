@@ -6,7 +6,7 @@ engines or the LLM**: the agent outputs, the display fields (user / preferences 
 subscriptions) and the free-text onboarding. It shares its id with the
 ``recommendations`` row from the same run (one id, two tables), so the existing approve
 flow keeps working while the session becomes the read-through source of truth (see
-``orchestrator.Orchestrator._load_cached_session``).
+``analysis_service.AnalysisService._load_cached_session``).
 
 ``chat_messages`` and ``revisions`` back the conversational advisor (later phases);
 their helpers already live here so those phases can wire straight in. All rows are
@@ -187,7 +187,7 @@ def commit_revision(user_id: str, analyst_out: dict, result: dict) -> str:
     new ``recommendations`` row (the approval trail) plus a mirrored ``analysis_sessions``
     row (so the read-through cache serves the revision), sharing one id — the same
     contract a fresh ``/api/analyze`` produces. This is the session layer's writer; tools
-    call it instead of reaching into the Orchestrator.
+    call it instead of reaching into the AnalysisService.
     """
     revised_analyst = dict(analyst_out)
     revised_analyst["category_subscription_analysis"] = result["category_subscription_analysis"]

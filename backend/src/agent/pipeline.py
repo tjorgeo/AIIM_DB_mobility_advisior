@@ -11,7 +11,7 @@ communicate step produces the deterministic template memo only; the rich, LLM-wr
 briefing is now the Advisor agent's opening turn (agent/advisor), fetched on demand via
 ``POST /api/chat/{session_id}`` rather than generated on this synchronous path.
 
-``run_analysis`` returns the computed components; :class:`orchestrator.Orchestrator`
+``run_analysis`` returns the computed components; :class:`analysis_service.AnalysisService`
 persists them and shapes the exact response payload the frontend consumes.
 """
 

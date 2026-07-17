@@ -4,29 +4,30 @@ import uuid
 from datetime import datetime
 
 from database import get_connection
-from agent.context import load_context
 from agent.pipeline import run_analysis as run_pipeline
 from agent.session import create_session, latest_session_for_user
 
 logger = logging.getLogger(__name__)
 
 
-class Orchestrator:
-    """API/session layer over the deterministic analyze pipeline.
+class AnalysisService:
+    """The ``/api/analyze`` request lifecycle over the deterministic analyze pipeline.
 
-    The pipeline computes the agent outputs (numbers deterministic, memo via the
-    Analyst agent); this class owns DB context persistence (recommendations + audit)
-    and shapes the exact response payload the frontend consumes. That separation is
-    the backend merge: agentic engine inside, stable session/contract API outside.
+    Despite the old name (``Orchestrator``) this orchestrates no agents — agentic control
+    flow is the Advisor (``agent/advisor``) and deterministic sequencing is
+    ``agent/pipeline.py``. This class owns the request lifecycle: read-through cache → run
+    the pipeline → persist (recommendations row + session snapshot) → shape the exact
+    response payload the frontend consumes, plus ``/approve``. Deterministic plumbing that
+    stays off the LLM/agent path, so the numbers stay guarded and analyze stays LLM-free.
 
     Latency guard:
-    * **Read-through cache** — ``/api/analyze`` auto-runs on every dashboard mount, so
-      an unforced call rebuilds the payload from the user's most recent **session
-      snapshot** (no ``load_context``, no engines, no LLM), falling back to the legacy
-      ``recommendations`` row for pre-session records. Pass ``force=True`` to recompute.
-      A forced/fresh run is fully synchronous — it waits for the LLM forecast and Analyst
-      memo before returning, so the response always reflects the final result,
-      calendar-driven life events included, with no follow-up call needed.
+    * **Read-through cache** — ``/api/analyze`` auto-runs on every dashboard mount, so an
+      unforced call rebuilds the payload from the user's most recent **session snapshot**
+      (no ``load_context``, no engines, no LLM). A missing/partial snapshot falls through
+      to a fresh forced run. Pass ``force=True`` to recompute. A forced/fresh run is fully
+      synchronous — it waits for the LLM forecast before returning, so the response always
+      reflects the final result, calendar-driven life events included, with no follow-up
+      call needed.
 
     Session model: a fresh run persists both a ``recommendations`` row (approval trail)
     and an ``analysis_sessions`` row (the full snapshot) sharing one id — the session is
@@ -35,13 +36,10 @@ class Orchestrator:
 
     def run_analysis(self, user_id: str, force: bool = False) -> dict:
         # --- CACHE: reuse the latest analysis unless a refresh is forced ---
-        # Prefer the session snapshot (self-contained, no re-query); fall back to the
-        # legacy recommendations-row cache for records created before the session model.
+        # The session snapshot is the sole read-through cache (self-contained, no
+        # re-query); a missing/partial snapshot falls through to a fresh forced run.
         if not force:
             cached = self._load_cached_session(user_id)
-            if cached is not None:
-                return cached
-            cached = self._load_cached(user_id)
             if cached is not None:
                 return cached
 
@@ -166,8 +164,7 @@ class Orchestrator:
     def _load_cached_session(self, user_id: str):
         """Rebuild the frontend payload purely from the user's most recent **session
         snapshot** — no ``load_context``, no engines, no LLM. Returns ``None`` (→ caller
-        tries the legacy cache, then a fresh run) when there is no session or its snapshot
-        is missing/partial.
+        runs a fresh analysis) when there is no session or its snapshot is missing/partial.
 
         The session shares its id with the ``recommendations`` row from the same run, so
         the current approval status is read from there (a trivial indexed lookup) to keep
@@ -211,66 +208,6 @@ class Orchestrator:
         row = cursor.fetchone()
         conn.close()
         return dict(row).get("analysis_status") if row else None
-
-    def _load_cached(self, user_id: str):
-        """Rebuild the frontend payload from the user's most recent recommendation.
-
-        Returns ``None`` (→ caller runs a fresh analysis) when there is no prior row or
-        the stored JSON can't be parsed / is pre-pivot. The agent outputs come from the
-        row; the display fields (name / preferences / active subscriptions) come from a
-        cheap ``load_context`` — no engines, no LLM.
-        """
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT recommendation_id, analyst_output, forecaster_output,
-                   optimizer_scenarios, analysis_status, created_at
-            FROM recommendations
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = cursor.fetchone()
-        conn.close()
-        if not row:
-            return None
-        row = dict(row)
-
-        try:
-            analyst_out = json.loads(row["analyst_output"]) if row["analyst_output"] else {}
-            forecaster_out = json.loads(row["forecaster_output"]) if row["forecaster_output"] else {}
-            stored = json.loads(row["optimizer_scenarios"]) if row["optimizer_scenarios"] else {}
-        except (TypeError, json.JSONDecodeError):
-            return None
-        # Post-pivot payloads store the per-category analysis. A row without it is a
-        # stale pre-pivot record — force a fresh run rather than shape a broken payload.
-        if "category_subscription_analysis" not in stored:
-            return None
-
-        ctx = load_context(user_id)
-        if ctx.get("error"):
-            return None
-
-        return self._shape_payload(
-            rec_id=row["recommendation_id"],
-            created_at=str(row["created_at"]),
-            status=row["analysis_status"] or "ready",
-            user=ctx["user"],
-            preferences=ctx["user_preferences"],
-            subscriptions=ctx["subscriptions"],
-            travel_history_len=len(ctx["travel_history"]),
-            pricing_catalog_size=len(ctx["pricing_catalog"]),
-            analyst_out=analyst_out,
-            forecaster_out=forecaster_out,
-            total_actual_annual_cost=stored.get("total_actual_annual_cost_eur", 0.0),
-            total_estimated_savings=stored.get("total_estimated_savings_eur", 0.0),
-            actions_required=stored.get("actions_required", []),
-            memos=stored.get("memos", {}),
-            memo_source=stored.get("memo_source", "template"),
-        )
 
     def _shape_payload(
         self,
@@ -352,15 +289,6 @@ class Orchestrator:
             },
         }
 
-    def save_revision(self, user_id: str, analyst_out: dict, revision: dict) -> str:
-        """Persist a chat-applied re-optimisation. Thin wrapper kept for backward compat —
-        the persistence (recommendations row + mirrored session, sharing one id) now lives
-        in the session layer, ``agent.session.commit_revision``, which the ``apply_change``
-        tool calls directly (so tools no longer reach into the Orchestrator)."""
-        from agent.session import commit_revision
-
-        return commit_revision(user_id, analyst_out, revision)
-
     def approve_recommendation(self, rec_id: str, scenario_id: str) -> bool:
         """Marks a recommendation approved and records the selected scenario.
 
@@ -409,5 +337,5 @@ class Orchestrator:
 
 
 if __name__ == "__main__":
-    orchestrator = Orchestrator()
-    print("Orchestrator ready.")
+    service = AnalysisService()
+    print("AnalysisService ready.")

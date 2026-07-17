@@ -11,7 +11,7 @@ from auth_utils import verify_password
 
 
 from database import ping_db
-from orchestrator import Orchestrator
+from analysis_service import AnalysisService
 
 # Shared demo password. The seed data has no per-user credentials, so login
 # authenticates the identifier (username/email) against the real users and
@@ -57,7 +57,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-orchestrator = Orchestrator()
+analysis = AnalysisService()
 
 # --- PYDANTIC SCHEMAS ---
 
@@ -229,7 +229,7 @@ def analyze_portfolio(req: AnalyzeRequest):
     needed to see calendar-driven life events or the upgraded memo prose.
     """
     try:
-        return orchestrator.run_analysis(req.user_id, force=req.force)
+        return analysis.run_analysis(req.user_id, force=req.force)
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
@@ -242,7 +242,7 @@ def approve_recommendation(rec_id: str, req: ApproveRequest):
     """
     Records customer approval for a recommended scenario in the database audit trail.
     """
-    success = orchestrator.approve_recommendation(rec_id, req.scenario_id)
+    success = analysis.approve_recommendation(rec_id, req.scenario_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Recommendation session {rec_id} not found.")
     return {

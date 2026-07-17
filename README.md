@@ -127,7 +127,7 @@ Die empfohlene Struktur des Repositories ist:
 │       ├── main.py           # API: /api/personas, /api/analyze, /api/.../approve, /api/chat, /api/onboarding
 │       ├── database.py       # Postgres access layer
 │       ├── seed_data.py      # demo personas + pricing catalogue seed
-│       ├── orchestrator.py   # session/persistence over the graph
+│       ├── analysis_service.py # /api/analyze request lifecycle (cache/persist/shape)
 │       ├── agents/           # deterministic analyst/forecaster/optimizer/communicator
 │       └── graph/            # LangGraph pipeline, LLM, tools, chat & onboarding agents
 │
