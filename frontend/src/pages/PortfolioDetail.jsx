@@ -4,25 +4,6 @@ import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 import Markdown from '../components/chat/Markdown'
 
-// The projected recommendation carries the same cost fields as the current one, just
-// keyed by which action it is — pick the figure that actually backs that action so the
-// forecast box can show a number instead of just the recommendation label.
-function projectedAnnualCost(rec) {
-  if (!rec) return null
-  switch (rec.recommendation) {
-    case 'no_subscription_needed':
-    case 'cancel_current_go_pay_as_you_go':
-      return rec.no_subscription_annual_cost_eur ?? null
-    case 'keep_current':
-      return rec.actual_annual_cost_eur ?? null
-    case 'switch_to_alternative':
-    case 'consider_subscribing':
-      return (rec.recommended_alternative || rec.cheapest_alternative)?.estimated_annual_cost_eur ?? null
-    default:
-      return null
-  }
-}
-
 function recMeta(rec, colors, isDE) {
   switch (rec) {
     case 'keep_current': return { label: isDE ? 'Behalten' : 'Keep', color: colors.successGreen }
@@ -327,8 +308,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const meta = recMeta(c.recommendation, colors, isDE)
               const projectedRec = projectedByCategory[c.category]
               const projectedRecDiverges = projectedRec && projectedRec.recommendation !== c.recommendation
-              const projectedCost = projectedRecDiverges ? projectedAnnualCost(projectedRec) : null
-              const projectedDelta = projectedCost != null ? projectedCost - c.actual_annual_cost_eur : null
               const shiftSuggestion = shiftByCategory[c.category]
               const shift = shiftSuggestion?.suggested_shift
               const shiftCostDelta = shift ? shift.annual_cost_eur - (shiftSuggestion.stay_annual_cost_eur ?? 0) : null
@@ -562,19 +541,9 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentAmber, letterSpacing: '0.04em' }}>
                         {t.forecastBoxLabel(t.lifeEventNoun(flags.life_event_type)).toUpperCase()}
                       </span>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
-                        <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{recMeta(projectedRec.recommendation, colors, isDE).label}</span>
-                        {projectedCost != null && (
-                          <span style={{ fontWeight: '800', fontSize: '1rem', color: colors.accentAmber }}>{euro(projectedCost, { lang: langKey })}</span>
-                        )}
+                      <div style={{ fontWeight: '600', fontSize: '0.9rem', marginTop: '0.3rem' }}>
+                        {recMeta(projectedRec.recommendation, colors, isDE).label}
                       </div>
-                      {projectedDelta != null && (
-                        <div style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.2rem' }}>
-                          {projectedDelta <= 0
-                            ? (isDE ? `Spart ${euro(Math.abs(projectedDelta), { lang: langKey })} ${t.vsCurrent}` : `Saves ${euro(Math.abs(projectedDelta), { lang: langKey })} ${t.vsCurrent}`)
-                            : (isDE ? `${euro(projectedDelta, { lang: langKey })} teurer ${t.vsCurrent}` : `${euro(projectedDelta, { lang: langKey })} more expensive ${t.vsCurrent}`)}
-                        </div>
-                      )}
                     </div>
                   )}
 
