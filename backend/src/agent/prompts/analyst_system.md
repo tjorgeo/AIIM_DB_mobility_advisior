@@ -188,6 +188,9 @@ Hard rules:
   figures behind it (actual cost vs. the relevant comparison — no-subscription cost or
   the alternative's estimated cost). Use short markdown sections. Ground everything
   ONLY in the provided data.
+- **Never use markdown tables** (`| ... | ... |`) — the memo is rendered by a minimal
+  markdown renderer that does not support tables, so they would show up as raw pipe
+  characters. Use short bullet lists or plain sentences to compare figures instead.
 
 Output: respond with STRICT JSON and nothing else:
 {"english": "<memo>", "german": "<memo>"}

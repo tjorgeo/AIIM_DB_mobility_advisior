@@ -4,6 +4,25 @@ import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 import Markdown from '../components/chat/Markdown'
 
+// The projected recommendation carries the same cost fields as the current one, just
+// keyed by which action it is — pick the figure that actually backs that action so the
+// forecast box can show a number instead of just the recommendation label.
+function projectedAnnualCost(rec) {
+  if (!rec) return null
+  switch (rec.recommendation) {
+    case 'no_subscription_needed':
+    case 'cancel_current_go_pay_as_you_go':
+      return rec.no_subscription_annual_cost_eur ?? null
+    case 'keep_current':
+      return rec.actual_annual_cost_eur ?? null
+    case 'switch_to_alternative':
+    case 'consider_subscribing':
+      return (rec.recommended_alternative || rec.cheapest_alternative)?.estimated_annual_cost_eur ?? null
+    default:
+      return null
+  }
+}
+
 function recMeta(rec, colors, isDE) {
   switch (rec) {
     case 'keep_current': return { label: isDE ? 'Behalten' : 'Keep', color: colors.successGreen }
@@ -90,7 +109,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       lifeEventNoun: (type) => lifeEventDativePhrase(type, true),
       moreTrips: 'mehr Fahrten mit', fewerTrips: 'weniger Fahrten mit', expectPrefix: 'Erwartet werden',
       higherCost: 'höhere Kosten für', lowerCost: 'niedrigere Kosten für', perYearShort: 'Jahr',
-      recDivergesAfterEvent: (event, label) => `Nach ${event} wäre voraussichtlich „${label}“ die bessere Wahl.`,
+      forecastBoxLabel: (event) => `Prognose: nach ${event}`,
       newRecommendation: (list) => `Neue Empfehlung durch dieses Ereignis: ${list}.`,
       recommendationUnchanged: 'Die Empfehlung ändert sich dadurch nicht.',
       reEval: (days) => `Empfehlung: Analyse in ca. ${days} Tagen erneut prüfen.`,
@@ -125,7 +144,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       lifeEventNoun: (type) => lifeEventDativePhrase(type, false),
       moreTrips: 'more trips with', fewerTrips: 'fewer trips with', expectPrefix: 'Expect',
       higherCost: 'higher costs for', lowerCost: 'lower costs for', perYearShort: 'yr',
-      recDivergesAfterEvent: (event, label) => `After ${event}, "${label}" would likely be the better choice.`,
+      forecastBoxLabel: (event) => `Forecast: after ${event}`,
       newRecommendation: (list) => `New recommendation due to this event: ${list}.`,
       recommendationUnchanged: 'This does not change the recommendation.',
       reEval: (days) => `Recommendation: re-check this analysis in about ${days} days.`,
@@ -308,6 +327,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const meta = recMeta(c.recommendation, colors, isDE)
               const projectedRec = projectedByCategory[c.category]
               const projectedRecDiverges = projectedRec && projectedRec.recommendation !== c.recommendation
+              const projectedCost = projectedRecDiverges ? projectedAnnualCost(projectedRec) : null
+              const projectedDelta = projectedCost != null ? projectedCost - c.actual_annual_cost_eur : null
               const shiftSuggestion = shiftByCategory[c.category]
               const shift = shiftSuggestion?.suggested_shift
               const shiftCostDelta = shift ? shift.annual_cost_eur - (shiftSuggestion.stay_annual_cost_eur ?? 0) : null
@@ -377,11 +398,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                     </div>
                   )}
                   <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>{t.categoryTrips(c.annual_trips)}</p>
-                  {projectedRecDiverges && (
-                    <p style={{ fontSize: '0.75rem', color: colors.accentAmber, fontStyle: 'italic', marginTop: '-0.15rem', marginBottom: '0.5rem' }}>
-                      {t.recDivergesAfterEvent(t.lifeEventNoun(flags.life_event_type), recMeta(projectedRec.recommendation, colors, isDE).label)}
-                    </p>
-                  )}
                   {(c.annual_co2_kg != null || c.annual_time_minutes != null) && (
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                       {c.annual_co2_kg != null && (
@@ -539,6 +555,27 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
 
                   {shiftSuggestion && !shift && (
                     <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginTop: '1rem' }}>{t.noBetterShift}</p>
+                  )}
+
+                  {projectedRecDiverges && (
+                    <div style={{ border: `1px dashed ${colors.accentAmber}`, borderRadius: '14px', padding: '0.75rem 1rem', marginTop: '1rem' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentAmber, letterSpacing: '0.04em' }}>
+                        {t.forecastBoxLabel(t.lifeEventNoun(flags.life_event_type)).toUpperCase()}
+                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem' }}>
+                        <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{recMeta(projectedRec.recommendation, colors, isDE).label}</span>
+                        {projectedCost != null && (
+                          <span style={{ fontWeight: '800', fontSize: '1rem', color: colors.accentAmber }}>{euro(projectedCost, { lang: langKey })}</span>
+                        )}
+                      </div>
+                      {projectedDelta != null && (
+                        <div style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.2rem' }}>
+                          {projectedDelta <= 0
+                            ? (isDE ? `Spart ${euro(Math.abs(projectedDelta), { lang: langKey })} ${t.vsCurrent}` : `Saves ${euro(Math.abs(projectedDelta), { lang: langKey })} ${t.vsCurrent}`)
+                            : (isDE ? `${euro(projectedDelta, { lang: langKey })} teurer ${t.vsCurrent}` : `${euro(projectedDelta, { lang: langKey })} more expensive ${t.vsCurrent}`)}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                 </div>
