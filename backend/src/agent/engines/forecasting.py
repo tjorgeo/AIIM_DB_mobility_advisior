@@ -141,12 +141,20 @@ Rules:
    adjusted rates from the event date through the end of the window (label examples:
    "post_relocation", "new_job"). Both scenarios' predicted_demand totals must be
    directly comparable full-horizon numbers, not baseline-vs-partial-window.
-3. If signals are ambiguous (confidence "low"), note this in the rationale but do NOT
+3. In the life-event scenario, only change predicted_demand for the mode(s) the
+   event's description plausibly and directly affects (e.g. a new long-distance
+   commute affects long_distance_train, not bike_sharing or e_scooter). For every
+   other mode, keep that scenario's estimated_trips/estimated_km equal to the
+   baseline scenario's own figure for that mode — do not introduce a speculative
+   change (up or down) to a mode the event gives no concrete reason to expect a
+   change in, even a small one. When in doubt whether a mode is affected, leave it
+   at the baseline figure.
+4. If signals are ambiguous (confidence "low"), note this in the rationale but do NOT
    create a second scenario.
-4. The basis field must briefly explain the reasoning for each mode's prediction.
-5. Set life_event_detected: true and recommend_re_evaluation_in_days only when a
+5. The basis field must briefly explain the reasoning for each mode's prediction.
+6. Set life_event_detected: true and recommend_re_evaluation_in_days only when a
    life_event with high/medium confidence is present.
-6. dominant_patterns and monthly_mode_breakdown both use the same raw transport-mode
+7. dominant_patterns and monthly_mode_breakdown both use the same raw transport-mode
    granularity (e.g. regional_train and long_distance_train are reported separately,
    never merged into one "train" figure). monthly_mode_breakdown additionally splits
    that same data by calendar month (month -> mode -> trips/distance/CO2/cost). Default
@@ -159,12 +167,12 @@ Rules:
    one year ago), and if so weight toward that seasonal figure instead of the flat
    average — but only for a clear, large deviation, not a mild one. Explain whichever
    choice you made in the basis field and rationale.
-7. The payload's top-level as_of_date is today's date. Treat the {horizon}-day forecast
+8. The payload's top-level as_of_date is today's date. Treat the {horizon}-day forecast
    window as starting from as_of_date — not from the last month in
    monthly_mode_breakdown or the earliest calendar entry — and use it to judge how
    recent monthly_mode_breakdown's months are and how near-term or far-out each
    calendar entry is.
-8. Every "_en"/"_de" field pair (each scenario's description_en/description_de, and
+9. Every "_en"/"_de" field pair (each scenario's description_en/description_de, and
    the top-level rationale_en/rationale_de) must be a complete, self-contained
    explanation in exactly ONE language — never mix English and German within a
    single field, never leave one empty, and never concatenate both languages into

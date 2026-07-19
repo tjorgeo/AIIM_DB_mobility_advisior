@@ -4,6 +4,13 @@ import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 import Markdown from '../components/chat/Markdown'
 
+// A category's projected recommendation only counts as "changed by the life event" if
+// the underlying demand actually moved by at least this much vs. the baseline scenario
+// — the forecaster LLM estimates every mode independently per scenario, so unrelated
+// modes can drift a little between baseline and event-scenario runs by noise alone,
+// which would otherwise flip a borderline recommendation with no real cause behind it.
+const _PROJECTED_DEMAND_CHANGE_THRESHOLD = 0.15
+
 function recMeta(rec, colors, isDE) {
   switch (rec) {
     case 'keep_current': return { label: isDE ? 'Behalten' : 'Keep', color: colors.successGreen }
@@ -91,6 +98,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       moreTrips: 'mehr Fahrten mit', fewerTrips: 'weniger Fahrten mit', expectPrefix: 'Erwartet werden',
       higherCost: 'höhere Kosten für', lowerCost: 'niedrigere Kosten für', perYearShort: 'Jahr',
       forecastBoxLabel: (event) => `Prognose: nach ${event}`,
+      forecastBoxReason: (before, after) => `Grund: erwartete Fahrten in dieser Kategorie ${after > before ? 'steigen' : 'sinken'} von ${number(before, langKey)} auf ${number(after, langKey)} pro Jahr.`,
       newRecommendation: (list) => `Neue Empfehlung durch dieses Ereignis: ${list}.`,
       recommendationUnchanged: 'Die Empfehlung ändert sich dadurch nicht.',
       reEval: (days) => `Empfehlung: Analyse in ca. ${days} Tagen erneut prüfen.`,
@@ -126,6 +134,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       moreTrips: 'more trips with', fewerTrips: 'fewer trips with', expectPrefix: 'Expect',
       higherCost: 'higher costs for', lowerCost: 'lower costs for', perYearShort: 'yr',
       forecastBoxLabel: (event) => `Forecast: after ${event}`,
+      forecastBoxReason: (before, after) => `Reason: expected trips in this category ${after > before ? 'rise' : 'fall'} from ${number(before, langKey)} to ${number(after, langKey)} per year.`,
       newRecommendation: (list) => `New recommendation due to this event: ${list}.`,
       recommendationUnchanged: 'This does not change the recommendation.',
       reEval: (days) => `Recommendation: re-check this analysis in about ${days} days.`,
@@ -242,6 +251,11 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
         .map((c) => {
           const projectedRec = projectedByCategory[c.category]
           if (!projectedRec || projectedRec.recommendation === c.recommendation) return null
+          const baselineProj = baselineProjByCategory[c.category]
+          const demandChangePct = baselineProj?.annual_trips
+            ? Math.abs((projectedRec.annual_trips - baselineProj.annual_trips) / baselineProj.annual_trips)
+            : 0
+          if (demandChangePct < _PROJECTED_DEMAND_CHANGE_THRESHOLD) return null
           return `${modeLabel(c.category, langKey)}: ${recMeta(projectedRec.recommendation, colors, isDE).label}`
         })
         .filter(Boolean)
@@ -307,7 +321,13 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
             {categoryAnalysis.map((c) => {
               const meta = recMeta(c.recommendation, colors, isDE)
               const projectedRec = projectedByCategory[c.category]
-              const projectedRecDiverges = projectedRec && projectedRec.recommendation !== c.recommendation
+              const baselineProj = baselineProjByCategory[c.category]
+              const demandChangePct = (projectedRec && baselineProj && baselineProj.annual_trips)
+                ? Math.abs((projectedRec.annual_trips - baselineProj.annual_trips) / baselineProj.annual_trips)
+                : 0
+              const projectedRecDiverges = projectedRec
+                && projectedRec.recommendation !== c.recommendation
+                && demandChangePct >= _PROJECTED_DEMAND_CHANGE_THRESHOLD
               const shiftSuggestion = shiftByCategory[c.category]
               const shift = shiftSuggestion?.suggested_shift
               const shiftCostDelta = shift ? shift.annual_cost_eur - (shiftSuggestion.stay_annual_cost_eur ?? 0) : null
@@ -544,6 +564,11 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <div style={{ fontWeight: '600', fontSize: '0.9rem', marginTop: '0.3rem' }}>
                         {recMeta(projectedRec.recommendation, colors, isDE).label}
                       </div>
+                      {baselineProj?.annual_trips != null && (
+                        <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.3rem' }}>
+                          {t.forecastBoxReason(baselineProj.annual_trips, projectedRec.annual_trips)}
+                        </p>
+                      )}
                     </div>
                   )}
 
