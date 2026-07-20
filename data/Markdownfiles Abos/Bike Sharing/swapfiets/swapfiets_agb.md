@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Allgemeine Geschäftsbedingungen"
+description: "In diesen Allgemeinen Geschäftsbedingungen haben die genannten Begriffe die folgenden Bedeutungen:"
+tags: [bike_sharing, swapfiets]
+timestamp: 2026-06-24
+---
+
 # Allgemeine Geschäftsbedingungen
 ## Swapfiets (Swaprad GmbH)
 

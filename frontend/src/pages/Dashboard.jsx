@@ -786,7 +786,7 @@ export default function Dashboard() {
         <ChatWidget
           user={currentUser}
           lang={lang.toLowerCase()}
-          advisorMemo={summary?.memos?.[lang === 'DE' ? 'german' : 'english']}
+          sessionId={analysis?.session_id}
           getContext={() => ({ recommendation: recommended, analysis })}
           actions={{ optimize: async () => summary?.category_subscription_analysis || [], approve: async () => true }}
           onOpenPortfolio={() => setView('portfolio')}

@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Preis- und Kostenordnung"
+description: "Hier findest du alle wichtigen Informationen zu zusätzlichen Gebühren und Mindestbeträgen (Ziffer 1), Versicherungsschutz & Selbstbeteiligungen (Ziffer 2), pauschalierte Schadenersatzbeträge (Kostenp…"
+tags: [car_sharing, miles]
+timestamp: 2026-06-24
+---
+
 # Preis- und Kostenordnung
 
 Hier findest du alle wichtigen Informationen zu zusätzlichen Gebühren und Mindestbeträgen (Ziffer 1), Versicherungsschutz & Selbstbeteiligungen (Ziffer 2), pauschalierte Schadenersatzbeträge (Kostenpauschalen) für typische Schadensfälle, die durch Pflichtverletzungen verursacht werden können (Ziffer 3) sowie Vertragsstrafen für Verstöße gegen bestimmte vertragliche Pflichten (Ziffer 4). Wann Kostenpauschalen und Vertragsstrafen gelten, erklären wir dir jeweils direkt im entsprechenden Abschnitt.

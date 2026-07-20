@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Bolt Mobility – Preisübersicht"
+description: "Bolt ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Pässe und des Minuten-Abonnements."
+tags: [e_scooter, bolt]
+timestamp: 2026-06-24
+---
+
 # Bolt Mobility – Preisübersicht
 
 Bolt ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Pässe und des Minuten-Abonnements.

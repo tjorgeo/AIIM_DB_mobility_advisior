@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Probe BahnCard 50, 2. Klasse: testen & sofort sparen"
+description: "- **Sofort sparen:** die Probe BahnCard lohnt sich oft schon **ab der 1. Fahrt"
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/probebahncard50-2-klasse
+timestamp: 2026-07-01
+---
+
 # Probe BahnCard 50, 2. Klasse: testen & sofort sparen
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/probebahncard50-2-klasse  

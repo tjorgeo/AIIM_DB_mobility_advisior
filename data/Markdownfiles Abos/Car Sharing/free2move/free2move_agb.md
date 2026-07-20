@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "FREE2MOVE DEUTSCHLAND GmbH"
+description: "Allgemeine Geschäftsbedingungen, gültig ab dem 29. Juli 2025 für Kunden, die am 29. Juli 2025 oder nach diesem Datum ein Free2move-Konto erstellen."
+tags: [car_sharing, free2move]
+timestamp: 2026-07-02
+---
+
 # FREE2MOVE DEUTSCHLAND GmbH
 # ALLGEMEINE GESCHÄFTSBEDINGUNGEN / GENERAL TERMS AND CONDITIONS
 ## FREE2MOVE FAHRZEUGVERMIETUNG / CAR RENTAL SERVICES

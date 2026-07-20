@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Probe BahnCard 100, 1. Klasse: 3 Monate ticketlos reisen"
+description: "Mit der Probe BahnCard 100, 1. Klasse und dem zusätzlichen kostenfreien digitalen Deutschland-Ticket profitieren Sie von exklusiven Vorteilen und reisen bundesweit im Nah- und Fernverkehr unbegrenzt.…"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/probebahncard100-1-klasse
+timestamp: 2026-07-01
+---
+
 # Probe BahnCard 100, 1. Klasse: 3 Monate ticketlos reisen
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/probebahncard100-1-klasse  

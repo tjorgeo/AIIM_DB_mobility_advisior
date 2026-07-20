@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Lime Mobility – Preisübersicht"
+description: "Lime ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Tarife, Pässe und Pay-as-you-go-Preise."
+tags: [e_scooter, lime]
+timestamp: 2026-06-24
+---
+
 # Lime Mobility – Preisübersicht
 
 Lime ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Tarife, Pässe und Pay-as-you-go-Preise.

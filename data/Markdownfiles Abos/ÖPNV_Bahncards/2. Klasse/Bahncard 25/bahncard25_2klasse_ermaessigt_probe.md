@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Ermäßigte Probe BahnCard 25, 2. Klasse: testen & sofort sparen"
+description: "Die ermäßigte BahnCard 25 für Personen mit voller Erwerbsminderung und schwerbehinderte Menschen mit einem Grad der Behinderung von mindestens 70."
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/ermaessigteprobebahncard25-2-klasse
+timestamp: 2026-07-01
+---
+
 # Ermäßigte Probe BahnCard 25, 2. Klasse: testen & sofort sparen
 
 Die ermäßigte BahnCard 25 für Personen mit voller Erwerbsminderung und schwerbehinderte Menschen mit einem Grad der Behinderung von mindestens 70.

@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar, Euro, Leaf, Clock } from 'lucide-react'
 import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
-import Markdown from '../components/chat/Markdown'
 
 // A category's projected recommendation only counts as "changed by the life event" if
 // the underlying demand actually moved by at least this much vs. the baseline scenario
@@ -105,7 +104,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       demandChange: 'Erwartete Änderung des Reiseverhaltens', baseline: 'Bisher', afterEvent: 'Nach Ereignis',
       noLifeEvent: 'Aktuell sind keine bevorstehenden Lebensereignisse in deinem Kalender erkannt worden, die deine Empfehlungen ändern würden.',
       noForecast: 'Für diesen Zeitraum liegt noch keine Prognose vor.',
-      fullMemo: 'Vollständige Analyse deines Beraters',
       noData: 'Für diesen Zeitraum liegen noch keine Portfolio-Daten vor.',
       co2PerYear: 'CO₂/Jahr', timePerYear: 'Zeit/Jahr', hoursShort: 'Std',
       recommendedBadge: 'EMPFOHLEN',
@@ -141,7 +139,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       demandChange: 'Expected change in travel behavior', baseline: 'Before', afterEvent: 'After event',
       noLifeEvent: 'No upcoming life events were detected in your calendar that would change these recommendations.',
       noForecast: 'No forecast available for this period yet.',
-      fullMemo: "Your advisor's full analysis",
       noData: 'No portfolio data available for this period yet.',
       co2PerYear: 'CO₂/yr', timePerYear: 'Time/yr', hoursShort: 'hrs',
       recommendedBadge: 'RECOMMENDED',
@@ -181,7 +178,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   const totalCurrent = summary?.total_actual_annual_cost_eur || 0
   const totalSavings = summary?.total_estimated_savings_eur || 0
   const totalOptimized = Math.max(totalCurrent - totalSavings, 0)
-  const memo = summary?.memos?.[isDE ? 'german' : 'english']
 
   const forecaster = analysis?.raw_agent_payloads?.forecaster?.output || null
   const scenarios = forecaster?.scenarios || []
@@ -651,12 +647,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               )}
             </div>
 
-            {memo && (
-              <div style={cardStyle}>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem' }}>{t.fullMemo}</h3>
-                <Markdown text={memo} />
-              </div>
-            )}
           </>
         )}
       </main>

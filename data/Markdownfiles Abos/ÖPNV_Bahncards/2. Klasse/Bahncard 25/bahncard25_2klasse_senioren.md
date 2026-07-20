@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Senioren BahnCard 25, 2. Klasse"
+description: "Ob Gelegenheitsfahrer oder Vielfahrer – Reisende ab 65 sparen mit der Senioren BahnCard bei jeder Fahrt."
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25/seniorenbahncard-2-klasse
+timestamp: 2026-07-01
+---
+
 # Senioren BahnCard 25, 2. Klasse
 
 Ob Gelegenheitsfahrer oder Vielfahrer – Reisende ab 65 sparen mit der Senioren BahnCard bei jeder Fahrt.

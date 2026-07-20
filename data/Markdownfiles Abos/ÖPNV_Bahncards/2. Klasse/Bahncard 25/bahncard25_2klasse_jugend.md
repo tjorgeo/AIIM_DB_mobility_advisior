@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Jugend BahnCard 25: Für 6- bis 18-Jährige"
+description: "Mit der Jugend BahnCard 25 fährst du für nur 7,90 Euro umweltfreundlich und günstig durch ganz Deutschland, wenn du zwischen 6 und einschließlich 18 Jahre alt bist."
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25/jugendbahncard
+timestamp: 2026-07-01
+---
+
 # Jugend BahnCard 25: Für 6- bis 18-Jährige
 
 Mit der Jugend BahnCard 25 fährst du für nur 7,90 Euro umweltfreundlich und günstig durch ganz Deutschland, wenn du zwischen 6 und einschließlich 18 Jahre alt bist.

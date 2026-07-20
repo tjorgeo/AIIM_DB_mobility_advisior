@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Preise und Tarife – Privatkunden"
+description: "Bei teilAuto wird nach gebuchter Zeit und gefahrenen Kilometern abgerechnet. Die Höhe von Zeit- und Kilometerpreis hängen von der Fahrzeugklasse und dem gewählten Tarif ab."
+tags: [car_sharing, teilauto]
+timestamp: 2026-06-24
+---
+
 # Preise und Tarife – Privatkunden
 
 *teilAuto eG | [teilauto.net](https://teilauto.net)*

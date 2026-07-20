@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Ermäßigte BahnCard 50, 1. Klasse"
+description: "Die ermäßigte BahnCard 50 für Personen mit voller Erwerbsminderung und schwerbehinderte Menschen mit einem Grad der Behinderung von mindestens 70."
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/ermaessigtebahncard50-1-klasse
+timestamp: 2026-07-01
+---
+
 # Ermäßigte BahnCard 50, 1. Klasse
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/ermaessigtebahncard50-1-klasse  

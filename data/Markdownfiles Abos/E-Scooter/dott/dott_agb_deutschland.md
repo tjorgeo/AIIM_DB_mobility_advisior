@@ -1,3 +1,12 @@
+---
+type: AGB
+title: "Allgemeine Geschäftsbedingungen für die Nutzung der Dienstleistungen in Deutschland"
+description: "Quelle: https://ridedott.com/de/allgemeine/deutschland/"
+tags: [e_scooter, dott]
+resource: https://ridedott.com/de/allgemeine/deutschland/
+timestamp: 2026-06-24
+---
+
 # Allgemeine Geschäftsbedingungen für die Nutzung der Dienstleistungen in Deutschland
 
 *Letztes Update der Allgemeinen Geschäftsbedingungen: 23. September 2025*

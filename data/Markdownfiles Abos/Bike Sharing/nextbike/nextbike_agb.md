@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Allgemeine Geschäftsbedingungen (AGB) für 'nextbike' Fahrradmietsysteme"
+description: "1. Die nextbike GmbH (»Anbieter« oder »nextbike«) vermietet registrierten Kunden (»Kunde«) in verschiedenen Städten (»Nutzungsräume, Verleihsysteme«) Fahrräder und E-Bikes, soweit diese verfügbar sin…"
+tags: [bike_sharing, nextbike]
+timestamp: 2026-06-24
+---
+
 # Allgemeine Geschäftsbedingungen (AGB) für "nextbike" Fahrradmietsysteme
 ## betrieben durch die nextbike GmbH
 

@@ -1,11 +1,16 @@
 # Tools the LLM agents call.
+from agent.tools.apply import apply_change
 from agent.tools.catalog import lookup_subscriptions
+from agent.tools.insights import get_demand_outlook, get_modal_shift
 from agent.tools.knowledge import list_tariff_docs, read_tariff_doc
-from agent.tools.optimize import reoptimize
+from agent.tools.simulate import simulate_change
 
 __all__ = [
     "lookup_subscriptions",
     "list_tariff_docs",
     "read_tariff_doc",
-    "reoptimize",
+    "get_demand_outlook",
+    "get_modal_shift",
+    "simulate_change",
+    "apply_change",
 ]

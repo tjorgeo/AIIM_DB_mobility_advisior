@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Allgemeine Vermietbedingungen (AGB) SIXT share"
+description: "Sixt GmbH & Co. Autovermietung KG"
+tags: [car_sharing, sixt]
+timestamp: 2026-06-24
+---
+
 # Allgemeine Vermietbedingungen (AGB) SIXT share
 
 **der**

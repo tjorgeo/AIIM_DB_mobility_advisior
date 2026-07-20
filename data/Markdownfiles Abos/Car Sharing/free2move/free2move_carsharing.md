@@ -1,3 +1,11 @@
+---
+type: Reference
+title: "Carsharing von Free2move in 15 Städten"
+description: "Free2move hat eine Bewertung von 4.7/5 im App Store, basierend auf 70.900 Rezensionen."
+tags: [car_sharing, free2move]
+timestamp: 2026-07-02
+---
+
 # Carsharing von Free2move in 15 Städten
 
 Free2move hat eine Bewertung von 4.7/5 im App Store, basierend auf 70.900 Rezensionen.

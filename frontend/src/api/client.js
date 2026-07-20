@@ -87,19 +87,63 @@ export async function approve(sessionId, scenarioId) {
 // timeoutMs guards against a stalled backend/LLM call that never resolves — without
 // it a hang here would leave the chat widget's "typing…" indicator stuck forever
 // instead of falling through to the scripted assistant.
-export async function chat(userId, messages, { timeoutMs = 20000 } = {}) {
+export async function chat(sessionId, messages, { timeoutMs = 20000, lang = 'de' } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch('/api/chat', {
+    const res = await fetch(`/api/chat/${sessionId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, messages }),
+      body: JSON.stringify({ messages, lang }),
       signal: controller.signal,
     })
     return await parseJson(res, 'Chat')
   } catch (err) {
     if (err.name === 'AbortError') throw new Error('Chat timed out')
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Resolve a pending apply_change the Advisor paused for (see POST /confirm on the backend).
+// `confirm=true` commits the previewed change, `false` cancels it. Returns { reply, trace_id }.
+export async function confirmApply(sessionId, confirm, { lang = 'de', timeoutMs = 30000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`/api/chat/${sessionId}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm, lang }),
+      signal: controller.signal,
+    })
+    return await parseJson(res, 'Confirm')
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Confirm timed out')
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Fetch the opening briefing (turn 0) for a session — the Advisor's first message, which
+// replaces the old separately-generated memo. Works with or without an LLM key (the
+// backend falls back to a deterministic template briefing). Idempotent server-side: the
+// briefing is generated once per session and cached in the transcript.
+export async function openingBriefing(sessionId, lang = 'de', { timeoutMs = 30000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`/api/chat/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [], lang }),
+      signal: controller.signal,
+    })
+    return await parseJson(res, 'Opening briefing')
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Briefing timed out')
     throw err
   } finally {
     clearTimeout(timer)
@@ -114,7 +158,7 @@ export async function chat(userId, messages, { timeoutMs = 20000 } = {}) {
 // idleTimeoutMs resets on every chunk received (including the SSE keep-alive of a
 // long reply), so a real answer never gets cut short — it only fires when the
 // backend/LLM call stalls and nothing (not even an error event) ever arrives.
-export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35000 } = {}) {
+export async function streamChat(sessionId, messages, onToken, { idleTimeoutMs = 35000, lang = 'de' } = {}) {
   const controller = new AbortController()
   let timer = setTimeout(() => controller.abort(), idleTimeoutMs)
   const resetTimer = () => {
@@ -124,10 +168,10 @@ export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35
 
   let res
   try {
-    res = await fetch('/api/chat/stream', {
+    res = await fetch(`/api/chat/${sessionId}/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, messages }),
+      body: JSON.stringify({ messages, lang }),
       signal: controller.signal,
     })
   } catch (err) {
@@ -147,6 +191,7 @@ export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35
   let buffer = ''
   let traceId = null
   let gotTokens = false
+  let pending = null  // set when the Advisor paused apply_change awaiting confirmation
 
   try {
     // Parse the SSE stream: events are separated by a blank line; each carries one
@@ -167,6 +212,7 @@ export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35
         try { ev = JSON.parse(payload) } catch { continue }
         if (ev.type === 'token') { gotTokens = true; onToken(ev.text) }
         else if (ev.type === 'done') { traceId = ev.trace_id || null }
+        else if (ev.type === 'confirm_required') { pending = ev.payload || {}; traceId = ev.trace_id || traceId }
         else if (ev.type === 'error') {
           const err = new Error(ev.detail || 'Chat stream error')
           err.gotTokens = gotTokens
@@ -184,7 +230,7 @@ export async function streamChat(userId, messages, onToken, { idleTimeoutMs = 35
   } finally {
     clearTimeout(timer)
   }
-  return { traceId, gotTokens }
+  return { traceId, gotTokens, pending }
 }
 
 // Records a thumbs up/down on a chat reply as a Langfuse score. Best-effort:

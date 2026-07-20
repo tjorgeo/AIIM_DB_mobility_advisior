@@ -1,8 +1,9 @@
 """Run the memo-quality experiment over the `analyze-personas` dataset.
 
-The task regenerates the recommendation memo from each item's stored grounding
-(LLM only — no database) and the LLM judges score it for groundedness and
-bilingual completeness. Aggregate pass-rates become run-level scores.
+The task regenerates the recommendation briefing from each item's stored grounding
+(LLM only — no database) using the **Advisor's opening briefing** (the production
+narrative), and the LLM judges score it for groundedness and bilingual completeness.
+Aggregate pass-rates become run-level scores.
 
 Two entry points, sharing the same task/evaluators:
 
@@ -33,19 +34,20 @@ if not os.getenv("LANGFUSE_HOST") and os.getenv("LANGFUSE_BASE_URL"):
 
 
 def task(*, item, **_):
-    """Regenerate the memo from the item's stored grounding (LLM only)."""
-    from agent.analyst_agent import run_briefing
+    """Regenerate the briefing from the item's stored grounding via the Advisor's opening
+    briefing (LLM only, no DB — the eval agent has no checkpointer and no DB-backed tools).
+    Runs once per language so the judges get the same {english, german} shape as before."""
+    from agent.advisor import briefing_from_snapshot
 
     inp = item.input
-    memo_en, memo_de, _tid = run_briefing(
-        inp["name"],
-        inp["analyst_out"],
-        inp["forecaster_out"],
-        inp["pricing_catalog"],
-    )
+    snapshot = {
+        "user": {"name": inp["name"]},
+        "analyst_out": inp["analyst_out"],
+        "forecaster_out": inp["forecaster_out"],
+    }
     return {
-        "memo_english": memo_en,
-        "memo_german": memo_de,
+        "memo_english": briefing_from_snapshot(snapshot, "en"),
+        "memo_german": briefing_from_snapshot(snapshot, "de"),
         "grounding": {
             "analysis": inp["analyst_out"],
             "forecast": inp["forecaster_out"],

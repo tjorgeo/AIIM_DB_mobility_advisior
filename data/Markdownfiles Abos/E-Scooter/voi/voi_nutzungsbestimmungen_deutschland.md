@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Nutzungsbestimmungen"
+description: "Diese Nutzungsvereinbarung (im Folgenden „Vereinbarung' genannt) legt die rechtsverbindlichen Bedingungen für Ihre Nutzung der von der Voi Technology Germany GmbH, (im Folgenden „Voi' oder „Wir' gena…"
+tags: [e_scooter, voi]
+timestamp: 2026-06-24
+---
+
 # Nutzungsbestimmungen
 
 ## Nutzungsvereinbarung und Bedingungen für die Nutzung der Voi-Dienste

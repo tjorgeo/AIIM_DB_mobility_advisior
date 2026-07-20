@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "BahnCard 25, 1. Klasse: gelegentlich fahren - sofort sparen"
+description: "- **25 % Rabatt** auf den Flexpreis und **25 % Rabatt** auf die Sparangebote des Fernverkehrs (ausgenommen City-Ticket)"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25-1-klasse
+timestamp: 2026-07-01
+---
+
 # BahnCard 25, 1. Klasse: gelegentlich fahren - sofort sparen
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard25-1-klasse  

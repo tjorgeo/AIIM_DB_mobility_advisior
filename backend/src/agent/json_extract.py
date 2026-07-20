@@ -1,6 +1,6 @@
 """Shared helper for pulling a JSON object out of an LLM's free-text reply.
 
-Every structured-output LLM call in this codebase (forecasting.py, analyst_agent.py,
+Every structured-output LLM call in this codebase (forecasting.py, baseline_pipeline.py,
 modal_shift.py) writes STRICT JSON in the prompt but still gets prose/code-fence
 wrapped replies back often enough that this can't be a bare ``json.loads``.
 """

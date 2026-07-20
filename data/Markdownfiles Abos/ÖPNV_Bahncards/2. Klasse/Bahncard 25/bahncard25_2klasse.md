@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "BahnCard 25, 2. Klasse: gelegentlich fahren - sofort sparen"
+description: "- **25 % Rabatt** auf den Flexpreis und **25 % Rabatt** auf die Sparangebote des Fernverkehrs (ausgenommen City-Ticket)"
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25-2-klasse
+timestamp: 2026-07-01
+---
+
 # BahnCard 25, 2. Klasse: gelegentlich fahren - sofort sparen
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard25-2-klasse  

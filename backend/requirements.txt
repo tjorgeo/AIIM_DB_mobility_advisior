@@ -4,6 +4,13 @@ pydantic>=2.6.0
 psycopg2-binary>=2.9.0
 # Phase 3/4 — agentic LangGraph + LLM (University GPT, OpenAI-compatible)
 langgraph>=0.2.0
+# Durable conversation memory: PostgresSaver checkpointer keyed by session_id
+# (agent/advisor/agent.py). Persists the ReAct message history + intermediate
+# tool/observation steps across turns, in the same Postgres the app already uses.
+langgraph-checkpoint-postgres>=2.0.0
+# PostgresSaver runs on psycopg3 (the app's own layer uses psycopg2); the binary
+# extra ships the libpq wrapper so no system libpq is required.
+psycopg[binary,pool]>=3.1
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
 python-dotenv>=1.0.0

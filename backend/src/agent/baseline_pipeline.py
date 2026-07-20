@@ -90,7 +90,7 @@ def build_grounding(ctx: dict) -> dict:
 
 def _extract_json(text: str):
     """First complete JSON object in an LLM reply (tolerates prose / ```json fences
-    around it) — same approach as agent/analyst_agent.py."""
+    around it) — same approach as agent/json_extract.py."""
     start = text.find("{")
     if start == -1:
         return None

@@ -1,10 +1,10 @@
 """Seed the Langfuse-managed prompts from the local prompt files.
 
 Run once (and again whenever you want to push the local .md text as a new
-version) to create/update the `analyst-memo` and `communicator-chat` prompts in
-Langfuse with the `production` label. After seeding, iterate on the prompts in
-the Langfuse UI — the app fetches the `production` label at runtime, so changes
-take effect without a redeploy. The local .md files remain the offline fallback.
+version) to create/update the `advisor-chat` prompt in Langfuse with the
+`production` label. After seeding, iterate on the prompt in the Langfuse UI —
+the app fetches the `production` label at runtime, so changes take effect
+without a redeploy. The local .md file remains the offline fallback.
 
 Usage:
     # from backend/ with LANGFUSE_* env vars set (see .env.example)
@@ -20,12 +20,10 @@ from pathlib import Path
 # Allow importing nothing from the app — this script only needs the SDK.
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "src" / "agent" / "prompts"
 
-# name -> (source file, type). Both are single system-prompt templates: the
-# analyst has no variables (grounding data is passed in the human message); the
-# communicator uses {{context}}.
+# name -> (source file, type). The advisor system prompt uses {{context}} (filled from
+# the session snapshot at runtime).
 PROMPTS = {
-    "analyst-memo": ("analyst_system.md", "text"),
-    "communicator-chat": ("communicator_system.md", "text"),
+    "advisor-chat": ("advisor_system.md", "text"),
 }
 
 

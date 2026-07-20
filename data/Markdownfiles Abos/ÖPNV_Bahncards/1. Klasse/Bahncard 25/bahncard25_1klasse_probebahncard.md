@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Probe BahnCard 25, 1. Klasse: testen & sofort sparen"
+description: "- **25 % Rabatt** auf den Flexpreis und **25 % Rabatt** auf die Sparangebote des Fernverkehrs (ausgenommen City-Ticket)"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/probebahncard25-1-klasse
+timestamp: 2026-07-01
+---
+
 # Probe BahnCard 25, 1. Klasse: testen & sofort sparen
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/probebahncard25-1-klasse  

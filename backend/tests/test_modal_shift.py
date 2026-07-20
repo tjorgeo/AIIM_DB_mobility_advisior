@@ -1,9 +1,8 @@
 """Tests for agent.engines.modal_shift — cross-category modal-shift comparison.
 
-All tests run with ``use_llm=False`` (the deterministic fallback path) so they never
-touch the network — the LLM feasibility call itself is out of scope for these
-(structured-output parsing follows the same pattern already covered by
-test_forecasting.py's LLM tests).
+All tests run with no ``judge`` injected (the default feasible/low fallback path) so
+they never touch the network — the LLM feasibility judge itself lives in
+agent/llm_steps/feasibility_judge.py and is covered in test_llm_steps.py.
 """
 
 from agent.engines.modal_shift import _hard_exclusion_reason, _price_candidate, build_modal_shift_suggestions
@@ -118,7 +117,7 @@ def _category_analysis():
 
 def test_build_modal_shift_suggestions_only_covers_categories_with_trips():
     suggestions = build_modal_shift_suggestions(
-        _mode_breakdown(), _category_analysis(), {}, {}, use_llm=False,
+        _mode_breakdown(), _category_analysis(), {}, {},
     )
     assert [s["from_category"] for s in suggestions] == ["car_sharing"]
 
@@ -126,7 +125,7 @@ def test_build_modal_shift_suggestions_only_covers_categories_with_trips():
 def test_build_modal_shift_suggestions_excludes_avoided_and_unpriceable_targets():
     onboarding = {"avoided_transport_modes": ["e_scooter"], "has_driving_license": True}
     suggestions = build_modal_shift_suggestions(
-        _mode_breakdown(), _category_analysis(), onboarding, {}, use_llm=False,
+        _mode_breakdown(), _category_analysis(), onboarding, {},
     )
     entry = suggestions[0]
     excluded_targets = {e["to_category"] for e in entry["excluded_candidates"]}
@@ -158,7 +157,7 @@ def test_build_modal_shift_suggestions_never_shifts_short_trips_onto_long_distan
     ]
     onboarding = {"avoided_transport_modes": [], "has_driving_license": True}
     suggestions = build_modal_shift_suggestions(
-        mode_breakdown, category_analysis, onboarding, {}, use_llm=False,
+        mode_breakdown, category_analysis, onboarding, {},
     )
     entry = suggestions[0]
     priced_targets = {c.get("to_category") for c in entry["candidates"] if c["candidate_id"] != "stay"}
@@ -173,7 +172,7 @@ def test_build_modal_shift_suggestions_picks_dominant_shift():
     volume in this fixture — it should win regardless of weighting."""
     onboarding = {"avoided_transport_modes": [], "has_driving_license": True}
     suggestions = build_modal_shift_suggestions(
-        _mode_breakdown(), _category_analysis(), onboarding, {}, use_llm=False,
+        _mode_breakdown(), _category_analysis(), onboarding, {},
     )
     entry = suggestions[0]
     assert entry["suggested_shift"] is not None
@@ -182,10 +181,10 @@ def test_build_modal_shift_suggestions_picks_dominant_shift():
     assert entry["suggested_shift"]["annual_co2_kg"] < entry["stay_annual_co2_kg"]
 
 
-def test_build_modal_shift_suggestions_use_llm_false_marks_low_confidence():
+def test_build_modal_shift_suggestions_no_judge_marks_low_confidence():
     onboarding = {"avoided_transport_modes": [], "has_driving_license": True}
     suggestions = build_modal_shift_suggestions(
-        _mode_breakdown(), _category_analysis(), onboarding, {}, use_llm=False,
+        _mode_breakdown(), _category_analysis(), onboarding, {},
     )
     shift = suggestions[0]["suggested_shift"]
     assert shift["feasibility"]["feasible"] is True
@@ -219,7 +218,7 @@ def test_build_modal_shift_suggestions_no_dominant_shift_stays():
     ]
     onboarding = {"avoided_transport_modes": [], "has_driving_license": True}
     suggestions = build_modal_shift_suggestions(
-        mode_breakdown, category_analysis, onboarding, {}, use_llm=False,
+        mode_breakdown, category_analysis, onboarding, {},
     )
     entry = suggestions[0]
     assert entry["suggested_shift"] is None

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { chat as apiChat, streamChat, submitFeedback } from '../../api/client'
+import { chat as apiChat, streamChat, confirmApply, openingBriefing, submitFeedback } from '../../api/client'
 import { euro, co2 } from '../../lib/format'
 
 // Pick the recommended scenario (or the first) from an analysis result.
@@ -93,38 +93,45 @@ async function scriptedReply(text, { user, lang, getContext, actions }) {
   )
 }
 
-export function useChat({ user, lang, getContext, actions, advisorMemo }) {
-  // Chat starts empty on purpose — the only opening message is the short
-  // "analysis is ready" notice (posted below once the analysis finishes), which
-  // carries the "View portfolio" button. No separate greeting, so the two no
-  // longer contradict each other.
+export function useChat({ user, lang, getContext, actions, sessionId }) {
+  // Chat starts empty; the opening message is the Advisor's briefing (turn 0), fetched
+  // from the backend once the analysis session is ready (see the effect below).
   const [messages, setMessages] = useState(() => [])
   const [sending, setSending] = useState(false)
+  // Set when the Advisor pauses apply_change awaiting the user's yes/no (the payload from
+  // the backend's `pending_confirmation` / `confirm_required`). While set, the composer is
+  // blocked and the Confirm/Cancel control is shown — the paused graph must be resolved via
+  // POST /confirm (Command(resume)), never a new free-text message.
+  const [pending, setPending] = useState(null)
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
   // Optional `traceId` on assistant messages enables thumbs feedback (only set
-  // for real LLM replies from /api/chat, not scripted fallbacks).
+  // for real LLM replies, not scripted fallbacks).
   const push = (role, content, traceId = null) =>
     setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
-  // When the analysis finishes, post a short ready notice — NOT the full memo text.
-  // The memo itself lives only on the "Dein optimiertes Portfolio" page now; posting
-  // it here too used to duplicate that entire page's content into the chat
-  // unprompted. This notice just tells the user it's ready and invites questions,
-  // once per analysis (guarded the same way the old full-memo post was).
-  const advisorPostedRef = useRef(false)
+  // Once the analysis session is ready, fetch the Advisor's opening briefing (turn 0)
+  // and post it as the first assistant message. This IS the recommendation — the memo is
+  // now the agent's opening turn, not a separate panel. Fetched once per session id (a
+  // fresh/forced analysis mints a new id, re-fetching); the backend caches it so this
+  // stays one LLM call per session. `action: 'open-portfolio'` renders a button to the
+  // structured detail page.
+  const briefedSessionRef = useRef(null)
   useEffect(() => {
-    if (!advisorMemo || advisorPostedRef.current) return
-    advisorPostedRef.current = true
-    const notice = lang === 'de'
-      ? 'Deine Analyse ist fertig 📋 Alle Details findest du unter „Dein optimiertes Portfolio", oder frag mich gerne direkt dazu.'
-      : 'Your analysis is ready 📋 Find all the details under "Your optimized portfolio", or feel free to ask me directly.'
-    // `action` flags this message for ChatWidget to render a real navigation
-    // button under it (there's no router here — the portfolio page is a `view`
-    // state switch in Dashboard.jsx, so a plain markdown link couldn't trigger it).
-    setMessages((m) => [...m, { role: 'assistant', content: notice, action: 'open-portfolio' }])
-  }, [advisorMemo, lang])
+    if (!sessionId || briefedSessionRef.current === sessionId) return
+    briefedSessionRef.current = sessionId
+    let cancelled = false
+    openingBriefing(sessionId, lang)
+      .then((data) => {
+        if (cancelled || !data?.reply) return
+        setMessages((m) => [...m, { role: 'assistant', content: data.reply, traceId: data.trace_id || null, feedback: null, action: 'open-portfolio' }])
+      })
+      .catch(() => {
+        if (!cancelled) setMessages((m) => [...m, { role: 'assistant', content: greetingText(user, lang) }])
+      })
+    return () => { cancelled = true }
+  }, [sessionId, lang, user])
 
   const send = useCallback(async (raw) => {
     const text = String(raw || '').trim()
@@ -157,10 +164,15 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
 
     try {
       // 1) Preferred path: token streaming.
-      const { traceId } = await streamChat(user.id, history, appendToken)
-      if (!streamStarted) throw new Error('no tokens streamed')
-      setMessages((m) => m.map((x, i) =>
-        i === m.length - 1 && x.streaming ? { ...x, streaming: false, traceId: traceId || null } : x))
+      const { traceId, pending: streamPending } = await streamChat(sessionId, history, appendToken, { lang })
+      // A pause with no preamble tokens is a valid outcome (the model went straight to
+      // apply_change), so only treat a silent stream as a failure when nothing is pending.
+      if (!streamStarted && !streamPending) throw new Error('no tokens streamed')
+      if (streamStarted) {
+        setMessages((m) => m.map((x, i) =>
+          i === m.length - 1 && x.streaming ? { ...x, streaming: false, traceId: traceId || null } : x))
+      }
+      if (streamPending) setPending(streamPending)
     } catch (streamErr) {
       // If tokens already rendered, keep them (just finalize the bubble). Otherwise
       // fall back to 2) non-streaming JSON, then 3) the scripted assistant.
@@ -169,9 +181,14 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
           i === m.length - 1 && x.streaming ? { ...x, streaming: false } : x))
       } else {
         try {
-          const data = await apiChat(user.id, history)
-          if (!data || !data.reply) throw new Error('no reply')
-          push('assistant', data.reply, data.trace_id || null)
+          const data = await apiChat(sessionId, history, { lang })
+          if (data?.pending_confirmation) {
+            if (data.reply) push('assistant', data.reply, data.trace_id || null)
+            setPending(data.pending_confirmation)
+          } else {
+            if (!data || !data.reply) throw new Error('no reply')
+            push('assistant', data.reply, data.trace_id || null)
+          }
         } catch {
           const reply = await scriptedReply(text, { user, lang, getContext, actions })
           push('assistant', reply)
@@ -180,7 +197,25 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     } finally {
       setSending(false)
     }
-  }, [sending, user, lang, getContext, actions])
+  }, [sending, sessionId, user, lang, getContext, actions])
+
+  // Resolve a pending apply_change (Confirm/Cancel). Commits or cancels server-side, then
+  // posts the Advisor's follow-up reply. Clears the pause either way.
+  const confirm = useCallback(async (decision) => {
+    if (!pending || sending) return
+    setSending(true)
+    setPending(null)
+    try {
+      const data = await confirmApply(sessionId, decision, { lang })
+      if (data?.reply) push('assistant', data.reply, data.trace_id || null)
+    } catch {
+      push('assistant', lang === 'de'
+        ? 'Das konnte ich gerade nicht abschließen. Bitte versuche es erneut.'
+        : 'I couldn’t complete that just now. Please try again.')
+    } finally {
+      setSending(false)
+    }
+  }, [pending, sending, sessionId, lang])
 
   // Send thumbs feedback for one assistant message (by index) and remember the
   // choice locally so the UI can reflect it. Best-effort; ignores failures.
@@ -193,5 +228,5 @@ export function useChat({ user, lang, getContext, actions, advisorMemo }) {
     })
   }, [])
 
-  return { messages, sending, send, sendFeedback }
+  return { messages, sending, send, sendFeedback, pending, confirm }
 }

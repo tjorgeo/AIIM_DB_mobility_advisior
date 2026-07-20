@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Preislisten – teilAuto eG"
+description: "Für Privatkund*innen gibt es drei Tarifoptionen: den Starttarif für Wenig-Fahrende, den Rahmentarif für Regelmäßig-Fahrende und den Vielfahrertarif. Die folgende Liste der Zeit- und Kilometerpreise g…"
+tags: [car_sharing, teilauto]
+timestamp: 2026-06-24
+---
+
 # Preislisten – teilAuto eG
 
 *teilAuto eG | [teilauto.net](https://teilauto.net)*

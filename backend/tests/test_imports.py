@@ -1,7 +1,7 @@
 """Import/route smoke test — the safety net.
 
 Catches the class of bug that hit this session: a FastAPI handler lazily imports a
-symbol (e.g. ``from agent.communicator_agent import run_chat``) that has silently
+symbol (e.g. ``from agent.advisor import run_turn``) that has silently
 disappeared, so the endpoint 500s only when actually called. These tests import each
 module and assert the exact symbols the handlers depend on still exist, and that
 ``main`` imports and registers the key routes.
@@ -17,11 +17,11 @@ import pytest
 # (module, attribute) pairs the API handlers import — several are lazy in-handler
 # imports, so a plain "import main" would NOT surface a missing one.
 HANDLER_DEPS = [
-    ("agent.communicator_agent", "run_chat"),   # the symbol that vanished this session
-    ("agent.analyst_agent", "run_briefing"),
+    ("agent.advisor", "opening_briefing"),       # the chat handler's turn-0 import
+    ("agent.advisor", "run_turn"),               # the chat handler's follow-up import
     ("agent.pipeline", "run_analysis"),
     ("agent.engines", "analyze_portfolio"),
-    ("agent.engines", "forecast"),
+    ("agent.llm_steps.forecast_reasoner", "forecast"),  # forecaster endpoints import it here now
     ("agent.engines", "template_memos"),
     ("agent.context", "load_context"),
     ("register_endpoint", "register"),
@@ -30,7 +30,7 @@ HANDLER_DEPS = [
 
 EXPECTED_ROUTES = {
     "/api/analyze",
-    "/api/chat",
+    "/api/chat/{session_id}",
     "/api/login",
     "/api/register",
     "/api/personas",

@@ -1,3 +1,12 @@
+---
+type: Reference
+title: "Was ist LimePass?"
+description: "Quelle: https://help.li.me/hc/de/articles/21280766615963-Was-ist-LimePass"
+tags: [e_scooter, lime]
+resource: https://help.li.me/hc/de/articles/21280766615963-Was-ist-LimePass
+timestamp: 2026-06-24
+---
+
 # Was ist LimePass?
 
 *Zuletzt aktualisiert: 27. Februar 2025*

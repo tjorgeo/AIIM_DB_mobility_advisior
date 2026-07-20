@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Voi Mobility – Preisübersicht"
+description: "Voi ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Tarife, Minutenpässe und Pay-as-you-go-Preise."
+tags: [e_scooter, voi]
+timestamp: 2026-06-24
+---
+
 # Voi Mobility – Preisübersicht
 
 Voi ist ein Anbieter für E-Scooter-Sharing. Diese Datei enthält eine Übersicht der verfügbaren Tarife, Minutenpässe und Pay-as-you-go-Preise.

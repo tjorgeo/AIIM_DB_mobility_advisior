@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Nutzungsbedingungen für Bolt E-Fahrzeuge in Deutschland"
+description: "1.1 Diese Nutzungsbedingungen stellen die Vereinbarung („Vereinbarung') zwischen Ihnen („Sie', „Nutzer' oder „Fahrer') und Bolt Operations OÜ, Registrierungsnummer 14532901, oder unseren verbundenen…"
+tags: [e_scooter, bolt]
+timestamp: 2026-06-24
+---
+
 # Nutzungsbedingungen für Bolt E-Fahrzeuge in Deutschland
 
 *Gültig ab: 01.08.2023*

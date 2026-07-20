@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "My BahnCard 25, 1. Klasse: Für alle unter 27"
+description: "- **25 % Rabatt** auf den Flexpreis und **25 % Rabatt** auf die Sparangebote des Fernverkehrs (ausgenommen City-Ticket)"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25/mybahncard-1-klasse
+timestamp: 2026-07-01
+---
+
 # My BahnCard 25, 1. Klasse: Für alle unter 27
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard25/mybahncard-1-klasse  

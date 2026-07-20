@@ -2,7 +2,7 @@
 
 **Status:** Living document. Last reconciled with the code **2026-07-08**.
 Source of truth is the code itself: backend routes in [`backend/src/main.py`](../backend/src/main.py)
-and [`backend/src/orchestrator.py`](../backend/src/orchestrator.py); frontend consumers in
+and [`backend/src/analysis_service.py`](../backend/src/analysis_service.py); frontend consumers in
 `frontend/src/api/client.js`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/components/chat/useChat.js`.
 
 > ⚠️ **Known divergence (open item).** The July refactor (commits `4d774e9`, `aaba999`)
@@ -91,7 +91,7 @@ schedules the slow LLM memo as a background task, so the next mount serves the u
   "preferences": { … },                    // onboarding scores
   "current_subscriptions": [ … ],
   "summary": {
-    // ⏳ POST-PIVOT shape the backend now builds (orchestrator.py):
+    // ⏳ POST-PIVOT shape the backend now builds (analysis_service.py):
     "total_actual_annual_cost_eur": 696.0,
     "total_co2_kg": 206.0,
     "total_estimated_savings_eur": 0.0,

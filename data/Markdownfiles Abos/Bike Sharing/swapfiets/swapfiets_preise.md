@@ -1,3 +1,10 @@
+---
+type: Pricing
+title: "Dein Fahrrad oder E-Bike für eine feste Monatsgebühr | Swapfiets"
+tags: [bike_sharing, swapfiets]
+timestamp: 2026-06-24
+---
+
 # Dein Fahrrad oder E-Bike für eine feste Monatsgebühr | Swapfiets
 
 *swapfiets.de/de-DE*
