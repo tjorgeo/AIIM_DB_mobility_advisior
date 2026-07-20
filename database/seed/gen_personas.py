@@ -103,6 +103,10 @@ def ref_e_scooter(minutes):
     return round(1.00 + 0.25 * minutes, 2)
 
 
+def paid_e_scooter_bolt_unlimited(minutes):
+    return round(0.22 * minutes, 2)
+
+
 REF_FN = {
     "public_transport": lambda km, minutes: ref_public_transport(km),
     "regional_train": lambda km, minutes: ref_regional_train(km),
@@ -120,6 +124,7 @@ SUB_BC25_2KL = "a3333333-3333-3333-3333-333333333333"     # BahnCard 25, 2. Klas
 SUB_BC50_2KL = "d1111111-1111-1111-1111-111111111111"     # BahnCard 50, 2. Klasse, 244.00/yr
 SUB_CAB_MEMBER_PLUS = "m1111111-1111-1111-1111-111111111111"  # Call a Bike Member Plus, 8/mo (96/yr)
 SUB_TEILAUTO_VIELFAHRER = "x1111111-1111-1111-1111-111111111111"  # teilAuto Vielfahrertarif, 30/mo (360/yr)
+SUB_BOLT_UNLIMITED = "t1111111-1111-1111-1111-111111111111"       # Bolt Unbegrenzte Freischaltungen, 1.99/mo (23.88/yr)
 
 # ---------------------------------------------------------------------------
 # Output accumulators
@@ -664,6 +669,156 @@ add_calendar(ELIF, datetime(2025, 9, 6, 11, 0, tzinfo=TZ_SUMMER), datetime(2025,
              "Design fair - client booth", "Staffing a client's booth at the local design fair.", "Bremen", "")
 
 print(f"After Elif: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 5: Nora Fischer — showcase demo persona built to cover every major
+# engine capability in one profile:
+#   - a subscription to CANCEL (BahnCard 25, barely used — same math shape as
+#     Simone's cancel case above)
+#   - a subscription to SWITCH (a Bolt Unbegrenzte Freischaltungen e-scooter
+#     plan that's a worse fit for her ride pattern than Dott Pro's free-
+#     minutes structure, at her actual ride volume)
+#   - a cross-category MODAL-SHIFT trigger: frequent, short (~4-8km, well
+#     under bike-sharing's 15km plausibility ceiling) car-sharing errands
+#     despite a stated high CO2 priority in her onboarding — exactly the
+#     "says she cares about CO2 but drives a lot" case the modal-shift engine
+#     exists to catch, and she has enough real bike-sharing usage of her own
+#     to give the engine a historical rate to price the shift with (see
+#     modal_shift.py::_price_candidate's "no historical rate -> not
+#     comparable" rule).
+#   - an *upcoming* life event (dated ahead of WINDOW_END/today so the
+#     forecaster's forward-looking calendar scan picks it up — see the NOTE
+#     in Jonas's section above) that should flip today's "cancel the
+#     BahnCard" call forward once the forecaster projects her long-distance
+#     volume rising from 2x/yr toward monthly.
+# ===========================================================================
+NORA = uid("user:nora.fischer")
+add_user(NORA, "nora.fischer@example.com", "norafischer29", "Nora", "Fischer",
+          "1996-04-12", 29, "female", "single", "Cologne", "50667")
+add_onboarding(
+    NORA, "employed_full_time", "Marketing Manager", "Cologne", "50667", "hybrid", 0.4,
+    1, "single", "medium", 130.0, True, "none", "none",
+    ["public_transport", "bike_sharing"], ["car"],
+    ["climate_conscious", "habit_driven_car_sharing"],
+    85, 40, 45,
+    "Commutes into the Cologne office by Deutschlandticket most days, with the occasional remote "
+    "day; grabs a car-sharing car for errands and short client hops in between.",
+    "Occasional bike-share ride along the Rhine on weekends, light e-scooter hops to meet friends.",
+    "I commute in on the Deutschlandticket, but for errands in between I almost automatically grab "
+    "the car-sharing car - even though most of those short hops would work just as well by bike.",
+    "Climate-friendly travel matters a lot to me, but if I'm honest, car-sharing is just the "
+    "convenient habit I've fallen into, even though I could bike almost everywhere I actually go.",
+)
+nora_dt = add_subscription(NORA, SUB_DT, "2023-09-01", True, "several_times_per_week")
+nora_bc25 = add_subscription(NORA, SUB_BC25_2KL, "2022-11-01", False, "rarely")
+nora_bolt = add_subscription(NORA, SUB_BOLT_UNLIMITED, "2024-06-01", False, "several_times_per_week")
+
+for d in daterange(WINDOW_START, WINDOW_END):
+    sf = season_factor(d)
+    weekday = d.weekday()
+    if weekday < 5:
+        # DT-covered hybrid commute, most office days/week (frequent enough that the
+        # Deutschlandticket's flat 63/mo actually beats paying single-ticket fares one
+        # by one — at lower frequency the flat-fare pass stops paying for itself, same
+        # break-even logic as everywhere else in this dataset).
+        if random.random() < 0.75 * sf:
+            dist = round(random.uniform(6.0, 8.0), 2)
+            dur = round(dist / 0.45)
+            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=8, minute=random.randint(0, 20)),
+                              dur, "home", "Cologne", "office", "Cologne", "commute",
+                              "public_transport", dist, True, True, nora_dt, paid_override=0.0)
+            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=17, minute=random.randint(15, 45)),
+                              dur, "office", "Cologne", "home", "Cologne", "home_return",
+                              "public_transport", dist, True, True, nora_dt, paid_override=0.0)
+        # Car-sharing errands, no subscription (pay-as-you-go) - deliberately short
+        # (avg ~6km, well under bike-sharing's 15km plausibility ceiling), several
+        # times a week. This is the bucket the modal-shift engine should flag.
+        if random.random() < 0.5 * sf:
+            dist = round(random.uniform(4.0, 8.0), 2)
+            dur = round(dist / 0.45 + random.uniform(5, 10))
+            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(11, 18)),
+                              dur, "home", "Cologne", random.choice(["supermarket", "client office", "print shop"]),
+                              "Cologne", random.choice(["errands", "business", "shopping"]),
+                              "car_sharing", dist, False, False, "")
+    else:
+        # Weekend car-sharing errand, same short-hop pattern.
+        if random.random() < 0.3 * sf:
+            dist = round(random.uniform(4.0, 8.0), 2)
+            dur = round(dist / 0.45 + random.uniform(5, 10))
+            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(10, 17)),
+                              dur, "home", "Cologne", random.choice(["supermarket", "hardware store"]),
+                              "Cologne", "errands", "car_sharing", dist, False, False, "")
+        # Weekend bike-share ride along the Rhine (pay-as-you-go) - gives the
+        # modal-shift engine a real historical bike-sharing rate to price the
+        # car-sharing -> bike-sharing shift with.
+        if random.random() < 0.3 * sf:
+            dur = random.randint(15, 35)
+            dist = round(dur * 0.2, 2)
+            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(11, 16)),
+                              dur, "home", "Cologne", "Rhine promenade", "Cologne", "leisure",
+                              "bike_sharing", dist, False, False, "")
+    # Light e-scooter hops on the Bolt subscription, most days - always short (well
+    # under e-scooter's 8km plausibility ceiling too).
+    if random.random() < 0.3 * sf:
+        dur = random.randint(6, 16)
+        dist = round(dur * 0.18, 2)
+        add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(10, 21)),
+                          dur, "home", "Cologne", random.choice(["cafe", "friend's place", "gym"]),
+                          "Cologne", random.choice(["social", "leisure"]),
+                          "e_scooter", dist, False, False, nora_bolt,
+                          paid_override=paid_e_scooter_bolt_unlimited(dur))
+
+# Two rare long-distance trips a year on the BahnCard 25 (barely justifies its cost) -
+# same shape as Simone's case above.
+for month, day, city, base_dist in [(9, 25, "Berlin", 220), (2, 12, "Munich", 355)]:
+    yr = 2025 if month >= 7 else 2026
+    d = date(yr, month, day)
+    dist = round(base_dist * random.uniform(0.97, 1.03), 2)
+    ref = ref_long_distance_train(dist)
+    paid = round(ref * 0.75, 2)
+    dur = round(dist / 3.1)
+    add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=8, minute=15),
+                      dur, "home", "Cologne", "conference venue", city, "business",
+                      "long_distance_train", dist, False, False, nora_bc25, paid_override=paid)
+    add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=18, minute=30),
+                      dur, "conference venue", city, "home", "Cologne", "home_return",
+                      "long_distance_train", dist, False, False, nora_bc25, paid_override=paid)
+
+# Local-only calendar - routine life, no subscription implications.
+add_calendar(NORA, datetime(2025, 8, 6, 18, 30, tzinfo=TZ_SUMMER), datetime(2025, 8, 6, 19, 30, tzinfo=TZ_SUMMER),
+             "Yoga class", "Weekly evening yoga class at the studio near home.", "Cologne",
+             "FREQ=WEEKLY;BYDAY=WE")
+add_calendar(NORA, datetime(2025, 10, 9, 9, 30, tzinfo=TZ_SUMMER), datetime(2025, 10, 9, 10, 15, tzinfo=TZ_SUMMER),
+             "Dentist checkup", "Routine dental checkup.", "Cologne", "")
+add_calendar(NORA, datetime(2026, 1, 16, 19, 0, tzinfo=TZ), datetime(2026, 1, 16, 22, 0, tzinfo=TZ),
+             "Team dinner", "Quarterly team dinner with the marketing agency.", "Cologne", "")
+add_calendar(NORA, datetime(2026, 4, 11, 12, 0, tzinfo=TZ_SUMMER), datetime(2026, 4, 11, 13, 30, tzinfo=TZ_SUMMER),
+             "Haircut appointment", "Trim and color at the salon.", "Cologne", "")
+
+# Life-event calendar: an *upcoming* promotion requiring a monthly on-site day at the
+# Munich HQ (dated ahead of WINDOW_END/today so the forecaster's forward-looking scan
+# picks it up - see the NOTE in Jonas's section above), not yet reflected in the
+# twice-a-year baseline above. Meant to flip category_subscription_analysis's
+# long_distance_rail recommendation forward (today: cancel_current_go_pay_as_you_go,
+# since her BahnCard 25 barely breaks even at 2 trips/yr) once the forecaster projects
+# that volume rising toward monthly - a deliberate contrast with today's cancel call.
+PROMOTION_DATE = date(2026, 8, 5)
+MUNICH_ROLE_START = date(2026, 9, 1)
+add_calendar(NORA, datetime(PROMOTION_DATE.year, PROMOTION_DATE.month, PROMOTION_DATE.day, 15, 0, tzinfo=TZ_SUMMER),
+             datetime(PROMOTION_DATE.year, PROMOTION_DATE.month, PROMOTION_DATE.day, 16, 0, tzinfo=TZ_SUMMER),
+             "Beförderung angenommen - Senior Marketing Manager", "Accepted a promotion to Senior "
+             "Marketing Manager starting next month - the role requires a monthly on-site day at the "
+             "Munich HQ.", "Cologne", "")
+add_calendar(NORA, datetime(MUNICH_ROLE_START.year, MUNICH_ROLE_START.month, MUNICH_ROLE_START.day, 9, 0, tzinfo=TZ_SUMMER),
+             datetime(MUNICH_ROLE_START.year, MUNICH_ROLE_START.month, MUNICH_ROLE_START.day, 17, 0, tzinfo=TZ_SUMMER),
+             "Neue Rolle beginnt - erster Munich-Tag", "First day in the new Senior Marketing Manager "
+             "role - starts the recurring monthly on-site day at the Munich HQ from here on.", "Munich", "")
+add_calendar(NORA, datetime(2026, 9, 28, 7, 0, tzinfo=TZ_SUMMER), datetime(2026, 9, 28, 20, 0, tzinfo=TZ_SUMMER),
+             "Munich HQ Tag", "Monthly on-site day at the Munich HQ - now a recurring routine as part of "
+             "the new role.", "Munich", "FREQ=MONTHLY;BYDAY=4MO")
+
+print(f"After Nora: {len(trip_rows)}")
 print(f"Total trips: {len(trip_rows)}, total legs: {len(leg_rows)}")
 
 
@@ -738,3 +893,4 @@ print("Julia Berger:", JULIA)
 print("Jonas Keller:", JONAS)
 print("Simone Wagner:", SIMONE)
 print("Elif Yildiz:", ELIF)
+print("Nora Fischer:", NORA)

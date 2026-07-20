@@ -8,6 +8,18 @@ import React from 'react'
 
 const INLINE_RE = /\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`/g
 
+// GFM pipe-table separator row, e.g. "|---|:--:|---|". The LLM is instructed not to
+// emit tables (this renderer has no table layout), but as a safety net any that slip
+// through are parsed here and rendered as a bullet list instead of raw pipe characters.
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/
+
+function splitTableRow(line) {
+  let s = line.trim()
+  if (s.startsWith('|')) s = s.slice(1)
+  if (s.endsWith('|')) s = s.slice(0, -1)
+  return s.split('|').map((c) => c.trim())
+}
+
 function parseInline(text) {
   const nodes = []
   let lastIndex = 0
@@ -47,6 +59,19 @@ function parseBlocks(text) {
       flushPara()
       blocks.push({ type: 'h', level: heading[1].length, text: heading[2] })
       i++
+      continue
+    }
+
+    if (line.includes('|') && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1])) {
+      flushPara()
+      const headers = splitTableRow(line)
+      i += 2
+      const rows = []
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+        rows.push(splitTableRow(lines[i]))
+        i++
+      }
+      blocks.push({ type: 'table', headers, rows })
       continue
     }
 
@@ -106,6 +131,23 @@ export default function Markdown({ text }) {
       return (
         <ul key={idx} className="md-list">
           {b.items.map((it, j) => <li key={j}>{parseInline(it)}</li>)}
+        </ul>
+      )
+    }
+    if (b.type === 'table') {
+      return (
+        <ul key={idx} className="md-list">
+          {b.rows.map((row, r) => (
+            <li key={r}>
+              {row.map((cell, c) => (
+                <React.Fragment key={c}>
+                  {c > 0 && ' · '}
+                  {b.headers[c] && <strong>{parseInline(b.headers[c])}: </strong>}
+                  {parseInline(cell)}
+                </React.Fragment>
+              ))}
+            </li>
+          ))}
         </ul>
       )
     }
