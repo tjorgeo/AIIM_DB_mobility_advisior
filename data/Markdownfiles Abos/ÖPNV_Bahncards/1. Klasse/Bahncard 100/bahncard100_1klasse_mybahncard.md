@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "My BahnCard 100, 1. Klasse: unbegrenzt reisen und profitieren"
+description: "Mit der BahnCard 100, 1. Klasse und dem zusätzlichen kostenfreien digitalen Deutschland-Ticket profitieren Sie von exklusiven Vorteilen und reisen bundesweit im Nah- und Fernverkehr unbegrenzt. Melde…"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/mybahncard100-1-klasse
+timestamp: 2026-07-01
+---
+
 # My BahnCard 100, 1. Klasse: unbegrenzt reisen und profitieren
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/mybahncard100-1-klasse  

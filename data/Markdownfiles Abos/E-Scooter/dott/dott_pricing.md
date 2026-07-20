@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Dott Mobility – Preisübersicht"
+description: "> Quelle: Dott App"
+tags: [e_scooter, dott]
+timestamp: 2026-06-24
+---
+
 # Dott Mobility – Preisübersicht
 
 > Quelle: Dott App

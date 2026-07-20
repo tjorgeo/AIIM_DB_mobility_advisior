@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "ALLGEMEINE MIETBEDINGUNGEN"
+description: "- 1. Mietverträge und Reservierungen"
+tags: [car_sharing, miles]
+timestamp: 2026-06-24
+---
+
 # ALLGEMEINE MIETBEDINGUNGEN
 
 **Stand:** Diese Version tritt am 11.08.2025 in Kraft.

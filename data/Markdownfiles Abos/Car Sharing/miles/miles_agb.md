@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Allgemeine Geschäftsbedingungen"
+description: "- 1. Gegenstand"
+tags: [car_sharing, miles]
+timestamp: 2026-06-24
+---
+
 # Allgemeine Geschäftsbedingungen
 
 **ALLGEMEINE GESCHÄFTSBEDINGUNGEN („AGB")**

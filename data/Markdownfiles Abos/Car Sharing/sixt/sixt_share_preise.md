@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "SIXT SHARE PREISE IM ÜBERBLICK"
+description: "Unbegrenzte Mobilität bedeutet, dass alles bereits im Preis inkludiert ist. Wählen Sie je nach Bedarf den Minutenpreis oder eins unserer attraktiven Stunden- oder Tagespakete und fahren Sie los. Unse…"
+tags: [car_sharing, sixt]
+timestamp: 2026-06-24
+---
+
 # SIXT SHARE PREISE IM ÜBERBLICK
 
 Unbegrenzte Mobilität bedeutet, dass alles bereits im Preis inkludiert ist. Wählen Sie je nach Bedarf den Minutenpreis oder eins unserer attraktiven Stunden- oder Tagespakete und fahren Sie los. Unsere Preise sind dynamisch, das bedeutet, dass diese u.a. je nach Zeit und Ort der Anmietung sowie Fahrzeugmodell variieren. Vor Antritt der Fahrt sehen Sie in der App die aktuell gültigen Minuten- und Paketpreise.

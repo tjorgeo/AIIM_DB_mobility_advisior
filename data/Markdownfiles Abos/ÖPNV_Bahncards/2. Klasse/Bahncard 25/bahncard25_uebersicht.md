@@ -1,3 +1,11 @@
+---
+type: Overview
+title: "BahnCard 25 – Übersicht"
+description: "\* Die Probe BahnCard verlängert sich automatisch, sofern sie nicht rechtzeitig gekündigt wird."
+tags: [long_distance_rail, bahncard, second_class]
+timestamp: 2026-07-01
+---
+
 # BahnCard 25 – Übersicht
 
 | BahnCard | Preis (2. Klasse) | Preis (1. Klasse) | Rabattbedingungen | Laufzeit | Kündigungsfrist |

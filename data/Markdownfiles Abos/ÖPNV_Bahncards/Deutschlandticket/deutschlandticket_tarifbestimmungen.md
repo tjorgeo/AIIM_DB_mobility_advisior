@@ -1,3 +1,12 @@
+---
+type: AGB
+title: "Deutschlandticket.de – Tarifbestimmungen"
+description: "Das Deutschland-Ticket ist ein von der Bundesrepublik Deutschland und den Bundesländern gefördertes deutschlandweit gültiges Tarifangebot im Schienenpersonennahverkehr (SPNV) und im öffentlichen Pers…"
+tags: [public_transport, deutschlandticket]
+resource: https://deutschlandticket.de/legal/tariff
+timestamp: 2026-06-24
+---
+
 # Deutschlandticket.de – Tarifbestimmungen
 
 **Quelle:** https://deutschlandticket.de/legal/tariff  

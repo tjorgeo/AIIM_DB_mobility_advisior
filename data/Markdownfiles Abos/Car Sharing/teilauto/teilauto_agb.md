@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "AGB – Allgemeine Geschäftsbedingungen"
+description: "Allgemeine Geschäftsbedingungen für Stationsbasiertes („teilAuto') und Freefloating („cityflitzer') Carsharing"
+tags: [car_sharing, teilauto]
+timestamp: 2026-06-24
+---
+
 # AGB – Allgemeine Geschäftsbedingungen
 
 *Allgemeine Geschäftsbedingungen für Stationsbasiertes („teilAuto") und Freefloating („cityflitzer") Carsharing*

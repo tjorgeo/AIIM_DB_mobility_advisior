@@ -1,3 +1,11 @@
+---
+type: AGB
+title: "Allgemeine Geschäfts- und Nutzungsbedingungen"
+description: "1. Die Deutsche Bahn Connect GmbH („Anbieter') vermietet registrierten Kunden („Kunde') bei bestehender Verfügbarkeit Fahrräder. Der Begriff „Fahrräder' in diesen Allgemeinen Geschäftsbedingungen umf…"
+tags: [bike_sharing, callabike]
+timestamp: 2026-06-24
+---
+
 # Allgemeine Geschäfts- und Nutzungsbedingungen
 ## Deutsche Bahn Connect GmbH – Fahrradvermietung
 

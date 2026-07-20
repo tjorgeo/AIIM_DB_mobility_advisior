@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "My BahnCard 50, 1. Klasse: Für alle unter 27"
+description: "- My BahnCard 50 zum **Aktionspreis** sichern: Nur bis zum 31.7.2026"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard50/mybahncard-1-klasse
+timestamp: 2026-07-01
+---
+
 # My BahnCard 50, 1. Klasse: Für alle unter 27
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard50/mybahncard-1-klasse  

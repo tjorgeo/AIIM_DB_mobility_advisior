@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "My BahnCard 100, 2. Klasse: unbegrenzt reisen und profitieren"
+description: "Mit der My BahnCard 100, 2. Klasse und dem zusätzlichen kostenfreien digitalen Deutschland-Ticket profitieren Sie von exklusiven Vorteilen und reisen bundesweit im Nah- und Fernverkehr unbegrenzt. Me…"
+tags: [long_distance_rail, bahncard, second_class]
+resource: https://www.bahn.de/angebot/bahncard/mybahncard100-2-klasse
+timestamp: 2026-07-01
+---
+
 # My BahnCard 100, 2. Klasse: unbegrenzt reisen und profitieren
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/mybahncard100-2-klasse  

@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Entdecke unsere Tarife"
+description: "Wähle deinen Tarif: Zahle pro Kilometer oder entscheide dich für unsere festen Stunden- oder Tagestarife für bis zu 30 Tage."
+tags: [car_sharing, miles]
+timestamp: 2026-06-24
+---
+
 # Entdecke unsere Tarife
 
 Wähle deinen Tarif: Zahle pro Kilometer oder entscheide dich für unsere festen Stunden- oder Tagestarife für bis zu 30 Tage.

@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "Preisverzeichnis DB Call a Bike"
+description: "Call a Bike ist das Bikesharing-Angebot der Deutschen Bahn. Es ist nicht nur umweltfreundlich, sondern schont auch deinen Geldbeutel. Für den täglichen Arbeitsweg, einen Städtetrip oder spontane Ausf…"
+tags: [bike_sharing, callabike]
+timestamp: 2026-06-24
+---
+
 # Preisverzeichnis DB Call a Bike
 
 Call a Bike ist das Bikesharing-Angebot der Deutschen Bahn. Es ist nicht nur umweltfreundlich, sondern schont auch deinen Geldbeutel. Für den täglichen Arbeitsweg, einen Städtetrip oder spontane Ausflüge am Wochenende - Bikesharing mit Call a Bike bleibt günstig!

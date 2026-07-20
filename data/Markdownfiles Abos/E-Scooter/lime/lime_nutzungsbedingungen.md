@@ -1,3 +1,12 @@
+---
+type: AGB
+title: "Nutzungsbedingungen"
+description: "Quelle: https://www.li.me/de-de/user-agreement"
+tags: [e_scooter, lime]
+resource: https://www.li.me/de-de/user-agreement
+timestamp: 2026-06-24
+---
+
 # Nutzungsbedingungen
 
 *Letzte Aktualisierung: 1. September 2023*

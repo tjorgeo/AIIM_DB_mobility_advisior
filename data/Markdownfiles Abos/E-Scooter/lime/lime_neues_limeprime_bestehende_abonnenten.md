@@ -1,3 +1,12 @@
+---
+type: Reference
+title: "Neues LimePrime für bestehende Abonnenten"
+description: "Quelle: https://help.li.me/hc/de/articles/42109172027291-Neues-LimePrime-f%C3%BCr-bestehende-Abonnenten"
+tags: [e_scooter, lime]
+resource: https://help.li.me/hc/de/articles/42109172027291-Neues-LimePrime-f%C3%BCr-bestehende-Abonnenten
+timestamp: 2026-06-24
+---
+
 # Neues LimePrime für bestehende Abonnenten
 
 *Zuletzt aktualisiert: 23. Januar 2026*

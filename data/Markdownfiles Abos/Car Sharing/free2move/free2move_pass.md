@@ -1,3 +1,11 @@
+---
+type: Reference
+title: "Abonniere den Free2move Pass: jede Minute zählt"
+description: "Du bist häufig mit Carsharing unterwegs? Dann brauchst du den Free2move Pass! Der Free2move Pass ist ein Monats-Abo, mit dem du für eine kleine Monatsgebühr bis zu 50% Rabatt auf den Minutentarif erh…"
+tags: [car_sharing, free2move]
+timestamp: 2026-07-02
+---
+
 # Abonniere den Free2move Pass: jede Minute zählt
 
 ---

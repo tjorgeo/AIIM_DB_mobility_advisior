@@ -1,3 +1,11 @@
+---
+type: Pricing
+title: "nextbike – Bikesharing in über 300 Städten weltweit"
+description: "Die Registrierung ist kostenlos, lediglich zur Verifizierung deines Zahlungsmittels musst du ein Fahrtguthaben von 1 € hinterlegen, welches du später verfahren kannst."
+tags: [bike_sharing, nextbike]
+timestamp: 2026-06-24
+---
+
 # nextbike – Bikesharing in über 300 Städten weltweit
 
 *nextbike.de/de/#tarife*

@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "BahnCard 50, 1. Klasse: spontan und flexibel für Vielfahrer"
+description: "- BahnCard 50 zum **Aktionspreis** sichern: Nur bis zum 31.7.2026"
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard50-1-klasse
+timestamp: 2026-07-01
+---
+
 # BahnCard 50, 1. Klasse: spontan und flexibel für Vielfahrer
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard50-1-klasse  

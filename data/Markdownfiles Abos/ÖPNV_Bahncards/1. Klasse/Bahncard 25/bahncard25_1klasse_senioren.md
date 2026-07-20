@@ -1,3 +1,12 @@
+---
+type: Tariff
+title: "Senioren BahnCard 25, 1. Klasse"
+description: "Ob Gelegenheitsfahrer oder Vielfahrer - Reisende ab 65 sparen mit der Senioren BahnCard bei jeder Fahrt."
+tags: [long_distance_rail, bahncard, first_class]
+resource: https://www.bahn.de/angebot/bahncard/bahncard25/seniorenbahncard-1-klasse
+timestamp: 2026-07-01
+---
+
 # Senioren BahnCard 25, 1. Klasse
 
 **Quelle:** https://www.bahn.de/angebot/bahncard/bahncard25/seniorenbahncard-1-klasse  
