@@ -25,6 +25,17 @@ DEMO_LOGIN_PASSWORD = os.environ.get("DEMO_LOGIN_PASSWORD", "mobility")
 async def lifespan(app: FastAPI):
     print("Verifying Postgres connectivity (schema provisioned by database/init)...")
     ping_db()
+    # Build the advisor's LangGraph checkpointer and create its tables up front, so a
+    # misconfigured checkpointer fails loudly at boot rather than on the first chat turn.
+    # Never fatal: the app still serves analysis + the template briefing without it.
+    try:
+        from agent.advisor.agent import setup_agent
+        setup_agent()
+        print("Advisor checkpointer ready.")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        print("Advisor checkpointer setup failed; chat memory will be limited.")
     yield
     print("Shutting down DB MoveOptimizer Backend...")
     # Flush any buffered Langfuse traces so nothing is lost on shutdown (no-op

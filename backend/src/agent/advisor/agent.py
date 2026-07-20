@@ -13,11 +13,18 @@ memo when none is configured, so the dashboard always gets an opening message.
 
 import json
 import logging
+import os
+import queue
+import threading
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.prebuilt import create_react_agent
+from psycopg_pool import ConnectionPool
 
+from database import DATABASE_URL
 from agent.llm import get_llm, llm_available
 from agent.observability import get_prompt, trace
 from agent.session import append_message, get_messages, get_session
@@ -46,14 +53,61 @@ _TOOLS = [
 ]
 
 _agent = None
+_saver = None
+
+
+def _get_saver() -> PostgresSaver:
+    """Lazily build the shared ``PostgresSaver`` checkpointer and create its tables.
+
+    Persists the ReAct message history *and* the intermediate tool/observation steps
+    across turns, keyed by ``thread_id`` (the chat ``session_id``), in the same Postgres
+    the app already uses. Runs on psycopg3 (autocommit + no prepared statements, as the
+    checkpointer requires) via its own small pool — independent of the psycopg2 pool in
+    ``database.py``. ``setup()`` is idempotent, so calling it on every process is safe.
+    """
+    global _saver
+    if _saver is None:
+        pool = ConnectionPool(
+            conninfo=DATABASE_URL,
+            max_size=int(os.getenv("CHECKPOINT_POOL_MAX", "5")),
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=True,
+        )
+        saver = PostgresSaver(pool)
+        saver.setup()
+        _saver = saver
+    return _saver
+
+
+def _agent_prompt(state: dict, config: RunnableConfig) -> list:
+    """Inject the per-session, snapshot-grounded system prompt fresh each run — read from
+    the run config, not persisted into the checkpointed history — then the running
+    messages. Refreshing it per turn means the grounding reflects the *latest* snapshot
+    (e.g. after ``apply_change`` revised the plan)."""
+    configurable = (config or {}).get("configurable") or {}
+    system_prompt = configurable.get("system_prompt") or _SYSTEM_TEMPLATE
+    return [SystemMessage(content=system_prompt), *state["messages"]]
 
 
 def _get_agent():
-    """Built once per process (tools + llm are static) and reused across turns."""
+    """Built once per process (tools + llm are static) and reused across turns. Carries a
+    Postgres checkpointer so each ``session_id`` thread remembers its own conversation."""
     global _agent
     if _agent is None:
-        _agent = create_react_agent(get_llm(), _TOOLS)
+        _agent = create_react_agent(
+            get_llm(), _TOOLS, prompt=_agent_prompt, checkpointer=_get_saver(),
+        )
     return _agent
+
+
+def setup_agent() -> None:
+    """Eagerly create the checkpointer tables (and build the agent when an LLM key is set)
+    so failures surface at startup rather than on the first chat turn. Safe to call
+    without an LLM key — the checkpointer needs only Postgres, which startup already
+    verified — so table creation still happens and the briefing template fallback works."""
+    _get_saver()
+    if llm_available():
+        _get_agent()
 
 
 def _ground_from_session(snapshot: dict) -> str:
@@ -95,15 +149,19 @@ def _system_prompt(snapshot: dict):
     return prompt, system_prompt
 
 
-def _run_config(user_id: str, session_id: str, prompt, tr):
+def _run_config(user_id: str, session_id: str, prompt, tr, system_prompt: str):
     config = {"recursion_limit": _RECURSION_LIMIT}
     config.update(tr.config(prompt=prompt))
-    # Inject the authenticated user id + session id for the tools (simulate/apply/insights),
+    # ``thread_id`` keys the checkpointer to this chat session (its durable memory).
+    # ``user_id`` / ``session_id`` are injected for the tools (simulate/apply/insights),
     # not exposed to the LLM, so they always act on the real caller and session.
+    # ``system_prompt`` is read by ``_agent_prompt`` to prepend the grounded system turn.
     config["configurable"] = {
         **config.get("configurable", {}),
+        "thread_id": session_id,
         "user_id": user_id,
         "session_id": session_id,
+        "system_prompt": system_prompt,
     }
     return config
 
@@ -114,6 +172,29 @@ def _to_lc_messages(messages: list):
         content = m.get("content", "")
         out.append(AIMessage(content=content) if m.get("role") == "assistant" else HumanMessage(content=content))
     return out
+
+
+def _latest_user_text(messages: list) -> str:
+    """The newest user message from the client request — the only new input a turn adds;
+    the checkpointer supplies everything before it."""
+    last = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    return last.get("content", "") if last else ""
+
+
+def _turn_input(session_id: str, config: dict, latest_user: str) -> dict:
+    """The messages to feed the graph this turn. Normally just the new user message — the
+    checkpointer holds prior turns (including intermediate tool/observation steps). If the
+    thread has no state yet (a brand-new session, or one created before the checkpointer
+    existed), prime it from the server-authoritative ``chat_messages`` transcript so
+    earlier context isn't lost and the client-sent history is never trusted for it."""
+    new_msg = HumanMessage(content=latest_user)
+    try:
+        state = _get_agent().get_state(config)
+        if state.values.get("messages"):
+            return {"messages": [new_msg]}
+    except Exception:
+        logger.exception("Checkpointer get_state failed; priming thread from transcript")
+    return {"messages": _to_lc_messages(get_messages(session_id)) + [new_msg]}
 
 
 def _template_briefing(snapshot: dict, lang: str) -> str:
@@ -162,10 +243,10 @@ def _generate_briefing(snapshot: dict, session_id: str, lang: str) -> tuple[str,
             "advisor-briefing", user_id=user_id, session_id=session_id,
             tags=["advisor", "briefing"],
         ) as tr:
-            config = _run_config(user_id, session_id, prompt, tr)
-            result = _get_agent().invoke(
-                {"messages": [SystemMessage(content=system_prompt), seed]}, config=config,
-            )
+            # Turn 0 seeds the checkpointer thread; the system prompt is injected by
+            # _agent_prompt from the config, so it is not persisted into the history.
+            config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+            result = _get_agent().invoke({"messages": [seed]}, config=config)
             trace_id = tr.trace_id
         return result["messages"][-1].content, trace_id
     except Exception:
@@ -189,12 +270,12 @@ def run_turn(session_id: str, messages: list) -> tuple[str, str | None]:
     snapshot = session["snapshot"]
     user_id = (snapshot.get("user") or {}).get("user_id")
     prompt, system_prompt = _system_prompt(snapshot)
-    lc_messages = [SystemMessage(content=system_prompt)] + _to_lc_messages(messages)
+    latest_user = _latest_user_text(messages)
     with trace(
         "advisor-chat", user_id=user_id, session_id=session_id, tags=["advisor", "chat"],
     ) as tr:
-        config = _run_config(user_id, session_id, prompt, tr)
-        result = _get_agent().invoke({"messages": lc_messages}, config=config)
+        config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+        result = _get_agent().invoke(_turn_input(session_id, config, latest_user), config=config)
         trace_id = tr.trace_id
     reply = result["messages"][-1].content
     _persist_turn(session_id, messages, reply, trace_id)
@@ -204,7 +285,14 @@ def run_turn(session_id: str, messages: list) -> tuple[str, str | None]:
 def stream_turn(session_id: str, messages: list):
     """Answer one follow-up turn as a stream of Server-Sent-Event dicts:
     ``{"type": "token", "text": ...}`` per token, then ``{"type": "done", "trace_id": ...}``.
-    The assistant reply is persisted once the stream completes."""
+    The assistant reply is persisted once the stream completes.
+
+    The Langfuse/OTel span is contextvar-based, so it must not straddle the outward
+    ``yield``s: FastAPI drives this SSE generator across a threadpool, entering and
+    exiting the span in *different* contexts, which makes OTel raise on detach. We keep
+    the whole span on one worker thread that owns it end-to-end and hand tokens to the
+    caller through a queue, so the outer (yielding) generator never touches OTel context.
+    """
     session = get_session(session_id)
     if session is None:
         yield {"type": "error", "detail": f"Session {session_id} not found."}
@@ -212,19 +300,45 @@ def stream_turn(session_id: str, messages: list):
     snapshot = session["snapshot"]
     user_id = (snapshot.get("user") or {}).get("user_id")
     prompt, system_prompt = _system_prompt(snapshot)
-    lc_messages = [SystemMessage(content=system_prompt)] + _to_lc_messages(messages)
-    with trace(
-        "advisor-chat", user_id=user_id, session_id=session_id,
-        tags=["advisor", "chat", "stream"],
-    ) as tr:
-        config = _run_config(user_id, session_id, prompt, tr)
+    latest_user = _latest_user_text(messages)
+
+    tokens: "queue.Queue[str | None]" = queue.Queue()
+    result: dict = {}
+
+    def _produce():
         parts: list[str] = []
-        for chunk, _meta in _get_agent().stream(
-            {"messages": lc_messages}, config=config, stream_mode="messages"
-        ):
-            if isinstance(chunk, AIMessageChunk) and chunk.content:
-                parts.append(chunk.content)
-                yield {"type": "token", "text": chunk.content}
-        trace_id = tr.trace_id
-    _persist_turn(session_id, messages, "".join(parts), trace_id)
+        try:
+            with trace(
+                "advisor-chat", user_id=user_id, session_id=session_id,
+                tags=["advisor", "chat", "stream"],
+            ) as tr:
+                config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+                for chunk, _meta in _get_agent().stream(
+                    _turn_input(session_id, config, latest_user), config=config,
+                    stream_mode="messages",
+                ):
+                    if isinstance(chunk, AIMessageChunk) and chunk.content:
+                        parts.append(chunk.content)
+                        tokens.put(chunk.content)
+                result["trace_id"] = tr.trace_id
+        except Exception as e:
+            logger.exception("Advisor streaming turn failed")
+            result["error"] = str(e)
+        finally:
+            result["reply"] = "".join(parts)
+            tokens.put(None)  # sentinel: producer done
+
+    worker = threading.Thread(target=_produce, name="advisor-stream", daemon=True)
+    worker.start()
+
+    while (text := tokens.get()) is not None:
+        yield {"type": "token", "text": text}
+    worker.join()
+
+    reply = result.get("reply", "")
+    trace_id = result.get("trace_id")
+    if "error" in result:
+        yield {"type": "error", "detail": result["error"]}
+        return
+    _persist_turn(session_id, messages, reply, trace_id)
     yield {"type": "done", "trace_id": trace_id}

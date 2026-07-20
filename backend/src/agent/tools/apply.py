@@ -53,6 +53,15 @@ def apply_change(proposal_id: str, config: RunnableConfig = None) -> str:
                      "apply the proposal_id it returns.",
         })
 
+    # Idempotency: a proposal is applied once. Re-firing the same id (a model retry or a
+    # duplicate confirmation) must not write a second recommendation/session row.
+    if proposal.get("status") == "applied":
+        return json.dumps({
+            "error": "This proposal has already been applied; the plan is up to date. Run "
+                     "simulate_change again if the user wants a new change.",
+            "applied": True,
+        })
+
     # Re-derive against the proposal's OWN analysis snapshot (the numbers the user saw and
     # confirmed), deterministically — consistent with a fresh /api/analyze.
     session = get_session(proposal["session_id"])
