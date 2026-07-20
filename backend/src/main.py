@@ -87,6 +87,12 @@ class SessionChatRequest(BaseModel):
     messages: list = []
     lang: str = "de"
 
+class ConfirmRequest(BaseModel):
+    # The user's decision on a pending apply_change the agent paused for (see
+    # POST /api/chat/{session_id}/confirm). ``true`` commits the change, ``false`` cancels.
+    confirm: bool
+    lang: str = "de"
+
 class LoginRequest(BaseModel):
     identifier: str
     password: str
@@ -284,7 +290,34 @@ def chat_session(session_id: str, req: SessionChatRequest):
     if not llm_available():
         raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
     try:
-        reply, trace_id = run_turn(session_id, req.messages)
+        reply, trace_id, pending = run_turn(session_id, req.messages)
+        resp = {"reply": reply, "trace_id": trace_id, "session_id": session_id}
+        if pending is not None:
+            # The agent paused on apply_change; the client must confirm via
+            # POST /api/chat/{session_id}/confirm before the plan is written.
+            resp["pending_confirmation"] = pending
+        return resp
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.post("/api/chat/{session_id}/confirm")
+def chat_session_confirm(session_id: str, req: ConfirmRequest):
+    """Resolve a pending ``apply_change`` the agent paused for. ``{confirm:true}`` commits
+    the previewed change (the runtime human-in-the-loop gate), ``{confirm:false}`` cancels
+    it. Returns the Advisor's follow-up reply."""
+    from agent.session import get_session
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+
+    from agent.llm import llm_available
+    if not llm_available():
+        raise HTTPException(status_code=503, detail="Chat LLM not configured (UNI_GPT_API_KEY missing).")
+
+    from agent.advisor import confirm_apply
+    try:
+        reply, trace_id = confirm_apply(session_id, req.confirm, lang=req.lang)
         return {"reply": reply, "trace_id": trace_id, "session_id": session_id}
     except Exception as e:
         import traceback

@@ -22,6 +22,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Sys
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.prebuilt import create_react_agent
+from langgraph.types import Command
 from psycopg_pool import ConnectionPool
 
 from database import DATABASE_URL
@@ -54,6 +55,7 @@ _TOOLS = [
 
 _agent = None
 _saver = None
+_eval_agent = None
 
 
 def _get_saver() -> PostgresSaver:
@@ -108,6 +110,36 @@ def setup_agent() -> None:
     _get_saver()
     if llm_available():
         _get_agent()
+
+
+def _get_eval_agent():
+    """A tool-free, checkpointer-free Advisor for one-shot briefings over a supplied
+    snapshot (see :func:`briefing_from_snapshot`). No DB-backed tools and no checkpointer,
+    so it touches no Postgres — which keeps the eval experiment "LLM-only, no database"."""
+    global _eval_agent
+    if _eval_agent is None:
+        _eval_agent = create_react_agent(get_llm(), [], prompt=_agent_prompt)
+    return _eval_agent
+
+
+def briefing_from_snapshot(snapshot: dict, lang: str = "de") -> str:
+    """The opening briefing over a **supplied** snapshot dict — persisting nothing, using
+    no session / checkpointer / DB. Mirrors :func:`opening_briefing`'s prompt and seed so
+    the eval experiment scores the same narrative the production briefing produces, but
+    from grounding handed in directly. Falls back to the deterministic template memo when
+    no LLM key is configured."""
+    if not llm_available():
+        return _template_briefing(snapshot, lang)
+    name = (snapshot.get("user") or {}).get("name") or "the customer"
+    lang_name = "German" if lang == "de" else "English"
+    _prompt, system_prompt = _system_prompt(snapshot)
+    seed = HumanMessage(content=f"Give {name} their opening briefing now, in {lang_name}.")
+    config = {
+        "recursion_limit": _RECURSION_LIMIT,
+        "configurable": {"system_prompt": system_prompt},
+    }
+    result = _get_eval_agent().invoke({"messages": [seed]}, config=config)
+    return result["messages"][-1].content
 
 
 def _ground_from_session(snapshot: dict) -> str:
@@ -254,19 +286,47 @@ def _generate_briefing(snapshot: dict, session_id: str, lang: str) -> tuple[str,
         return _template_briefing(snapshot, lang), None
 
 
-def _persist_turn(session_id: str, messages: list, reply: str, trace_id: str | None) -> None:
+def _persist_user(session_id: str, messages: list) -> None:
     last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
     if last_user:
         append_message(session_id, "user", last_user.get("content", ""))
+
+
+def _persist_turn(session_id: str, messages: list, reply: str, trace_id: str | None) -> None:
+    _persist_user(session_id, messages)
     append_message(session_id, "assistant", reply, trace_id)
 
 
-def run_turn(session_id: str, messages: list) -> tuple[str, str | None]:
+def _pending_confirmation(result) -> dict | None:
+    """Extract the confirmation payload when a turn paused on ``apply_change``'s
+    ``interrupt()`` — the ``value`` passed to ``interrupt(...)`` — else ``None``."""
+    interrupts = result.get("__interrupt__") if isinstance(result, dict) else None
+    if interrupts:
+        return getattr(interrupts[0], "value", None) or {}
+    return None
+
+
+def _discard_stale_pending(config: dict) -> None:
+    """If the thread is still paused on an earlier ``apply_change`` (e.g. the user reloaded
+    and never confirmed), cancel that abandoned change before a new message is processed —
+    a fresh message is implicit non-confirmation, and the paused graph must be resolved with
+    ``Command(resume=…)`` before it can accept new input. Best-effort; never fatal."""
+    try:
+        state = _get_agent().get_state(config)
+        if getattr(state, "interrupts", None):
+            _get_agent().invoke(Command(resume=False), config=config)
+    except Exception:
+        logger.exception("Failed to clear a stale pending confirmation")
+
+
+def run_turn(session_id: str, messages: list) -> tuple[str, str | None, dict | None]:
     """Answer one follow-up turn, grounded in the session snapshot. Returns
-    ``(reply, trace_id)``. Requires an LLM (callers guard with ``llm_available()``)."""
+    ``(reply, trace_id, pending)`` — ``pending`` is the confirmation payload when the turn
+    paused on ``apply_change`` awaiting an explicit yes (``reply`` is empty then), else
+    ``None``. Requires an LLM (callers guard with ``llm_available()``)."""
     session = get_session(session_id)
     if session is None:
-        return "", None
+        return "", None, None
     snapshot = session["snapshot"]
     user_id = (snapshot.get("user") or {}).get("user_id")
     prompt, system_prompt = _system_prompt(snapshot)
@@ -275,10 +335,65 @@ def run_turn(session_id: str, messages: list) -> tuple[str, str | None]:
         "advisor-chat", user_id=user_id, session_id=session_id, tags=["advisor", "chat"],
     ) as tr:
         config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+        _discard_stale_pending(config)
         result = _get_agent().invoke(_turn_input(session_id, config, latest_user), config=config)
         trace_id = tr.trace_id
+
+    pending = _pending_confirmation(result)
+    if pending is not None:
+        # apply_change is paused awaiting confirmation. Record the user's message so the
+        # transcript is coherent, but no assistant turn yet — the reply comes on resume.
+        _persist_user(session_id, messages)
+        return "", trace_id, pending
+
     reply = result["messages"][-1].content
     _persist_turn(session_id, messages, reply, trace_id)
+    return reply, trace_id, None
+
+
+_DECLINE_REPLY = {
+    "de": "Alles klar — ich habe Ihren Plan unverändert gelassen. Sagen Sie Bescheid, "
+          "wenn Sie doch etwas anpassen möchten.",
+    "en": "No problem — I've left your plan unchanged. Just let me know if you'd like to "
+          "adjust anything after all.",
+}
+_NOTHING_PENDING = {
+    "de": "Im Moment wartet keine Änderung auf Ihre Bestätigung.",
+    "en": "There's no change waiting to be confirmed right now.",
+}
+
+
+def confirm_apply(session_id: str, confirmed: bool, lang: str = "de") -> tuple[str, str | None]:
+    """Resume an ``apply_change`` that paused for confirmation, delivering the user's
+    decision. ``confirmed=True`` commits the change (the Advisor narrates the applied
+    result); ``False`` cancels it (a deterministic acknowledgement — the model isn't asked
+    to narrate a non-event). Returns ``(reply, trace_id)``, or a friendly no-op when the
+    thread has nothing pending (a stale or duplicate confirm)."""
+    session = get_session(session_id)
+    if session is None:
+        return "", None
+    snapshot = session["snapshot"]
+    user_id = (snapshot.get("user") or {}).get("user_id")
+    prompt, system_prompt = _system_prompt(snapshot)
+    lang = "en" if lang == "en" else "de"
+
+    with trace(
+        "advisor-confirm", user_id=user_id, session_id=session_id,
+        tags=["advisor", "chat", "confirm"],
+    ) as tr:
+        config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+        state = _get_agent().get_state(config)
+        if not getattr(state, "interrupts", None):
+            return _NOTHING_PENDING[lang], None
+        # Resume either way so the paused graph is resolved and its state cleaned up.
+        result = _get_agent().invoke(Command(resume=confirmed), config=config)
+        trace_id = tr.trace_id
+
+    # On confirm the tool returns the applied numbers and the model narrates them well; on
+    # decline the tool result is a bare "cancelled", so we return a deterministic reply
+    # rather than have the model narrate a non-event.
+    reply = result["messages"][-1].content if confirmed else _DECLINE_REPLY[lang]
+    append_message(session_id, "assistant", reply, trace_id)
     return reply, trace_id
 
 
@@ -313,6 +428,7 @@ def stream_turn(session_id: str, messages: list):
                 tags=["advisor", "chat", "stream"],
             ) as tr:
                 config = _run_config(user_id, session_id, prompt, tr, system_prompt)
+                _discard_stale_pending(config)
                 for chunk, _meta in _get_agent().stream(
                     _turn_input(session_id, config, latest_user), config=config,
                     stream_mode="messages",
@@ -320,6 +436,12 @@ def stream_turn(session_id: str, messages: list):
                     if isinstance(chunk, AIMessageChunk) and chunk.content:
                         parts.append(chunk.content)
                         tokens.put(chunk.content)
+                # The stream ends when the graph either finishes or pauses. If apply_change
+                # paused on its interrupt(), the paused state carries the confirmation payload.
+                state = _get_agent().get_state(config)
+                interrupts = getattr(state, "interrupts", None)
+                if interrupts:
+                    result["pending"] = getattr(interrupts[0], "value", None) or {}
                 result["trace_id"] = tr.trace_id
         except Exception as e:
             logger.exception("Advisor streaming turn failed")
@@ -339,6 +461,13 @@ def stream_turn(session_id: str, messages: list):
     trace_id = result.get("trace_id")
     if "error" in result:
         yield {"type": "error", "detail": result["error"]}
+        return
+    pending = result.get("pending")
+    if pending is not None:
+        # apply_change is paused awaiting confirmation — persist only the user message and
+        # ask the client to confirm; the assistant reply comes on the /confirm resume.
+        _persist_user(session_id, messages)
+        yield {"type": "confirm_required", "payload": pending, "trace_id": trace_id}
         return
     _persist_turn(session_id, messages, reply, trace_id)
     yield {"type": "done", "trace_id": trace_id}

@@ -316,9 +316,9 @@ def _modal_shift_line(entry: dict, lang: str) -> str | None:
 
     Deliberately does NOT quote ``feasibility.reasoning`` verbatim (it's always
     written in English by modal_shift.py's LLM call/fallback) — embedding it
-    untranslated into the German memo would mix languages. The LLM-written memo
-    (analyst_system.md) handles this properly by translating the reasoning itself;
-    this deterministic template only states the figures plus a confidence caveat.
+    untranslated into the German memo would mix languages. The LLM-written Advisor
+    briefing (advisor_system.md) handles this properly by translating the reasoning
+    itself; this deterministic template only states the figures plus a confidence caveat.
     """
     shift = entry.get("suggested_shift")
     if not shift:

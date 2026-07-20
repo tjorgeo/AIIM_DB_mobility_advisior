@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageCircle, X, Send, ThumbsUp, ThumbsDown, Maximize2, Minimize2 } from 'lucide-react'
+import { MessageCircle, X, Send, ThumbsUp, ThumbsDown, Maximize2, Minimize2, Check } from 'lucide-react'
 import { useChat } from './useChat'
 import Markdown from './Markdown'
+
+// One-line, human-readable summary of a pending change's constraints (drop/keep/prefer/
+// exclude) for the confirmation prompt. Category slugs are de-underscored; falls back to ''.
+function describeConstraints(c, lang) {
+  if (!c) return ''
+  const label = (s) => String(s).replace(/_/g, ' ')
+  const parts = []
+  if (c.drop?.length) parts.push(`${lang === 'de' ? 'Kündigen' : 'Cancel'}: ${c.drop.map(label).join(', ')}`)
+  if (c.keep?.length) parts.push(`${lang === 'de' ? 'Behalten' : 'Keep'}: ${c.keep.map(label).join(', ')}`)
+  if (c.prefer_plans?.length) parts.push(`${lang === 'de' ? 'Bevorzugen' : 'Prefer'}: ${c.prefer_plans.join(', ')}`)
+  if (c.exclude_plans?.length) parts.push(`${lang === 'de' ? 'Ausschließen' : 'Exclude'}: ${c.exclude_plans.join(', ')}`)
+  return parts.join(' · ')
+}
 
 export default function ChatWidget({ user, lang, getContext, actions, sessionId, onOpenPortfolio }) {
   const [open, setOpen] = useState(false)
@@ -10,7 +23,7 @@ export default function ChatWidget({ user, lang, getContext, actions, sessionId,
   const [unread, setUnread] = useState(0)
   const [teaserDismissed, setTeaserDismissed] = useState(false)
   const [input, setInput] = useState('')
-  const { messages, sending, send, sendFeedback } = useChat({ user, lang, getContext, actions, sessionId })
+  const { messages, sending, send, sendFeedback, pending, confirm } = useChat({ user, lang, getContext, actions, sessionId })
   const bodyRef = useRef(null)
   const prevLenRef = useRef(messages.length)
   const t = (en, de) => (lang === 'de' ? de : en)
@@ -43,10 +56,10 @@ export default function ChatWidget({ user, lang, getContext, actions, sessionId,
     return () => { document.body.classList.remove('chat-open', 'chat-expanded') }
   }, [open, expanded])
 
-  // Keep the conversation scrolled to the latest message.
+  // Keep the conversation scrolled to the latest message (and to the confirm prompt).
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
-  }, [messages, sending, open])
+  }, [messages, sending, open, pending])
 
   const quicks = lang === 'de'
     ? ['Plan optimieren', 'Warum dieser Plan?', 'Wie viel spare ich?']
@@ -144,21 +157,43 @@ export default function ChatWidget({ user, lang, getContext, actions, sessionId,
         )}
       </div>
 
-      <div className="chat__quick">
-        {quicks.map((qr) => (
-          <button className="quick-chip" key={qr} onClick={() => send(qr)} disabled={sending}>{qr}</button>
-        ))}
-      </div>
+      {pending ? (
+        <div className="chat__confirm" role="group" aria-label={t('Confirm change', 'Änderung bestätigen')}>
+          <div className="chat__confirm-text">
+            <strong>{t('Apply this change to your plan?', 'Diese Änderung in deinen Plan übernehmen?')}</strong>
+            {describeConstraints(pending.constraints, lang) && (
+              <span className="chat__confirm-detail">{describeConstraints(pending.constraints, lang)}</span>
+            )}
+          </div>
+          <div className="chat__confirm-actions">
+            <button className="chat__confirm-btn chat__confirm-btn--yes" onClick={() => confirm(true)} disabled={sending}>
+              <Check size={15} /> {t('Apply', 'Übernehmen')}
+            </button>
+            <button className="chat__confirm-btn chat__confirm-btn--no" onClick={() => confirm(false)} disabled={sending}>
+              {t('Cancel', 'Abbrechen')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="chat__quick">
+          {quicks.map((qr) => (
+            <button className="quick-chip" key={qr} onClick={() => send(qr)} disabled={sending}>{qr}</button>
+          ))}
+        </div>
+      )}
 
       <form className="chat__composer" onSubmit={onSubmit}>
         <input
           className="chat__input"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={t('Ask anything…', 'Frag mich etwas…')}
+          placeholder={pending
+            ? t('Please confirm or cancel above…', 'Bitte oben bestätigen oder abbrechen…')
+            : t('Ask anything…', 'Frag mich etwas…')}
           aria-label={t('Message', 'Nachricht')}
+          disabled={!!pending}
         />
-        <button className="chat__send" type="submit" disabled={!input.trim() || sending} aria-label={t('Send', 'Senden')}>
+        <button className="chat__send" type="submit" disabled={!input.trim() || sending || !!pending} aria-label={t('Send', 'Senden')}>
           <Send size={18} />
         </button>
       </form>

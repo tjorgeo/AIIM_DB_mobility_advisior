@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { chat as apiChat, streamChat, openingBriefing, submitFeedback } from '../../api/client'
+import { chat as apiChat, streamChat, confirmApply, openingBriefing, submitFeedback } from '../../api/client'
 import { euro, co2 } from '../../lib/format'
 
 // Pick the recommended scenario (or the first) from an analysis result.
@@ -98,6 +98,11 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
   // from the backend once the analysis session is ready (see the effect below).
   const [messages, setMessages] = useState(() => [])
   const [sending, setSending] = useState(false)
+  // Set when the Advisor pauses apply_change awaiting the user's yes/no (the payload from
+  // the backend's `pending_confirmation` / `confirm_required`). While set, the composer is
+  // blocked and the Confirm/Cancel control is shown — the paused graph must be resolved via
+  // POST /confirm (Command(resume)), never a new free-text message.
+  const [pending, setPending] = useState(null)
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
@@ -159,10 +164,15 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
 
     try {
       // 1) Preferred path: token streaming.
-      const { traceId } = await streamChat(sessionId, history, appendToken, { lang })
-      if (!streamStarted) throw new Error('no tokens streamed')
-      setMessages((m) => m.map((x, i) =>
-        i === m.length - 1 && x.streaming ? { ...x, streaming: false, traceId: traceId || null } : x))
+      const { traceId, pending: streamPending } = await streamChat(sessionId, history, appendToken, { lang })
+      // A pause with no preamble tokens is a valid outcome (the model went straight to
+      // apply_change), so only treat a silent stream as a failure when nothing is pending.
+      if (!streamStarted && !streamPending) throw new Error('no tokens streamed')
+      if (streamStarted) {
+        setMessages((m) => m.map((x, i) =>
+          i === m.length - 1 && x.streaming ? { ...x, streaming: false, traceId: traceId || null } : x))
+      }
+      if (streamPending) setPending(streamPending)
     } catch (streamErr) {
       // If tokens already rendered, keep them (just finalize the bubble). Otherwise
       // fall back to 2) non-streaming JSON, then 3) the scripted assistant.
@@ -172,8 +182,13 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
       } else {
         try {
           const data = await apiChat(sessionId, history, { lang })
-          if (!data || !data.reply) throw new Error('no reply')
-          push('assistant', data.reply, data.trace_id || null)
+          if (data?.pending_confirmation) {
+            if (data.reply) push('assistant', data.reply, data.trace_id || null)
+            setPending(data.pending_confirmation)
+          } else {
+            if (!data || !data.reply) throw new Error('no reply')
+            push('assistant', data.reply, data.trace_id || null)
+          }
         } catch {
           const reply = await scriptedReply(text, { user, lang, getContext, actions })
           push('assistant', reply)
@@ -183,6 +198,24 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
       setSending(false)
     }
   }, [sending, sessionId, user, lang, getContext, actions])
+
+  // Resolve a pending apply_change (Confirm/Cancel). Commits or cancels server-side, then
+  // posts the Advisor's follow-up reply. Clears the pause either way.
+  const confirm = useCallback(async (decision) => {
+    if (!pending || sending) return
+    setSending(true)
+    setPending(null)
+    try {
+      const data = await confirmApply(sessionId, decision, { lang })
+      if (data?.reply) push('assistant', data.reply, data.trace_id || null)
+    } catch {
+      push('assistant', lang === 'de'
+        ? 'Das konnte ich gerade nicht abschließen. Bitte versuche es erneut.'
+        : 'I couldn’t complete that just now. Please try again.')
+    } finally {
+      setSending(false)
+    }
+  }, [pending, sending, sessionId, lang])
 
   // Send thumbs feedback for one assistant message (by index) and remember the
   // choice locally so the UI can reflect it. Best-effort; ignores failures.
@@ -195,5 +228,5 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
     })
   }, [])
 
-  return { messages, sending, send, sendFeedback }
+  return { messages, sending, send, sendFeedback, pending, confirm }
 }

@@ -15,7 +15,7 @@ as one of three kinds:
 > agent** — over a **session** model. Every number comes from a deterministic engine; the
 > LLM only narrates, forecasts demand, and judges plain-language feasibility.
 >
-> Verified against code at commit `c08d6a5` on 2026-07-17 (backend suite: 134 passing).
+> Verified against code at commit `b7424c2` on 2026-07-20 (backend suite: 134 passing).
 
 ---
 
@@ -34,7 +34,7 @@ flowchart TB
         UI["Dashboard (structured cards) + one chat panel"]
     end
 
-    subgraph api["FastAPI (src/main.py) + Orchestrator"]
+    subgraph api["FastAPI (src/main.py) + AnalysisService"]
         AZ["POST /api/analyze<br/>🟩 deterministic — numbers + open session"]
         CH["POST /api/chat/{session_id}<br/>🟪 the Advisor agent"]
     end
@@ -55,8 +55,9 @@ flowchart TB
     AG["🟪 Advisor (one ReAct agent)"]
 
     SESS[("Session store<br/>snapshot · messages · revisions")]
+    CKPT[("LangGraph checkpointer<br/>(Postgres, thread_id = session_id)")]
     PG[("PostgreSQL 16")]
-    KB["Tariff KB (61 .md files)"]
+    KB["Tariff KB (62 OKF .md files)"]
     EXT["University GPT"]
     LF["Langfuse (optional)"]
 
@@ -66,8 +67,10 @@ flowchart TB
     CH --> AG --> T1 & T2
     T2 --> E1
     AG -.-> L2
+    AG <--> CKPT
     E1 <--> PG
     SESS <--> PG
+    CKPT <--> PG
     T1 --> KB
     L2 & AG --> EXT
     api -.-> LF
@@ -79,12 +82,12 @@ flowchart TB
     class E1,E2,E3,T1,T2 det;
     class S1,S2 llm;
     class AG agent;
-    class SESS,PG,KB,EXT,LF store;
+    class SESS,CKPT,PG,KB,EXT,LF store;
 ```
 
-**Tech stack:** Python 3.12 · FastAPI + Uvicorn · psycopg2 → Postgres 16 · LangChain /
-`langchain-openai` (LLM steps) · LangGraph `create_react_agent` (the Advisor) · Langfuse
-(optional). No Redis, no vector DB.
+**Tech stack:** Python 3.12 · FastAPI + Uvicorn · psycopg2 → Postgres 16 (app data) · psycopg3
+→ Postgres 16 (LangGraph checkpointer) · LangChain / `langchain-openai` (LLM steps) ·
+LangGraph `create_react_agent` (the Advisor) · Langfuse (optional). No Redis, no vector DB.
 
 **The one rule that keeps the taxonomy honest:** an "agent" runs a tool loop; everything
 else is a pure engine (math), a single LLM step (one completion), or a thin tool (adapter).
@@ -115,7 +118,7 @@ flowchart LR
         D5["pricing catalog (flat + per-km/min/hour rates)"]
         D6["upcoming calendar entries (VEVENT, RRULE-expanded)"]
     end
-    KB["Tariff KB: 61 .md files under data/Markdownfiles Abos/"]
+    KB["Tariff KB: 62 OKF .md files under data/Markdownfiles Abos/"]
 
     I1 --> D1 & D2 & D3 & D4 & D5 & D6
     I2 --> SNAP[("session snapshot<br/>(already-computed analysis)")]
@@ -144,7 +147,7 @@ statements), consumed by the modal-shift feasibility judge.
 ## Chapter 3 — The `/api/analyze` pipeline (🟩 deterministic + 2 LLM steps)
 
 The backbone: plain sequential Python in [`agent/pipeline.py`](../backend/src/agent/pipeline.py),
-wrapped by the [`Orchestrator`](../backend/src/orchestrator.py), which persists the result as
+wrapped by the [`AnalysisService`](../backend/src/analysis_service.py), which persists the result as
 a **session snapshot** and shapes the frontend payload. **No memo LLM call** — the narrative
 is the Advisor's turn 0.
 
@@ -266,20 +269,22 @@ average + same-month prior-year seasonal override); the LLM demand reasoning is
 [`agent/advisor/agent.py`](../backend/src/agent/advisor/agent.py) is the single
 conversational surface, built with LangGraph's `create_react_agent`. It **delivers the
 opening briefing (turn 0)** — the recommendation prose that used to be a separate memo — and
-answers every follow-up, all grounded in the **session snapshot** (no DB re-query).
+answers every follow-up, all grounded in the **session snapshot** (no DB re-query) and now
+carrying its own **durable conversation memory** via a LangGraph checkpointer.
 
 ```mermaid
 flowchart TD
     IN["POST /api/chat/{session_id}"] --> Q{"has a user message?"}
     Q -->|no| B["opening_briefing (turn 0)<br/>🟪 agent (or 🟩 template memo if no key)<br/>idempotent: cached in the transcript"]
     Q -->|yes| R["run_turn / stream_turn (🟪 follow-up; 503 without a key)"]
-    B & R --> AGENT["🟪 ReAct loop grounded in the snapshot"]
+    B & R --> AGENT["🟪 ReAct loop, prompt injected per-turn<br/>from the latest snapshot (config, not persisted)"]
 
+    AGENT <-->|checkpointer| CKPT[("PostgresSaver<br/>thread_id = session_id")]
     AGENT <-->|tool| T1["🟩 lookup_subscriptions"]
     AGENT <-->|RAG| T2["🟩 list_tariff_docs → read_tariff_doc"]
     AGENT <-->|tool| T3["🟩 get_demand_outlook · get_modal_shift"]
     AGENT <-->|tool| T4["🟩 simulate_change (read-only)"]
-    AGENT <-->|tool, gated| T5["🟩 apply_change (only writer)"]
+    AGENT <-->|tool, gated| T5["🟩 apply_change (only writer, idempotent)"]
     AGENT --> OUT["reply + trace_id → persisted to chat_messages"]
 
     classDef det fill:#dcfce7,stroke:#16a34a,color:#14532d;
@@ -287,16 +292,30 @@ flowchart TD
     classDef store fill:#e5e7eb,stroke:#6b7280,color:#111827;
     class T1,T2,T3,T4,T5,B det;
     class AGENT,R agent;
-    class OUT store;
+    class OUT,CKPT store;
 ```
 
 - **Memo = turn 0.** With no user message, the endpoint returns the opening briefing. It is
   **idempotent** — generated once per session and cached in `chat_messages`, so a dashboard
   re-mount reuses it (one LLM call per session). Without a key it falls back to the
   deterministic template memo, so a briefing always comes back.
+- **Durable memory via a checkpointer, not transcript replay.** The agent carries a
+  `PostgresSaver` checkpointer (its own `checkpoints` / `checkpoint_writes` / `checkpoint_blobs`
+  tables — see Ch 9), keyed by `thread_id = session_id`. Each turn sends only the newest user
+  message; the checkpointer supplies prior turns **and** intermediate tool/observation steps,
+  so the ReAct loop genuinely remembers earlier tool calls within a session instead of
+  reconstructing state from plain-text history. `chat_messages` remains the display/audit
+  mirror (and the `trace_id` map for feedback), not the agent's working memory. The system
+  prompt is injected per-turn from the run config (grounded in the *latest* snapshot, so it
+  reflects any `apply_change` since the last turn) rather than persisted into the checkpointed
+  history.
+- **Scope-gated.** The prompt's first rule is a scope guardrail: off-topic requests (anything
+  outside the customer's mobility portfolio) get a fixed redirect reply in the user's language,
+  with no tool calls — enforced in the prompt, not a separate code path.
 - **One prompt** (`prompts/advisor_system.md`), one grounding (the snapshot), one RAG surface
-  (the tariff tools). The old `communicator_agent` and its prompt are deleted; the memo
-  writer `analyst_agent.py` is retained only for the eval experiment (Ch 12).
+  (the tariff tools), one narrative code path. The old `communicator_agent` and the single-call
+  `analyst_agent.py` memo writer are both deleted; the eval experiment now scores this same
+  Advisor briefing via a session-less `briefing_from_snapshot` (Ch 12).
 
 ---
 
@@ -317,23 +336,30 @@ deterministic capabilities. The plan-change flow is split by side-effect.
 flowchart LR
     U["user: 'what if I drop the BahnCard?'"] --> SIM["simulate_change(constraints)<br/>🟩 reoptimize_from_analysis over the snapshot<br/>→ records a *proposed* revision, returns proposal_id"]
     SIM --> ASK["Advisor shows numbers, asks to confirm"]
-    ASK --> YES["user: 'yes'"]
-    YES --> APP["apply_change(proposal_id)<br/>🟩 ownership check · re-derive · commit_revision<br/>→ new session, dashboard updates"]
+    ASK --> YES["user: 'yes' → apply_change(proposal_id)"]
+    YES --> INT["🟪 interrupt(): graph pauses,<br/>response carries pending_confirmation<br/>(nothing written yet)"]
+    INT --> CONF{"POST /confirm {confirm}"}
+    CONF -->|true| APP["🟩 re-derive · commit_revision<br/>→ new session, dashboard updates"]
+    CONF -->|false| CX["deterministic 'left unchanged' — no write"]
     classDef det fill:#dcfce7,stroke:#16a34a,color:#14532d;
-    class SIM,APP det;
+    classDef agent fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
+    class SIM,APP,CX det;
+    class INT agent;
 ```
 
 - **`simulate_change`** is read-only: it re-derives the verdict deterministically
   (`engines/reoptimize.py`, reusing the snapshot's already-priced alternatives and the same
   weights) and records a **`proposed`** revision (scratch — the dashboard is unchanged),
   returning a `proposal_id`.
-- **`apply_change`** is the sole state-mutating tool. Confirmation is **structural**: it needs
-  a `proposal_id` a prior `simulate_change` minted, verifies the proposal's **owner** matches
-  the caller, re-derives against the proposal's snapshot, and persists via
-  `session.commit_revision` (no `Orchestrator` import in a tool — guardrail).
-
-*Note:* confirmation today is the simulate→proposal-id gate; a formal LangGraph
-human-in-the-loop *interrupt* remains a future refinement (see the To-Be doc).
+- **`apply_change`** is the sole state-mutating tool, with confirmation enforced at **two**
+  levels. *Structural:* it needs a `proposal_id` a prior `simulate_change` minted, verifies the
+  proposal's **owner**, and refuses an already-`applied` id (idempotency). *Runtime:* before any
+  write it calls LangGraph `interrupt()` — the graph suspends (state checkpointed), the chat
+  response returns a `pending_confirmation` payload, and only `POST /api/chat/{session_id}/confirm`
+  with `{confirm:true}` resumes it (`Command(resume=…)`) to re-derive and persist via
+  `session.commit_revision` (no `AnalysisService` import in a tool — guardrail). `{confirm:false}`
+  resolves the pause without writing. So a mis-fired `apply_change` cannot commit without an
+  explicit, out-of-band yes the runtime — not just the prompt — required.
 
 ---
 
@@ -342,14 +368,16 @@ human-in-the-loop *interrupt* remains a future refinement (see the To-Be doc).
 A fresh `/api/analyze` writes a **`recommendations`** row (approval trail) **and** an
 **`analysis_sessions`** row (the full snapshot), sharing one id. The session is the
 read-through source of truth; the Advisor grounds from it; chat turns and revisions attach to
-it. [`agent/session.py`](../backend/src/agent/session.py) owns all of it.
+it. [`agent/session.py`](../backend/src/agent/session.py) owns all of it. A separate
+LangGraph-owned table group holds the agent's own conversational memory (below).
 
 ```mermaid
 erDiagram
     users ||--o{ analysis_sessions : opens
-    analysis_sessions ||--o{ chat_messages : transcript
+    analysis_sessions ||--o{ chat_messages : "transcript (display/audit)"
     analysis_sessions ||--o{ revisions : "proposed / applied"
     users ||--o{ recommendations : "approval trail (shared id)"
+    analysis_sessions ||--o| checkpoints : "thread_id = session_id"
 
     analysis_sessions {
         text session_id PK
@@ -371,6 +399,11 @@ erDiagram
         text constraints "JSON"
         text category_analysis "JSON"
     }
+    checkpoints {
+        text thread_id "= session_id"
+        text checkpoint_id PK
+        bytea checkpoint "serialized graph state incl. tool/observation steps"
+    }
 ```
 
 The snapshot carries everything to serve the dashboard and ground the agent without a
@@ -378,30 +411,44 @@ re-query: the agent outputs, preferences/weights, `onboarding_raw`, subscription
 display totals. Approval status is read live from the shared-id `recommendations` row so an
 approved plan still shows approved. There is no Redis — the "cache" is the latest session.
 
+**Two stores, two jobs.** `chat_messages` is the human-readable transcript (rendered by the
+frontend, mapped to `trace_id` for feedback scores); `checkpoints` / `checkpoint_writes` /
+`checkpoint_blobs` (owned by `langgraph-checkpoint-postgres`, created by `PostgresSaver.setup()`
+at startup) is the agent's actual working memory — the full LangChain message list including
+every intermediate `ToolMessage`, keyed by `thread_id = session_id`. A turn writes to both:
+`_persist_turn` appends to `chat_messages`, the graph run appends to the checkpoint tables.
+Pre-checkpointer sessions have no checkpoint rows yet; the agent detects an empty thread via
+`get_state()` and primes it once from `chat_messages` so no history is lost.
+
 ---
 
 ## Chapter 10 — The tariff knowledge base & RAG (🟩 retrieval, no embeddings)
 
-[`tools/knowledge.py`](../backend/src/agent/tools/knowledge.py) exposes the 61 tariff/AGB
-markdown files under `data/Markdownfiles Abos/`. Retrieval is **navigation, not vectors** —
-no embeddings, no similarity search; the file tree is the index.
+[`tools/knowledge.py`](../backend/src/agent/tools/knowledge.py) exposes 62 tariff/AGB
+markdown files under `data/Markdownfiles Abos/`, structured as an **Open Knowledge Format
+(OKF)** bundle: every concept doc carries YAML front-matter (required `type`; `title` /
+`description` / `tags` / `timestamp`), and the reserved `index.md` is a front-matter-free
+progressive-disclosure listing. Retrieval is still **navigation, not vectors** — no
+embeddings, no similarity search; the file tree (now with typed, taggable front-matter) is
+the index.
 
 ```mermaid
 flowchart LR
-    FS["61 .md files (BahnCards, Deutschlandticket, car/bike/scooter AGB, CO₂)"] --> SCAN["🟩 _scan_docs() (cached)"]
-    SCAN --> AG["🟪 Advisor: list_tariff_docs → read_tariff_doc (agentic RAG)"]
-    SCAN --> EV["🟩 eval memo: pre-fetch by markdown_ref (analyst_agent, Ch 12)"]
+    FS["62 OKF .md files (BahnCards, Deutschlandticket, car/bike/scooter AGB, CO₂)<br/>front-matter: type · title · description · tags"] --> SCAN["🟩 _scan_docs() (cached)<br/>front-matter parse, prose-heuristic fallback"]
+    SCAN --> AG["🟪 Advisor: list_tariff_docs (type/tags surfaced) → read_tariff_doc (agentic RAG)"]
     classDef det fill:#dcfce7,stroke:#16a34a,color:#14532d;
     classDef agent fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
     classDef store fill:#e5e7eb,stroke:#6b7280,color:#111827;
-    class SCAN,EV det;
+    class SCAN det;
     class AG agent;
     class FS store;
 ```
 
-On the **production** path RAG is purely agentic (the Advisor navigates the corpus). The
-deterministic *pre-fetch by `markdown_ref`* now lives only in the eval memo writer
-(`analyst_agent._relevant_tariff_docs`).
+RAG is purely agentic (the Advisor navigates the corpus); the old deterministic *pre-fetch by
+`markdown_ref`* was retired with `analyst_agent.py`. A doc without front-matter still works:
+`_scan_docs` falls back to the original prose heuristic (first heading + first substantive
+line) and an inferred `type`/`tags` from its folder path, so the tools tolerate a hand-added
+or stale document exactly as OKF requires.
 
 ---
 
@@ -451,9 +498,11 @@ flowchart TD
     class DS,RUN,LF store;
 ```
 
-The eval track also still uses `analyst_agent.run_briefing` (the single-call memo writer, with
-its deterministic tariff pre-fetch) — the only remaining caller of that module, kept off the
-production path (`scripts/run_experiment.py`).
+A separate `scripts/run_experiment.py` runs a **memo-quality** gate (groundedness + bilingual
+completeness) over the `analyze-personas` dataset. It now scores the **Advisor's own opening
+briefing** — regenerated per item from stored grounding via the session-less, DB-free
+`briefing_from_snapshot` — instead of the retired `analyst_agent` memo, so the gate guards what
+actually ships.
 
 ---
 
@@ -462,7 +511,7 @@ production path (`scripts/run_experiment.py`).
 ```mermaid
 flowchart TB
     subgraph DET["🟩 Deterministic — the number guard"]
-        d1["context.load_context · orchestrator · session"]
+        d1["context.load_context · analysis_service · session"]
         d2["engines/analysis (weighted optimizer) + scoring"]
         d3["engines/modal_shift (pricing) + mode_factors"]
         d4["engines/forecasting.seasonal_projection"]
@@ -472,7 +521,7 @@ flowchart TB
     subgraph STEP["🟨 Single-call LLM steps (no tools)"]
         s1["llm_steps/forecast_reasoner"]
         s2["llm_steps/feasibility_judge"]
-        s3["baseline_pipeline · analyst_agent memo (eval only)"]
+        s3["baseline_pipeline · advisor briefing via briefing_from_snapshot (eval only)"]
     end
     subgraph AGENT["🟪 Tool-using ReAct agent"]
         a1["advisor — opening briefing + chat<br/>tools: catalog, tariff RAG, insights, simulate, apply"]
@@ -489,16 +538,19 @@ flowchart TB
 |---|:---:|:---:|:---:|:---:|---|
 | `load_context` · `analyze_portfolio` · `scoring` | 🟩 | — | — | 0 | — |
 | modal-shift pricing · `seasonal_projection` · `reoptimize` | 🟩 | — | — | 0 | — |
-| session store · orchestrator · template memo | 🟩 | — | — | 0 | — |
+| session store · analysis_service · template memo | 🟩 | — | — | 0 | — |
 | `forecast_reasoner` | 🟨 | no | no | 1 | 🟩 seasonal |
 | `feasibility_judge` | 🟨 | no | no | 1 (batched) | 🟩 feasible/low |
-| `simulate_change` / `apply_change` (tools) | 🟩 | — | — | 0 | — |
-| Baseline · analyst-memo (eval) | 🟨 | no | pre-fetch | 1 | — / template |
-| **Advisor** | 🟪 **AGENT** | **yes (6)** | 🟪 agentic | loop | template memo (turn 0) / 503 |
+| `simulate_change` / `apply_change` (tools) | 🟩 | — | — | 0 | — (apply pauses on `interrupt()` for confirmation) |
+| Baseline · advisor briefing (eval) | 🟨 | no | no | 1 | — / template |
+| **Advisor** | 🟪 **AGENT** | **yes (7)** | 🟪 agentic, OKF corpus | loop, Postgres-checkpointed | template memo (turn 0) / 503 |
 
 **Bottom line.** Three deterministic layers (`engines` → `tools` → session/orchestration),
 two single-call LLM steps, and **one** ReAct agent (the Advisor) that owns the whole
-conversation — opening briefing through follow-ups — over a session snapshot. Every euro,
-gram of CO₂ and minute of travel time is deterministic and reproducible; the LLM narrates,
-forecasts demand, and judges free-text feasibility, never a figure. `simulate` is always safe;
-only `apply` writes.
+conversation — opening briefing through follow-ups — over a session snapshot, with its own
+durable cross-turn memory (Postgres checkpointer) and a prompt-level scope guardrail that
+declines anything outside the customer's mobility portfolio. Every euro, gram of CO₂ and
+minute of travel time is deterministic and reproducible; the LLM narrates, forecasts demand,
+and judges free-text feasibility, never a figure. `simulate` is always safe; `apply` is the
+only writer — idempotent, and gated behind a runtime `interrupt()` confirmation before it
+commits.

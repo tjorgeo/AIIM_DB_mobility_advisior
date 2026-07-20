@@ -88,7 +88,7 @@ The CURRENT ANALYSIS block and `lookup_subscriptions` give you the customer's ow
 
 - **`simulate_change`** — whenever the user wants to CHANGE their plan or asks a "what if" (keep a subscription, cancel one, switch to or avoid a specific product). Pass their wish as `keep` / `drop` / `prefer_plans` / `exclude_plans` (category names like `public_transport`, `long_distance_rail`, `car_sharing`, `bike_sharing`, `e_scooter`; or product names). It is READ-ONLY and changes nothing — it returns recomputed costs, savings, and a `proposal_id`. Report those numbers (never your own), then ask the user to confirm.
 
-- **`apply_change`** — ONLY after the user has clearly confirmed (e.g. "yes, update my plan"). Pass the `proposal_id` from the `simulate_change` call they just confirmed. This is the only tool that changes their saved plan. Never call it on the same turn the user first asks — simulate first, show the numbers, wait for an explicit yes.
+- **`apply_change`** — ONLY after the user has clearly confirmed (e.g. "yes, update my plan"). Pass the `proposal_id` from the `simulate_change` call they just confirmed. This is the only tool that changes their saved plan. Never call it on the same turn the user first asks — simulate first, show the numbers, wait for an explicit yes. When you do call it, the system pauses for a final, out-of-band confirmation before anything is written and then resumes — so a paused apply is expected, not an error; do not retry or re-call the tool while it is waiting.
 
 ### Forecast notes
 

@@ -1,7 +1,7 @@
 /* ==========================================================================
    Design tokens — aligned to the Deutsche Bahn UX Design System
    Colors: DB UX neutral + functional ramps (@db-ux/core-foundations v4),
-   brand kept as DB "Verkehrsrot" #EC0016. Type: DB Screen Sans / Open Sans.
+   brand purple anchored on #7C3AED. Type: DB Screen Sans / Open Sans.
    ========================================================================== */
 
 :root {
@@ -18,12 +18,20 @@
   --text-xl: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
   --text-2xl: clamp(2rem, 1.5rem + 2.4vw, 3.25rem);
 
-  /* Brand — DB Verkehrsrot (red ramp anchored on #EC0016) */
-  --db-red: #EC0016;
-  --db-red-hover: #C00010;
-  --db-red-dark: #9C000B;
-  --db-red-light: #FFE9E9;
-  --db-red-tint: #FFF5F6;
+  /* Brand — purple ramp anchored on #7C3AED (the new brand; replaces DB Verkehrsrot) */
+  --purple: #7C3AED;
+  --purple-hover: #6D28D9;
+  --purple-dark: #5B21B6;
+  --purple-light: #EDE9FE;
+  --purple-tint: #F5F3FF;
+
+  /* Back-compat aliases — old --db-red* names now resolve to the purple brand, so any
+     stray reference stays on-brand. Prefer the --purple* names in new code. */
+  --db-red: var(--purple);
+  --db-red-hover: var(--purple-hover);
+  --db-red-dark: var(--purple-dark);
+  --db-red-light: var(--purple-light);
+  --db-red-tint: var(--purple-tint);
 
   /* Neutral — DB UX neutral ramp (cool grays) */
   --slate-900: #16181B;   /* neutral-1  — headings / ink */
@@ -61,7 +69,7 @@
   --shadow-sm: 0 2px 10px rgba(22, 24, 27, 0.05);
   --shadow-md: 0 8px 24px rgba(22, 24, 27, 0.08);
   --shadow-lg: 0 18px 48px rgba(22, 24, 27, 0.14);
-  --shadow-brand: 0 14px 34px rgba(236, 0, 22, 0.28);
+  --shadow-brand: 0 14px 34px rgba(124, 58, 237, 0.28);
 
   /* Radius */
   --radius-xs: 6px;
