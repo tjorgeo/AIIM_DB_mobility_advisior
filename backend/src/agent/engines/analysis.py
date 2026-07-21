@@ -864,6 +864,12 @@ def analyze_portfolio(
     # cover, plus the savings that number implies against both pay-as-you-go  #
     # and whatever's currently held (see the alternatives.append(...) below). #
     # ------------------------------------------------------------------ #
+    # subscription_coverage/held_subs never carry pricing_model (see _active_subscriptions
+    # — they keep the user_subscriptions record's own field names, not the catalog's),
+    # so it's resolved here by subscription_id against the catalog, same pattern as
+    # project_category_subscription_analysis's catalog_by_id below.
+    catalog_by_id = {p.get("id"): p for p in pricing_catalog if p.get("id")}
+
     def _build_category_entry(key, db_category, mode_filter, plan_filter):
         stats = _category_annual_stats(mode_filter)
         if stats["annual_trips"] <= 0:
@@ -890,6 +896,7 @@ def analyze_portfolio(
                 "provider_plan_name": cov["provider_plan_name"],
                 "annual_cost_eur": cov["annual_cost_eur"],
                 "annual_net_savings_eur": cov["net_savings_eur"],
+                "pricing_model": (catalog_by_id.get(cov["subscription_id"]) or {}).get("pricing_model"),
             }
             for cov in subscription_coverage
             # subscription_coverage's category is the *display* category (see

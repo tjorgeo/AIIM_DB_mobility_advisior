@@ -732,9 +732,9 @@ for d in daterange(WINDOW_START, WINDOW_END):
                               dur, "office", "Cologne", "home", "Cologne", "home_return",
                               "public_transport", dist, True, True, nora_dt, paid_override=0.0)
         # Car-sharing errands, no subscription (pay-as-you-go) - deliberately short
-        # (avg ~6km, well under bike-sharing's 15km plausibility ceiling), several
-        # times a week. This is the bucket the modal-shift engine should flag.
-        if random.random() < 0.5 * sf:
+        # (avg ~6km, well under bike-sharing's 15km plausibility ceiling), a couple
+        # times a month rather than several times a week (~30/yr total).
+        if random.random() < 0.11 * sf:
             dist = round(random.uniform(4.0, 8.0), 2)
             dur = round(dist / 0.45 + random.uniform(5, 10))
             add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(11, 18)),
@@ -743,21 +743,12 @@ for d in daterange(WINDOW_START, WINDOW_END):
                               "car_sharing", dist, False, False, "")
     else:
         # Weekend car-sharing errand, same short-hop pattern.
-        if random.random() < 0.3 * sf:
+        if random.random() < 0.065 * sf:
             dist = round(random.uniform(4.0, 8.0), 2)
             dur = round(dist / 0.45 + random.uniform(5, 10))
             add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(10, 17)),
                               dur, "home", "Cologne", random.choice(["supermarket", "hardware store"]),
                               "Cologne", "errands", "car_sharing", dist, False, False, "")
-        # Weekend bike-share ride along the Rhine (pay-as-you-go) - gives the
-        # modal-shift engine a real historical bike-sharing rate to price the
-        # car-sharing -> bike-sharing shift with.
-        if random.random() < 0.3 * sf:
-            dur = random.randint(15, 35)
-            dist = round(dur * 0.2, 2)
-            add_trip_and_leg(NORA, d, datetime.min.time().replace(hour=random.randint(11, 16)),
-                              dur, "home", "Cologne", "Rhine promenade", "Cologne", "leisure",
-                              "bike_sharing", dist, False, False, "")
     # Light e-scooter hops on the Bolt subscription, most days - always short (well
     # under e-scooter's 8km plausibility ceiling too).
     if random.random() < 0.3 * sf:

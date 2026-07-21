@@ -73,6 +73,20 @@ def _hard_exclusion_reason(
     return None
 
 
+def _held_flat_rate_plan_name(to_category_entry: dict | None) -> str | None:
+    """The name of an active flat-monthly pass already held for this category (e.g. a
+    Deutschlandticket for ``public_transport``), or ``None`` if nothing flat-rate is
+    held there. When one is held, shifting more trips onto it costs the customer
+    nothing extra — the marginal cost is €0, not ``to_mode``'s pay-as-you-go rate.
+    """
+    if not to_category_entry:
+        return None
+    for sub in to_category_entry.get("current_subscriptions") or []:
+        if (sub.get("pricing_model") or "").lower() == "flat_monthly":
+            return sub.get("provider_plan_name")
+    return None
+
+
 def _price_candidate(
     from_category: str,
     to_category: str,
@@ -80,6 +94,7 @@ def _price_candidate(
     annual_trips: float,
     annual_distance_km: float,
     rates: dict[str, tuple[float, str]],
+    flat_rate_plan_name: str | None = None,
 ) -> dict | None:
     """Deterministic annual cost/CO2/time for shifting ``annual_trips``/
     ``annual_distance_km`` worth of ``from_category`` trips onto ``to_mode`` instead —
@@ -94,14 +109,25 @@ def _price_candidate(
     category the user isn't necessarily subscribed to at all); the "stay" baseline it
     gets compared against is the category's own real ``actual_annual_cost_eur``,
     which DOES already reflect any subscription discount held there today.
+
+    Exception: when ``flat_rate_plan_name`` is given (the user already holds an active
+    flat-monthly pass for ``to_category``, e.g. a Deutschlandticket), the shift is
+    already fully paid for — cost is €0 regardless of ``to_mode``'s pay-as-you-go
+    rate, since a flat pass's marginal cost per extra trip is zero by definition.
     """
     if annual_trips <= 0:
         return None
-    rate = rates.get(to_mode)
-    if rate is None:
-        return None
-    rate_value, basis = rate
-    cost = rate_value * (annual_distance_km if basis == "per_km" else annual_trips)
+
+    if flat_rate_plan_name is not None:
+        cost = 0.0
+        pricing_basis = f"already covered by the held {flat_rate_plan_name} (flat-rate pass)"
+    else:
+        rate = rates.get(to_mode)
+        if rate is None:
+            return None
+        rate_value, basis = rate
+        cost = rate_value * (annual_distance_km if basis == "per_km" else annual_trips)
+        pricing_basis = f"projected from {to_mode}'s historical €{'/km' if basis == 'per_km' else '/trip'} rate"
 
     co2 = mode_factors.estimate_co2_kg(to_mode, annual_distance_km)
     per_trip_minutes = mode_factors.estimate_time_minutes(to_mode, annual_distance_km / annual_trips)
@@ -117,7 +143,7 @@ def _price_candidate(
         "annual_cost_eur": round(cost, 2),
         "annual_co2_kg": round(co2, 2),
         "annual_time_minutes": round(per_trip_minutes * annual_trips, 1),
-        "pricing_basis": f"projected from {to_mode}'s historical €{'/km' if basis == 'per_km' else '/trip'} rate",
+        "pricing_basis": pricing_basis,
     }
 
 
@@ -159,6 +185,7 @@ def build_modal_shift_suggestions(
         preferences.get("convenience_priority"),
     )
     rates = implied_rate_by_mode(mode_breakdown)
+    by_category = {e["category"]: e for e in category_subscription_analysis}
 
     from_categories = [
         e for e in category_subscription_analysis if (e.get("annual_trips") or 0) > 0
@@ -183,8 +210,10 @@ def build_modal_shift_suggestions(
                     "excluded_reason": exclusion_reason,
                 })
                 continue
+            flat_rate_plan_name = _held_flat_rate_plan_name(by_category.get(to_category))
             candidate = _price_candidate(
                 from_category, to_category, to_mode, annual_trips, annual_distance_km, rates,
+                flat_rate_plan_name=flat_rate_plan_name,
             )
             if candidate is None:
                 excluded.append({

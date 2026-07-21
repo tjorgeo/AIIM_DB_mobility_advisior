@@ -21,6 +21,14 @@ function recMeta(rec, colors, isDE) {
   }
 }
 
+// The target plan name for a "switch" / "consider subscribing" recommendation —
+// entries carry the same recommended_alternative/cheapest_alternative shape
+// whether they come from category_subscription_analysis or a forecast scenario's
+// projected_category_analysis (see PortfolioDetail's projectedByCategory).
+function recAltPlanName(entry) {
+  return entry?.recommended_alternative?.provider_plan_name || entry?.cheapest_alternative?.provider_plan_name || null
+}
+
 // Life-event types are free text from the forecaster LLM (see backend
 // forecasting.py's _RULES: "relocation", "new_job", "start_of_studies",
 // "Elternzeit", "major_life_change" are the named examples, nothing enforces
@@ -97,6 +105,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       moreTrips: 'mehr Fahrten mit', fewerTrips: 'weniger Fahrten mit', expectPrefix: 'Erwartet werden',
       higherCost: 'höhere Kosten für', lowerCost: 'niedrigere Kosten für', perYearShort: 'Jahr',
       forecastBoxLabel: (event) => `Prognose: nach ${event}`,
+      recPlanSuffix: (plan) => ` zu ${plan}`,
       forecastBoxReason: (before, after) => `Grund: erwartete Fahrten in dieser Kategorie ${after > before ? 'steigen' : 'sinken'} von ${number(before, langKey)} auf ${number(after, langKey)} pro Jahr.`,
       newRecommendation: (list) => `Neue Empfehlung durch dieses Ereignis: ${list}.`,
       recommendationUnchanged: 'Die Empfehlung ändert sich dadurch nicht.',
@@ -132,6 +141,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       moreTrips: 'more trips with', fewerTrips: 'fewer trips with', expectPrefix: 'Expect',
       higherCost: 'higher costs for', lowerCost: 'lower costs for', perYearShort: 'yr',
       forecastBoxLabel: (event) => `Forecast: after ${event}`,
+      recPlanSuffix: (plan) => ` to ${plan}`,
       forecastBoxReason: (before, after) => `Reason: expected trips in this category ${after > before ? 'rise' : 'fall'} from ${number(before, langKey)} to ${number(after, langKey)} per year.`,
       newRecommendation: (list) => `New recommendation due to this event: ${list}.`,
       recommendationUnchanged: 'This does not change the recommendation.',
@@ -252,7 +262,9 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
             ? Math.abs((projectedRec.annual_trips - baselineProj.annual_trips) / baselineProj.annual_trips)
             : 0
           if (demandChangePct < _PROJECTED_DEMAND_CHANGE_THRESHOLD) return null
-          return `${modeLabel(c.category, langKey)}: ${recMeta(projectedRec.recommendation, colors, isDE).label}`
+          const rec = projectedRec.recommendation
+          const altName = (rec === 'switch_to_alternative' || rec === 'consider_subscribing') ? recAltPlanName(projectedRec) : null
+          return `${modeLabel(c.category, langKey)}: ${recMeta(rec, colors, isDE).label}${altName ? t.recPlanSuffix(altName) : ''}`
         })
         .filter(Boolean)
     : []
@@ -559,6 +571,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       </span>
                       <div style={{ fontWeight: '600', fontSize: '0.9rem', marginTop: '0.3rem' }}>
                         {recMeta(projectedRec.recommendation, colors, isDE).label}
+                        {(projectedRec.recommendation === 'switch_to_alternative' || projectedRec.recommendation === 'consider_subscribing') && recAltPlanName(projectedRec) && t.recPlanSuffix(recAltPlanName(projectedRec))}
                       </div>
                       {baselineProj?.annual_trips != null && (
                         <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.3rem' }}>
