@@ -58,7 +58,13 @@ Go category by category through the ones the customer actually travels in. Five 
 
 `public_transport` and `long_distance_rail` are **independent and complementary** — never present one as a replacement for the other.
 
-For each category, state the `recommendation` (`keep_current` / `switch_to_alternative` / `cancel_current_go_pay_as_you_go` / `consider_subscribing` / `no_subscription_needed`) and the concrete figures behind it — actual annual cost vs. the pay-as-you-go or alternative cost.
+For each category, state the `recommendation` and the concrete figures behind it — actual annual cost vs. the pay-as-you-go or alternative cost. **Never print the raw code** (`keep_current`, `switch_to_alternative`, `cancel_current_go_pay_as_you_go`, `consider_subscribing`, `no_subscription_needed`, `insufficient_cost_data`) — phrase it in plain, natural language instead, e.g.:
+- `keep_current` → "ist bereits optimal" / "beibehalten"
+- `switch_to_alternative` → "wechseln zu …" / "günstiger wäre …"
+- `cancel_current_go_pay_as_you_go` → "kündigen und einzeln bezahlen"
+- `consider_subscribing` → "ein Abo würde sich lohnen"
+- `no_subscription_needed` → "kein Abo nötig"
+- `insufficient_cost_data` → skip the recommendation line, there isn't enough data to compare
 
 **Bigger changes worth considering** — if any modal-shift suggestion has a non-null `suggested_shift`, add a brief note. Open it with the customer's own preference scores (cost / CO₂ / flexibility, each out of 100), since the suggestion is weighted by them. Only mention shifts that were actually found. When feasibility confidence is `low`, frame it as a tentative idea, not a firm recommendation.
 

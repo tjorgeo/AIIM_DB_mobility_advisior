@@ -114,7 +114,7 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
               {kpi(<Route size={14} />, t.trips.toUpperCase(), number(totals.trips, langKey))}
               {kpi(<MapPin size={14} />, t.distance.toUpperCase(), `${number(totals.distance, langKey)} km`)}
               {kpi(<Leaf size={14} />, t.co2.toUpperCase(), co2(totals.co2, langKey))}
-              {kpi(<Wallet size={14} />, t.cost.toUpperCase(), euro(totals.cost, { lang: langKey }))}
+              {kpi(<Wallet size={14} />, t.cost.toUpperCase(), euro(analyst?.current_annual_spend_eur || 0, { lang: langKey }))}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

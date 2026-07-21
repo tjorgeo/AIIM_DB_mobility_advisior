@@ -700,7 +700,7 @@ body.chat-expanded .cost-container {
 
 .chat__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); background: var(--slate-50); }
 
-.msg { max-width: 86%; padding: 11px 14px; font-size: var(--text-sm); line-height: 1.5; border-radius: var(--radius-md); animation: popIn 0.22s var(--ease-out) both; white-space: pre-line; }
+.msg { max-width: 86%; padding: 11px 14px; font-size: var(--text-sm); line-height: 1.5; border-radius: var(--radius-md); animation: popIn 0.22s var(--ease-out) both; white-space: pre-line; overflow-wrap: break-word; word-break: break-word; }
 .msg--assistant { align-self: flex-start; background: var(--white); border: 1px solid var(--slate-200); border-bottom-left-radius: var(--radius-xs); box-shadow: var(--shadow-xs); }
 .msg--user { align-self: flex-end; background: #00f2fe; color: #04141a; border-bottom-right-radius: var(--radius-xs); }
 
@@ -712,7 +712,7 @@ body.chat-expanded .cost-container {
 .md-p:last-child, .md-list:last-child { margin-bottom: 0; }
 .md-list { margin: 0 0 8px; padding-left: 1.15em; }
 .md-list li { margin-bottom: 2px; }
-.msg--assistant code, .md-p code, .md-list code { background: var(--slate-100); padding: 1px 4px; border-radius: 4px; font-size: 0.85em; }
+.msg--assistant code, .md-p code, .md-list code { background: var(--slate-100); padding: 1px 4px; border-radius: 4px; font-size: 0.85em; overflow-wrap: break-word; word-break: break-word; }
 
 .msg__action { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; font-size: var(--text-xs); font-weight: 700; padding: 7px 12px; border-radius: var(--radius-pill); border: 1px solid var(--purple); background: var(--purple-tint); color: var(--purple); cursor: pointer; transition: var(--transition); }
 .msg__action:hover { background: var(--purple); color: var(--white); }
