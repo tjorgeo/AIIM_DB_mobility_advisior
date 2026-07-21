@@ -310,6 +310,10 @@ export default function Login() {
   const [connectedAccounts, setConnectedAccounts] = useState({}) // { [serviceId]: true }
   const [connectingId, setConnectingId] = useState('')           // welcher Anbieter gerade „verbindet" (Spinner)
 
+  // Kalender-Einbindung (Schritt 14): rein kosmetische Ja/Nein-Abfrage, wird nicht
+  // ausgewertet oder übertragen — es gibt keine echte Kalender-Integration.
+  const [calendarSync, setCalendarSync] = useState(null) // null | true | false
+
   const simulateConnect = (sid) => {
     if (connectingId || connectedAccounts[sid]) return
     setConnectingId(sid)
@@ -1481,6 +1485,15 @@ export default function Login() {
                           })}
                         </div>
                       )}
+
+                      <div style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '16px', padding: '1.1rem', marginTop: '1.5rem' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: '700', color: colors.text, marginBottom: '0.35rem', textAlign: 'left' }}>Kalender einbinden?</h3>
+                        <p style={{ color: colors.textMuted, marginBottom: '0.9rem', fontSize: '0.88rem', textAlign: 'left', lineHeight: '1.4' }}>Möchtest du deinen Kalender verknüpfen, damit wir bevorstehende Reisen und Termine bei deinen Empfehlungen berücksichtigen können?</p>
+                        <div style={{ display: 'flex', gap: '0.6rem' }}>
+                          <button type="button" onClick={() => setCalendarSync(true)} style={{ flex: 1, padding: '0.7rem', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer', backgroundColor: calendarSync === true ? colors.accentCyan : colors.inputBg, color: calendarSync === true ? colors.onAccent : colors.text, border: calendarSync === true ? `1px solid ${colors.accentCyan}` : `1px solid ${colors.border}`, transition: 'all 0.15s' }}>Ja</button>
+                          <button type="button" onClick={() => setCalendarSync(false)} style={{ flex: 1, padding: '0.7rem', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer', backgroundColor: calendarSync === false ? colors.accentPurple : colors.inputBg, color: calendarSync === false ? colors.onAccent : colors.text, border: calendarSync === false ? `1px solid ${colors.accentPurple}` : `1px solid ${colors.border}`, transition: 'all 0.15s' }}>Nein</button>
+                        </div>
+                      </div>
                     </div>
 
                     <div style={{ flex: 1 }} />

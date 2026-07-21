@@ -672,7 +672,7 @@ print(f"After Elif: {len(trip_rows)}")
 
 
 # ===========================================================================
-# Persona 5: Nora Fischer — showcase demo persona built to cover every major
+# Persona 5: Maja Hoffmann — showcase demo persona built to cover every major
 # engine capability in one profile:
 #   - a subscription to CANCEL (BahnCard 25, barely used — same math shape as
 #     Simone's cancel case above)
@@ -694,7 +694,7 @@ print(f"After Elif: {len(trip_rows)}")
 #     volume rising from 2x/yr toward monthly.
 # ===========================================================================
 NORA = uid("user:nora.fischer")
-add_user(NORA, "nora.fischer@example.com", "norafischer29", "Nora", "Fischer",
+add_user(NORA, "nora.fischer@example.com", "norafischer29", "Maja", "Hoffmann",
           "1996-04-12", 29, "female", "single", "Cologne", "50667")
 add_onboarding(
     NORA, "employed_full_time", "Marketing Manager", "Cologne", "50667", "hybrid", 0.4,
@@ -818,7 +818,7 @@ add_calendar(NORA, datetime(2026, 9, 28, 7, 0, tzinfo=TZ_SUMMER), datetime(2026,
              "Munich HQ Tag", "Monthly on-site day at the Munich HQ - now a recurring routine as part of "
              "the new role.", "Munich", "FREQ=MONTHLY;BYDAY=4MO")
 
-print(f"After Nora: {len(trip_rows)}")
+print(f"After Maja: {len(trip_rows)}")
 print(f"Total trips: {len(trip_rows)}, total legs: {len(leg_rows)}")
 
 
@@ -893,4 +893,4 @@ print("Julia Berger:", JULIA)
 print("Jonas Keller:", JONAS)
 print("Simone Wagner:", SIMONE)
 print("Elif Yildiz:", ELIF)
-print("Nora Fischer:", NORA)
+print("Maja Hoffmann:", NORA)
