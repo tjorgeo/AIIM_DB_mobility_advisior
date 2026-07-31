@@ -1,0 +1,14 @@
+```{=latex}
+\appendix
+```
+
+# BCG-Appendix
+
+<!--
+Add the BCG-specific appendix content here. This file is included at the end of
+the complete report and is also the sole content source of the standalone
+BCG-appendix report.
+-->
+
+Add the BCG-appendix content here.
+

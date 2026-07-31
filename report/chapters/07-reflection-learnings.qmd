@@ -1,0 +1,23 @@
+# Reflection & Learnings
+
+*Reflect critically and honestly on the project — both technical and
+conceptual.*
+
+## Challenges & Lessons Learned
+
+*Suggestions:*
+
+- *Which challenges and problems did you encounter? Name them honestly and
+  discuss how you addressed them*
+- *What worked well, and what did not? What would you do differently?*
+
+Discuss challenges and lessons learned here.
+
+## Limitations & Next Steps
+
+*Suggestions:*
+
+- *What are the current limitations of the system?*
+- *Which concrete next steps or future developments would you propose?*
+
+Discuss limitations and next steps here.

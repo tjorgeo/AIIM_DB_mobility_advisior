@@ -1,0 +1,14 @@
+# Workflow Documentation
+
+*Make the logic of your workflow understandable — also for non-technical
+readers.*
+
+*Suggestions:*
+
+- *Step-by-step walkthrough of the workflow logic*
+- *How is the workflow structured? Are nodes / modules / steps clearly named
+  and logically organized?*
+- *Justify the main technical decisions and explain them so that a
+  non-technician can follow*
+
+Document the workflow here.

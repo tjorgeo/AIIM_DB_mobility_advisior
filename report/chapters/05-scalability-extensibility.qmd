@@ -1,0 +1,14 @@
+# Scalability & Extensibility
+
+*Reflect on how easily the solution can grow and be maintained.*
+
+*Suggestions:*
+
+- *Is the agent built in a modular or parametrized way? How easily can it be
+  extended or adapted?*
+- *Can it scale to larger volumes or complex requirements? What would need to
+  change?*
+- *Which design choices support maintainability (e.g. sub-workflows, variables,
+  reusable components, clear naming)?*
+
+Discuss scalability, extensibility, and maintainability here.

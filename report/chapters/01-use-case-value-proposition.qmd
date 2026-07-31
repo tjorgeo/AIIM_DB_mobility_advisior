@@ -1,0 +1,14 @@
+# Use Case & Value Proposition
+
+*Make the use case clear and understandable for outsiders. Explain the problem
+briefly and why solving it matters.*
+
+*Suggestions:*
+
+- *What problem does your agent solve, and in which organizational or
+  information-management context?*
+- *Who is the target user / persona, and what are their goals and pain points?*
+- *What concrete value does the agent provide? Why is the solution convincing?*
+- *How does the task relate to work that is typically performed by experts?*
+
+Describe the use case and its value proposition here.

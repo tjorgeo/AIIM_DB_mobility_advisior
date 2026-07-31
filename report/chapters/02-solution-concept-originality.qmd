@@ -1,0 +1,12 @@
+# Solution Concept & Originality
+
+*Show how your project goes beyond standard tutorials or textbook examples.*
+
+*Suggestions:*
+
+- *Which tools, services, or AI components are combined — and why this
+  particular combination?*
+- *What is your own idea or contribution? Where does the solution show a
+  personal note?*
+
+Describe the solution concept and its original contribution here.

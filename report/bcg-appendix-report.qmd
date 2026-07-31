@@ -1,0 +1,11 @@
+---
+title: "BCG-Appendix"
+---
+
+<!--
+This entry point intentionally includes only the BCG appendix. Shared metadata
+and PDF settings are inherited from _quarto.yml.
+-->
+
+{{< include appendices/bcg-appendix.qmd >}}
+

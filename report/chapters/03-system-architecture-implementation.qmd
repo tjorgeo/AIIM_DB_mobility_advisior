@@ -1,0 +1,58 @@
+# System Architecture & Implementation
+
+*Describe how your agent system is built (meta-level), how it behaves, and how
+it stays robust.*
+
+## Architecture Overview
+
+*Suggestions:*
+
+- *High-level diagram of the workflow / agent system*
+- *Agent roles or workflow stages, the orchestration logic, and the
+  state-management strategy*
+- *Key components: data sources, model(s), infrastructure, integrations*
+- *Which external APIs, services, or AI components are integrated, how stable
+  is the integration?*
+
+<!--
+Store images below assets/ and reference them, for example:
+![Architecture overview](assets/architecture-overview.png){#fig-architecture}
+-->
+
+Describe the high-level architecture here.
+
+## Agentic Behavior
+
+*Suggestions:*
+
+- *How does the system go beyond a single prompt–response? (multi-step
+  reasoning, tool use, clarification, iteration, retrieval)*
+- *Where and how does the agent ask clarifying questions or refine its outputs?*
+
+Describe the agentic behavior here.
+
+## Error Handling & Robustness
+
+*Suggestions:*
+
+- *How is the system triggered, and does it deliver consistent results across
+  test runs?*
+- *How are errors, failures, or ambiguous inputs handled? Which fallback
+  strategies exist?*
+- *What happens if a tool call fails or an external service is unavailable?*
+
+Describe error handling and robustness here.
+
+## Architecture Decision Records (ADRs)
+
+*Document the key design choices: why this framework, why this agent split, why
+this tool over another. Use one short record per significant decision. Duplicate
+the table below as needed.*
+
+| Field | Decision record |
+|---|---|
+| **ADR-01** | **[Title of the decision]** |
+| **Context** | [Decision context] |
+| **Options considered** | [Option A, option B, ...] |
+| **Decision** | [Chosen option and rationale] |
+| **Trade-offs accepted** | [Accepted disadvantages and risks] |

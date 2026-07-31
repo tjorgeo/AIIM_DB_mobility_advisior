@@ -1,0 +1,35 @@
+project:
+  type: default
+  output-dir: _output
+  render:
+    - report.qmd
+    - bcg-appendix-report.qmd
+
+title: "Report: AIIM-Managerial Assignment"
+subtitle: "[Team Name]"
+date: last-modified
+author:
+  - name: "[Team member 1: Last name, First name, Student ID]"
+  - name: "[Team member 2: Last name, First name, Student ID]"
+  - name: "[Team member 3: Last name, First name, Student ID]"
+  - name: "[Team member 4: Last name, First name, Student ID]"
+  - name: "[Team member 5: Last name, First name, Student ID]"
+
+bibliography: references.bib
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    documentclass: scrreprt
+    papersize: a4
+    fontsize: 11pt
+    mainfont: "Times New Roman"
+    sansfont: "Times New Roman"
+    toc: false
+    number-sections: true
+    highlight-style: github
+
+execute:
+  echo: false
+  warning: false
+  freeze: auto

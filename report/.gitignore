@@ -1,0 +1,6 @@
+/.quarto/
+/_freeze/
+/_output/
+
+
+**/*.quarto_ipynb

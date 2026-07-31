@@ -1,0 +1,27 @@
+<!--
+Replace the placeholders in _quarto.yml before submission. The managerial
+template limits the report to 10 pages. Check the rendered PDF manually because
+pagination depends on fonts, tables, and figures.
+
+This file defines the chapter order. Write chapter content in the individual
+files under chapters/ rather than directly in this file.
+-->
+
+{{< include chapters/01-use-case-value-proposition.qmd >}}
+
+{{< include chapters/02-solution-concept-originality.qmd >}}
+
+{{< include chapters/03-system-architecture-implementation.qmd >}}
+
+{{< include chapters/04-workflow-documentation.qmd >}}
+
+{{< include chapters/05-scalability-extensibility.qmd >}}
+
+{{< include chapters/06-evaluation-trade-offs.qmd >}}
+
+{{< include chapters/07-reflection-learnings.qmd >}}
+
+{{< include chapters/08-references-appendix.qmd >}}
+
+{{< include appendices/bcg-appendix.qmd >}}
+

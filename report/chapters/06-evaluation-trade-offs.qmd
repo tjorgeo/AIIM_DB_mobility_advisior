@@ -1,0 +1,24 @@
+# Evaluation & Trade-offs
+
+*Back up your design with evidence from your own runs. Use concrete numbers
+wherever possible.*
+
+*Suggestions:*
+
+- *How did you test the system? Which scenarios (happy path, edge case, failure
+  case) did you cover?*
+- *A side-by-side comparison against a naive baseline (e.g. a single LLM call
+  with the data dumped in)*
+- *Capture the key trade-offs you balanced. Fill in concrete numbers from your
+  evaluation runs where available.*
+- *Estimated token usage per run, and how do costs scale with increased usage?*
+- *Where are the main cost drivers, and how could they be reduced?*
+
+Describe the evaluation design, results, and trade-offs here.
+
+| Metric | Agent system | Naive baseline |
+|---|---:|---:|
+| [Quality metric] | [Value] | [Value] |
+| Token usage per run | [Value] | [Value] |
+| Estimated cost per run | [Value] | [Value] |
+| Runtime | [Value] | [Value] |
