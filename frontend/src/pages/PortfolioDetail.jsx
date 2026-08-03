@@ -84,7 +84,7 @@ function lifeEventDativePhrase(type, isDE) {
   return _LIFE_EVENT_NOUN_EN[key] || (humanized ? `the ${humanized}` : 'the event')
 }
 
-export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions }) {
+export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions, chatSlotRef }) {
   const isDE = lang === 'DE'
   // Welche Kategorie zeigt gerade die „Wirklich kündigen?"-Rückfrage
   const [confirmingCategory, setConfirmingCategory] = useState(null)
@@ -286,11 +286,14 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   return (
     <div style={{ backgroundColor: colors.bg, color: colors.text, fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh' }}>
       <style>{`
-        .portfolio-container { display: grid; grid-template-columns: 1fr; gap: 1.25rem; width: 100%; max-width: 480px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; box-sizing: border-box; }
-        .portfolio-kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
-        .portfolio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-        @media (min-width: 768px) { .portfolio-container { max-width: 900px; } }
-        @media (max-width: 480px) { .portfolio-kpis { grid-template-columns: 1fr; } }
+        .portfolio-container { display: grid; grid-template-columns: 1fr; gap: 1.25rem; min-width: 0; }
+        .portfolio-kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; min-width: 0; }
+        .portfolio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; min-width: 0; }
+        /* Queries the actual space beside the chat sidebar (see
+           .page-split__main in components.css), not the viewport, so this
+           collapses to one column whenever there's genuinely too little
+           room for three, sidebar or no sidebar. */
+        @container page-main (max-width: 480px) { .portfolio-kpis { grid-template-columns: 1fr; } }
       `}</style>
 
       <header style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${colors.border}`, position: 'sticky', top: 0, backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)', zIndex: 10 }}>
@@ -299,7 +302,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
         </button>
       </header>
 
-      <main className="portfolio-container">
+      <div className="page-split page-split--narrow">
+      <main className="portfolio-container page-split__main">
         <div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>{t.title}</h1>
           <p style={{ color: colors.textMuted, fontSize: '0.9rem' }}>{t.subtitle}</p>
@@ -663,6 +667,8 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
           </>
         )}
       </main>
+      <aside className="page-split__sidebar" ref={chatSlotRef} />
+      </div>
     </div>
   )
 }

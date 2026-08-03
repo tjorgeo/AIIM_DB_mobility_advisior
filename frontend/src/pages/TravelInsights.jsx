@@ -46,7 +46,7 @@ function useMonthlyDataset(analyst, lang) {
   }, [analyst, lang])
 }
 
-export default function TravelInsights({ analysis, lang, colors, isDark, onBack }) {
+export default function TravelInsights({ analysis, lang, colors, isDark, onBack, chatSlotRef }) {
   const [showTable, setShowTable] = useState(false)
   const langKey = lang === 'DE' ? 'de' : 'en'
   const t = lang === 'DE'
@@ -86,10 +86,12 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
   return (
     <div style={{ backgroundColor: colors.bg, color: colors.text, fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh' }}>
       <style>{`
-        .insights-container { display: grid; grid-template-columns: 1fr; gap: 1.25rem; width: 100%; max-width: 480px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; box-sizing: border-box; }
-        .insights-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        @media (min-width: 768px) {
-          .insights-container { max-width: 1100px; }
+        .insights-container { display: grid; grid-template-columns: 1fr; gap: 1.25rem; min-width: 0; }
+        .insights-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; min-width: 0; }
+        /* Queries the actual space beside the chat sidebar (see
+           .page-split__main in components.css), not the viewport, so this
+           only goes 4-wide once there's really room for it. */
+        @container page-main (min-width: 700px) {
           .insights-kpis { grid-template-columns: repeat(4, 1fr); }
         }
       `}</style>
@@ -100,7 +102,8 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
         </button>
       </header>
 
-      <main className="insights-container">
+      <div className="page-split">
+      <main className="insights-container page-split__main">
         <div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>{t.title}</h1>
           <p style={{ color: colors.textMuted, fontSize: '0.9rem' }}>{t.subtitle}</p>
@@ -221,6 +224,8 @@ export default function TravelInsights({ analysis, lang, colors, isDark, onBack 
           </>
         )}
       </main>
+      <aside className="page-split__sidebar" ref={chatSlotRef} />
+      </div>
     </div>
   )
 }

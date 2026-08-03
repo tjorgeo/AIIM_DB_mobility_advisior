@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Wallet, Leaf, Globe, LogOut, TrendingUp,
   Check, ChevronDown, ChevronRight, BarChart3, AlertCircle,
@@ -21,6 +21,48 @@ export default function Dashboard() {
   const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
   const [profileMenuOpen, setProfileMenuOpen] = useState(false) // State für das kleine Fenster
   const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' | 'portfolio' — kein Router nötig, gleiches Muster wie Login.jsx currentView
+
+  // DOM node the currently active view has mounted as its chat sidebar slot
+  // (an <aside ref={chatSlotRef}>, see each view below). ChatWidget portals
+  // into this node — a callback ref (not an effect) so the old slot's detach
+  // and the new slot's attach on a view switch land in the same commit,
+  // with no frame where the sidebar is missing.
+  const [chatSlotEl, setChatSlotEl] = useState(null)
+  const chatSlotRef = useCallback((node) => setChatSlotEl(node), [])
+
+  // ChatWidget's box is `position: fixed` on desktop (see .chat-sidebar in
+  // components.css) so it truly never moves while scrolling — but a fixed
+  // element can't otherwise know where its in-flow placeholder
+  // (.page-split__sidebar, which still reserves the space for it in the page
+  // layout) actually landed on screen. Re-measure whenever the slot itself
+  // resizes and on window resize.
+  //
+  // `top` is derived the same way, from the slot's own rendered position,
+  // rather than a hand-picked constant — a fixed guess (e.g. "the header is
+  // ~74px, so 88px") drifts out of sync with reality the moment the actual
+  // layout (header height, .page-split's own top padding, etc.) doesn't
+  // match that guess exactly, which is exactly what caused the chat to sit
+  // a few pixels above the hero/content row instead of level with it.
+  // getBoundingClientRect().top is relative to the CURRENT scroll position,
+  // so adding window.scrollY back converts it to the resting (scroll-0)
+  // position — the constant we actually want for a fixed element's `top`,
+  // regardless of where the page happened to be scrolled to when measured.
+  const [chatSlotPos, setChatSlotPos] = useState(null)
+  useEffect(() => {
+    if (!chatSlotEl) { setChatSlotPos(null); return }
+    const measure = () => {
+      const rect = chatSlotEl.getBoundingClientRect()
+      setChatSlotPos({ left: rect.left + window.scrollX, top: rect.top + window.scrollY })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(chatSlotEl)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [chatSlotEl])
 
   // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
   const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
@@ -230,8 +272,8 @@ export default function Dashboard() {
     ? t.analyzingSub
     : hasSavings
       ? (lang === 'DE'
-        ? `Mit den empfohlenen Änderungen sparst du schätzungsweise ${euro(recSavings, { lang: langKey })} pro Jahr.`
-        : `With the recommended changes you could save an estimated ${euro(recSavings, { lang: langKey })} per year.`)
+        ? <>Mit den empfohlenen Änderungen sparst du schätzungsweise <strong style={{ fontWeight: 800 }}>{euro(recSavings, { lang: langKey })} pro Jahr</strong>.</>
+        : <>With the recommended changes you could save an estimated <strong style={{ fontWeight: 800 }}>{euro(recSavings, { lang: langKey })} per year</strong>.</>)
       : t.optimizedSub
 
   const palette = ['#00f2fe', '#a855f7', '#3b82f6', '#22c55e', '#eab308', '#f43f5e']
@@ -263,6 +305,7 @@ export default function Dashboard() {
         colors={colors}
         isDark={isDark}
         onBack={() => setView('overview')}
+        chatSlotRef={chatSlotRef}
       />
     )
   } else if (view === 'cost') {
@@ -273,6 +316,7 @@ export default function Dashboard() {
         colors={colors}
         isDark={isDark}
         onBack={() => setView('overview')}
+        chatSlotRef={chatSlotRef}
       />
     )
   } else if (view === 'portfolio') {
@@ -285,6 +329,7 @@ export default function Dashboard() {
         onBack={() => setView('overview')}
         cancelledSubs={cancelledSubs}
         onCancelSubscriptions={handleCancelSubscriptions}
+        chatSlotRef={chatSlotRef}
       />
     )
   } else {
@@ -302,21 +347,46 @@ export default function Dashboard() {
       {/* RESPONSIVE CSS INJEKTION */}
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .dashboard-container {
+        /* Both grids live inside .page-split__main (see components.css),
+           stacked one above the other, beside the chat sidebar on desktop —
+           so neither defines its own centering/max-width/padding, just the
+           column layout itself. min-width: 0 overrides the grid's implicit
+           auto-minimum (driven by its items' content, e.g. the CO₂ card's
+           label) so it actually shrinks to fit beside the sidebar instead of
+           overflowing underneath it. */
+        .dashboard-hero-grid {
           display: grid;
           grid-template-columns: 1fr;
           gap: 1.25rem;
-          width: 100%;
-          max-width: 480px;
-          margin: 0 auto;
-          padding: 1.5rem 1.25rem 3rem 1.25rem;
-          box-sizing: border-box;
+          min-width: 0;
+        }
+        .dashboard-content-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1.25rem;
+          min-width: 0;
+        }
+        /* Annual-spend + CO₂ mini-cards: stacked by default. Only goes
+           side-by-side once .col-hero-stats itself (5/12 of the main column
+           once that's active — see below) has enough room for both without
+           squeezing either one, which needs a wider main column than the
+           12-col switch above alone guarantees. */
+        .hero-stats-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 0.85rem;
+          min-width: 0;
         }
 
-        /* Responsive Breakpoint für Desktop (z.B. Mac) */
-        @media (min-width: 768px) {
-          .dashboard-container {
-            max-width: 1100px;
+        /* Switches to the 12-col layout once the main column (beside the
+           chat sidebar, see .page-split__main in components.css) actually
+           has room for it — not at a fixed viewport width, so it reflows
+           correctly whether or not the sidebar is taking up space. */
+        @container page-main (min-width: 640px) {
+          .dashboard-hero-grid {
+            grid-template-columns: repeat(12, 1fr);
+          }
+          .dashboard-content-grid {
             grid-template-columns: repeat(12, 1fr);
           }
           .col-hero { grid-column: span 7; }
@@ -324,6 +394,9 @@ export default function Dashboard() {
           .col-current-subs { grid-column: span 6; }
           .col-travel { grid-column: span 6; }
           .col-portfolio { grid-column: span 12; }
+        }
+        @container page-main (min-width: 900px) {
+          .hero-stats-grid { grid-template-columns: 1.4fr 1fr; }
         }
       `}</style>
       
@@ -518,7 +591,9 @@ export default function Dashboard() {
       {/* =========================================================
           MAIN SINGLE PAGE CONTENT
           ========================================================= */}
-      <main className="dashboard-container">
+      <div className="page-split">
+      <main className="page-split__main">
+        <div className="dashboard-hero-grid">
 
         {/* 1. HERO CARD: OPTIMIZED STATUS */}
         <div className="col-hero" style={{
@@ -574,7 +649,7 @@ export default function Dashboard() {
             cost-breakdown subpage) and CO₂ footprint, side by side. Distance is
             intentionally left off the main dashboard now. Realized savings via
             subscriptions lives only on the cost subpage (see CostBreakdown.jsx). */}
-        <div className="col-hero-stats" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '0.85rem' }}>
+        <div className="col-hero-stats hero-stats-grid">
           <button
             onClick={() => setView('cost')}
             style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '20px', padding: '1.1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left', cursor: 'pointer', color: colors.text, font: 'inherit' }}
@@ -603,6 +678,10 @@ export default function Dashboard() {
             <span style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.5rem' }}>{t.estimatedEmissions}</span>
           </div>
         </div>
+
+        </div>
+
+        <div className="dashboard-content-grid">
 
         {/* 4. CURRENT SUBSCRIPTIONS — left */}
         <div className="col-current-subs" style={{
@@ -774,7 +853,10 @@ export default function Dashboard() {
           </div>
         </div>
 
+        </div>
       </main>
+      <aside className="page-split__sidebar" ref={chatSlotRef} />
+      </div>
     </div>
     )
   }
@@ -790,6 +872,8 @@ export default function Dashboard() {
           getContext={() => ({ recommendation: recommended, analysis })}
           actions={{ optimize: async () => summary?.category_subscription_analysis || [], approve: async () => true }}
           onOpenPortfolio={() => setView('portfolio')}
+          slotEl={chatSlotEl}
+          fixedPos={chatSlotPos}
         />
       )}
     </>

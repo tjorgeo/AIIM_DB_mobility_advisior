@@ -92,7 +92,19 @@
 /* ==========================================================================
    View transition wrapper
    ========================================================================== */
-.app-view { animation: viewIn 0.45s var(--ease-out) both; }
+/* No `both`/`forwards` fill-mode: that would leave `transform: translateY(0)`
+   permanently applied after the 0.45s animation ends (fill-mode keeps the
+   final keyframe's computed values around indefinitely). Even a no-op
+   translateY(0) still counts as "a transform" for the purposes of CSS
+   containing blocks — it would make .app-view a containing block for every
+   `position: fixed` descendant on the page (including .chat-sidebar, see
+   components.css), so "fixed" elements would resolve against .app-view's
+   box instead of the true viewport and scroll along with the page instead of
+   staying put. Dropping the fill-mode has no visual effect on the animation
+   itself (.app-view has no other opacity/transform rule, so it just reverts
+   to that same end state — opacity 1, no transform — once the animation
+   finishes instead of having it pinned there by the animation). */
+.app-view { animation: viewIn 0.45s var(--ease-out); }
 
 /* ==========================================================================
    Login
@@ -540,163 +552,100 @@
 .skel--line { height: 14px; border-radius: var(--radius-pill); }
 
 /* ==========================================================================
-   Chat widget
+   Page split — shared "main content + permanent sidebar" layout, used by
+   every page (Dashboard, TravelInsights, CostBreakdown, PortfolioDetail).
+   The sidebar runs the full height of the page's content, beside everything
+   from the header down. Mobile-first: stacked (main, then sidebar full-width
+   below) until 768px — the same breakpoint every page's own content grid
+   already uses to go multi-column — then side-by-side.
    ========================================================================== */
-.chat-launcher {
-  position: fixed;
-  right: clamp(16px, 4vw, 32px);
-  bottom: clamp(16px, 4vw, 32px);
-  z-index: 80;
-  width: 60px; height: 60px;
-  border-radius: 50%;
-  background: #00f2fe;
-  color: #04141a;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 10px 28px rgba(0, 242, 254, 0.35);
-  transition: var(--transition);
-  animation: pulseRing 2.6s infinite;
-}
-.chat-launcher:hover { transform: translateY(-3px) scale(1.04); background: #57f5ff; }
-.chat-launcher__badge {
-  position: absolute; top: -2px; right: -2px;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: #7c3aed; border: 2px solid var(--white);
-}
-.chat-launcher__count {
-  position: absolute; top: -5px; right: -5px;
-  min-width: 21px; height: 21px; padding: 0 5px;
-  border-radius: var(--radius-pill);
-  background: var(--white); color: #0891a8;
-  border: 2px solid #0891a8;
-  font-family: var(--font-heading);
-  font-size: 11px; font-weight: 800; line-height: 1;
-  display: grid; place-items: center;
-  animation: popIn 0.25s var(--ease-out) both;
-}
-.chat-launcher--alert { animation: pulseRing 2.6s infinite, nudge 1s var(--ease) 2; }
-@keyframes nudge {
-  0%, 100% { transform: translateY(0); }
-  25% { transform: translateY(-5px); }
-  50% { transform: translateY(0); }
-  75% { transform: translateY(-2px); }
-}
-
-.chat-teaser {
-  position: fixed;
-  right: clamp(16px, 4vw, 32px);
-  bottom: calc(clamp(16px, 4vw, 32px) + 74px);
-  z-index: 80;
-  max-width: 264px;
-  background: var(--white);
-  border: 1px solid var(--slate-200);
-  border-radius: var(--radius-md) var(--radius-md) var(--radius-xs) var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: 14px 16px;
-  cursor: pointer;
-  animation: popIn 0.3s var(--ease-out) both;
-}
-.chat-teaser:hover { box-shadow: var(--shadow-lg), var(--shadow-md); transform: translateY(-1px); }
-.chat-teaser__title { display: block; font-size: var(--text-sm); font-weight: 700; color: var(--slate-900); margin-bottom: 2px; }
-.chat-teaser__text { font-size: var(--text-sm); color: var(--slate-600); }
-.chat-teaser__close { position: absolute; top: 6px; right: 8px; color: var(--slate-400); font-size: 14px; line-height: 1; }
-
-/* Reserve room for the open chat panel so it never overlaps page content —
-   targets only the four centered content containers, never <header> or the
-   page background, so the top bar and background stay full-width regardless
-   of chat state.
-
-   Uses an explicit `width` reduction plus `margin-left: 0` (pinning the box to
-   the left edge), NOT auto margins. Two dead ends on the way here, both
-   confirmed with getComputedStyle/getBoundingClientRect in a real browser
-   (Playwright), not just reasoned about on paper:
-     1. `margin-left: auto; margin-right: <reserved>` (the usual block-layout
-        trick for shifting a `margin: 0 auto`-centered box left) does nothing —
-        every one of these containers is a flex item (each page's outer
-        wrapper is `display: flex; flex-direction: column`), and in that
-        cross-axis context a single fixed margin paired with one auto margin
-        just resolves the auto one to a flat 0 instead of absorbing space.
-     2. Switching to a plain `width: calc(100% - reserved)` with the
-        page's own original `margin: 0 auto` left in place LOOKED like it
-        should work, but on a flex item with a definite (non-max-width-capped)
-        width, `margin: 0 auto` on this cross axis genuinely DOES center with
-        equal margins on both sides — so only HALF the reserved amount ends up
-        on the right, next to the chat, and the rest is wasted on the left.
-   Forcing `margin-left: 0` sidesteps both auto-margin behaviors entirely: the
-   box sits flush left, so shrinking `width` moves the right edge left by
-   exactly that amount, 1:1, regardless of the parent's layout mode. `max-width`
-   (already set per breakpoint by each page's own <style> block) still applies
-   as an upper bound on top of this. Classes are toggled on <body> by
-   ChatWidget.jsx. Below 640px the panel goes full-screen instead (see that
-   breakpoint further down), so no reservation is needed there.
-*/
-body.chat-open .dashboard-container,
-body.chat-open .portfolio-container,
-body.chat-open .insights-container,
-body.chat-open .cost-container {
-  margin-left: 0;
-  /* Panel width (390px) + its own edge gap (same clamp() the panel itself uses
-     for `right`, so this tracks it exactly instead of guessing a flat number)
-     + 16px breathing room. */
-  width: calc(100% - 390px - clamp(16px, 4vw, 32px) - 16px);
-  transition: width 0.22s var(--ease-out);
-}
-body.chat-expanded .dashboard-container,
-body.chat-expanded .portfolio-container,
-body.chat-expanded .insights-container,
-body.chat-expanded .cost-container {
-  width: calc(100% - 480px - clamp(16px, 4vw, 32px) - 16px);
-}
-@media (max-width: 640px) {
-  body.chat-open .dashboard-container, body.chat-expanded .dashboard-container,
-  body.chat-open .portfolio-container, body.chat-expanded .portfolio-container,
-  body.chat-open .insights-container, body.chat-expanded .insights-container,
-  body.chat-open .cost-container, body.chat-expanded .cost-container {
-    width: 100%;
-    margin-left: auto;
-  }
-}
-
-.chat-panel {
-  position: fixed;
-  right: clamp(16px, 4vw, 32px);
-  bottom: clamp(16px, 4vw, 32px);
-  z-index: 90;
-  width: 390px;
-  max-width: calc(100vw - 24px);
-  max-height: min(620px, calc(100dvh - 96px));
+.page-split {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  box-sizing: border-box;
+}
+/* flex column so pages with more than one stacked block inside (e.g.
+   Dashboard's hero grid + content grid) get the same row-gap as everything
+   else, with no effect on pages that only put a single grid in here.
+
+   A query container (not just a flex item): each page's own grids (hero,
+   KPI rows, etc.) used to switch to their multi-column layout at a fixed
+   *viewport* breakpoint, unaware that the sidebar permanently claims part
+   of that viewport — so at plenty of "wide enough" viewports the grid still
+   tried to lay out at its full multi-column width and overflowed under the
+   sidebar. Querying this container's own (post-sidebar) width instead means
+   each grid reflows based on the space it actually has. */
+.page-split__main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  container-type: inline-size;
+  container-name: page-main;
+}
+.page-split__sidebar { flex: 0 0 auto; width: 100%; }
+@media (min-width: 768px) {
+  .page-split { flex-direction: row; max-width: 1100px; }
+  .page-split--narrow { max-width: 900px; }
+  /* Explicit width, not `auto`: .chat-sidebar itself is `position: fixed`
+     below (so it never moves at all while scrolling, not even briefly),
+     which takes it out of normal flow — so this box can no longer size
+     itself off that child's width the way a normal flex item would. This
+     has to match .chat-sidebar's own width exactly, or the reserved gap in
+     the row and the fixed box's actual width drift apart. */
+  .page-split__sidebar { width: 360px; }
+}
+
+/* ==========================================================================
+   Chat sidebar (always-open, participates in page layout via .page-split)
+   ========================================================================== */
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: 100%;
+  height: 100%;
+  min-height: 480px;
   background: var(--white);
   border: 1px solid var(--slate-200);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
-  animation: slideUpSheet 0.28s var(--ease-out) both;
-  transition: width 0.22s var(--ease-out), max-height 0.22s var(--ease-out), top 0.22s var(--ease-out);
+  transition: width 0.22s var(--ease-out);
 }
-
-/* Expanded: grows mostly TALL (up to just under the sticky top bar, which is
-   ~74px on every page — see each page's <header> padding) rather than wide —
-   only modestly wider than the default 390px, not the old 860px. `top` fixed
-   instead of `max-height` lets it stretch to fill exactly that vertical span. */
-.chat-panel--expanded {
-  top: 88px;
-  width: 480px;
-  max-width: calc(100vw - 24px);
-  max-height: none;
+@media (min-width: 768px) {
+  /* `fixed`, not `sticky`: sticky only holds its position between the point
+     it first engages and the point its containing block's edge catches up
+     to it — outside that range (right as you start scrolling, and again
+     near the bottom of a tall page) it's back to moving with the page,
+     which read as small jumps. Fixed pins it to the viewport unconditionally
+     instead, so it truly never moves. `--chat-fixed-left`/`--chat-fixed-top`
+     are set inline by ChatWidget from the sidebar slot's actual measured
+     position (see Dashboard.jsx) — not a guessed constant — since a fixed
+     element can't otherwise know where its in-flow placeholder
+     (.page-split__sidebar) ended up on screen. */
+  .chat-sidebar {
+    position: fixed;
+    top: var(--chat-fixed-top, 88px);
+    left: var(--chat-fixed-left, 0px);
+    /* Bottom margin stays a constant 16px below the box regardless of
+       where `top` actually lands, instead of baking in a fixed height that
+       only balances out for one particular assumed top value. */
+    height: calc(100dvh - var(--chat-fixed-top, 88px) - 16px);
+  }
 }
-.chat-panel--expanded .msg { font-size: 1rem; max-width: 78%; }
-.chat-panel--expanded .chat__input { font-size: 1rem; }
-.chat-panel--expanded .quick-chip { font-size: 0.9rem; }
 
 .chat__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--slate-100); background: var(--white); }
 .chat__avatar { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; font-weight: 700; font-size: var(--text-sm); }
 .chat__avatar .status-dot { position: absolute; bottom: 0; right: 0; border: 2px solid var(--white); }
 .chat__title { font-size: var(--text-sm); font-weight: 700; }
 .chat__status { font-size: var(--text-xs); color: #7c3aed; font-weight: 600; }
-.chat__close { margin-left: auto; color: var(--slate-400); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; transition: var(--transition); }
-.chat__close:hover { background: var(--slate-100); color: var(--slate-700, var(--slate-800)); }
 
 .chat__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); background: var(--slate-50); }
 
@@ -806,15 +755,6 @@ body.chat-expanded .cost-container {
   .shell__name span.full { display: none; }
   .plans { grid-template-columns: 1fr; }
   .login__brand { flex-direction: column; align-items: flex-start; }
-
-  .chat-panel {
-    right: 0; bottom: 0; top: 0; left: 0;
-    width: 100%; max-width: 100%;
-    height: 100%;
-    border-radius: 0;
-    border: none;
-  }
-  .chat-teaser { display: none; }
 }
 
 @media (max-width: 420px) {
@@ -827,29 +767,14 @@ body.chat-expanded .cost-container {
    damit es zum dunklen Dashboard (#00f2fe-Akzent) passt.
    ============================================================ */
 
-/* Schwebender Button (FAB) */
-[data-theme="dark"] .chat-launcher { background: #00f2fe; color: #04141a; box-shadow: 0 10px 28px rgba(0, 242, 254, 0.35); }
-[data-theme="dark"] .chat-launcher:hover { background: #57f5ff; }
-[data-theme="dark"] .chat-launcher svg { color: #04141a; }
-[data-theme="dark"] .chat-launcher__badge { background: #a855f7; border: 2px solid #0e0e10; }
-[data-theme="dark"] .chat-launcher__count { color: #00f2fe; }
-
-/* Teaser (kleine „Neue Nachricht"-Sprechblase) */
-[data-theme="dark"] .chat-teaser { background: #16161a; border: 1px solid #26262b; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55); }
-[data-theme="dark"] .chat-teaser__title { color: #ffffff; }
-[data-theme="dark"] .chat-teaser__text { color: #9aa3b2; }
-[data-theme="dark"] .chat-teaser__close { color: #747c82; }
-
-/* Panel */
-[data-theme="dark"] .chat-panel { background: #0e0e10; border: 1px solid #26262b; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
+/* Sidebar */
+[data-theme="dark"] .chat-sidebar { background: #0e0e10; border: 1px solid #26262b; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); }
 [data-theme="dark"] .chat__header { background: #16161a; border-bottom: 1px solid #26262b; }
 [data-theme="dark"] .chat__avatar { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; }
 /* Presence indicator (dot + „Online") — brighter purple so it pops on dark */
 [data-theme="dark"] .status-dot { background: #a855f7; }
 [data-theme="dark"] .chat__status { color: #a855f7; }
 [data-theme="dark"] .chat__title { color: #ffffff; }
-[data-theme="dark"] .chat__close { color: #747c82; }
-[data-theme="dark"] .chat__close:hover { background: #1c1c1f; color: #ffffff; }
 
 /* Nachrichten */
 [data-theme="dark"] .chat__body { background: #0e0e10; }
@@ -874,16 +799,3 @@ body.chat-expanded .cost-container {
 
 /* Advisor-Avatar (falls verwendet) */
 [data-theme="dark"] .advisor__avatar { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; }
-
-/* Mobile: Chat-Panel wirklich bildschirmfüllend (max-height/-width der
-   Basisregel zurücksetzen, sonst wirkt es gedeckelt/verschoben). */
-@media (max-width: 640px) {
-  .chat-panel {
-    inset: 0;
-    top: 0; right: 0; bottom: 0; left: 0;
-    width: 100%; max-width: none;
-    height: 100%; max-height: none;
-    border: none;
-    border-radius: 0;
-  }
-}
