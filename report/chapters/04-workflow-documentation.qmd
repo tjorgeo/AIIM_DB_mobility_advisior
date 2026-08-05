@@ -1,14 +1,13 @@
 # Workflow Documentation
 
-*Make the logic of your workflow understandable — also for non-technical
-readers.*
+1. **Loading the picture.** When a customer opens the dashboard, the system pulls together everything it knows about them: which subscriptions they currently hold, roughly two years of past trips, the full catalogue of available plans, and, if they have shared it, their calendar.
+2. **Analysing the past.** For every category of transport the customer actually uses it works out what they spent over the last year and compares their current subscription against the cheapest realistic alternative, including simply paying per trip instead of subscribing at all.
+3. **Looking ahead.** A recommendation based just on the past can miss a change that is about to happen, so the system also looks forward roughly three months: it combines seasonal travel patterns with anything already on the customer's calendar to estimate how their travel might shift.
+4. **A first, plain-language briefing.** The customer's advisor, a conversational assistant built into the dashboard, opens with a short written summary of what it found: which subscriptions still make sense, which do not, and roughly how much could be saved.
+5. **Asking questions.** From there, the customer can ask the advisor anything, i.e. why a particular plan is cheaper, what would change if they travelled more next year, or what a specific subscription's cancellation terms are. The advisor can look up the live product catalogue and the underlying tariff documents to answer.
+6. **Trying a change before committing to it.** If the customer considers a change like "what if I switch to X", "what if I keep the car but drop the transit pass", the advisor can simulate it and show the new numbers without touching anything real yet.
+7. **A confirmation before anything happens.** Only once the customer explicitly agrees does the advisor carry out the change. Nothing is subscribed, cancelled, or switched without that confirmation.
 
-*Suggestions:*
+Steps 1–3 run as a fixed sequence, each step feeding the next, which is what makes the resulting numbers reproducible rather than best-effort (@fig-pipeline, previous chapter). Steps 4–7 happen inside an open-ended conversation, where the advisor picks from a handful of defined actions, like look something up, simulate a change, or apply one, based on what the customer asks. The fixed sequence is the analysis pipeline; the conversational half is the Advisor.
 
-- *Step-by-step walkthrough of the workflow logic*
-- *How is the workflow structured? Are nodes / modules / steps clearly named
-  and logically organized?*
-- *Justify the main technical decisions and explain them so that a
-  non-technician can follow*
-
-Document the workflow here.
+Two decisions matter here, both because a wrong answer is worse than a slow one. Price is always the deterministic engine's job: the model may forecast how much a customer will travel, but that predicted trip count is priced by the same fixed calculation as everything else, so cost is never invented on the fly (ADR-02). And the advisor may simulate freely, but can only act after the customer's explicit confirmation in Step 7 — trying is reversible, doing is not (ADR-03).
