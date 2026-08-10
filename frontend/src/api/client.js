@@ -36,9 +36,9 @@ export async function login(identifier, password) {
   return { ok: false, error }
 }
 
-// Persists a completed onboarding profile. Resolves (rather than throws) on a
-// non-2xx so the registration screen can render the backend's message inline.
-// Backend must expose POST /api/register accepting { user, onboarding, subscriptions, credentials }.
+// Creates the essential account. The contract remains backwards-compatible with
+// callers that also include onboarding data, but the current UI deliberately sends
+// an empty onboarding first and offers the optional completion afterwards.
 export async function submitOnboarding(profile) {
   let res
   try {
@@ -55,6 +55,54 @@ export async function submitOnboarding(profile) {
   try {
     const body = await res.json()
     if (body?.detail) error = body.detail
+  } catch {
+    /* non-JSON error body — keep the generic message */
+  }
+  return { ok: false, error }
+}
+
+// Completes the optional mobility onboarding after the essential account has
+// already been created. This route may also create the user's initial subscription
+// holdings; later profile edits keep those holdings read-only.
+export async function completeOnboarding(userId, profile) {
+  const res = await fetch(`/api/onboarding/${encodeURIComponent(userId)}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  })
+  if (res.ok) return { ok: true, data: await res.json() }
+  let error = `Onboarding konnte nicht gespeichert werden (${res.status})`
+  try {
+    const body = await res.json()
+    if (typeof body?.detail === 'string') error = body.detail
+    else if (Array.isArray(body?.detail)) {
+      error = body.detail.map((item) => item?.msg).filter(Boolean).join(' · ') || error
+    }
+  } catch {
+    /* non-JSON error body — keep the generic message */
+  }
+  return { ok: false, error }
+}
+
+export async function getProfile(userId) {
+  const res = await fetch(`/api/profile/${encodeURIComponent(userId)}`)
+  return parseJson(res, 'Loading profile')
+}
+
+export async function updateProfile(userId, profile) {
+  const res = await fetch(`/api/profile/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  })
+  if (res.ok) return { ok: true, data: await res.json() }
+  let error = `Profil konnte nicht gespeichert werden (${res.status})`
+  try {
+    const body = await res.json()
+    if (typeof body?.detail === 'string') error = body.detail
+    else if (Array.isArray(body?.detail)) {
+      error = body.detail.map((item) => item?.msg).filter(Boolean).join(' · ') || error
+    }
   } catch {
     /* non-JSON error body — keep the generic message */
   }

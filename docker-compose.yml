@@ -1,5 +1,8 @@
 services:
   backend:
+    # Explicit local tag: avoids Docker Compose's directory-derived image name and
+    # lets a rebuild replace the application image deterministically.
+    image: aiim-mobility-advisor-backend:local
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -19,6 +22,7 @@ services:
       - "8000:8000"
 
   frontend:
+    image: aiim-mobility-advisor-frontend:local
     build:
       context: ./frontend
       dockerfile: Dockerfile

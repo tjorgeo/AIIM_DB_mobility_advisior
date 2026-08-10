@@ -62,7 +62,9 @@ chmod +x run.sh
 ./run.sh
 ```
 
-Alternativ kann Docker Compose direkt verwendet werden:
+Alternativ kann Docker Compose direkt verwendet werden. Dabei entfallen allerdings
+die Bereitschaftsprüfung und die Wiederholung bei kurzzeitig unterbrochenen
+Docker-Desktop-Antworten aus `run.sh`:
 
 ```bash
 docker compose up --build
@@ -320,65 +322,11 @@ volumes:
 
 ## Startscript `run.sh`
 
-Das Script `run.sh` dient nur noch als komfortabler Wrapper um Docker Compose. Es installiert keine lokalen Python- oder Node-Abhängigkeiten mehr.
-
-Empfohlener Inhalt:
-
-```bash
-#!/usr/bin/env bash
-
-# ==============================================================================
-# DB MoveOptimizer Docker Runner
-# Starts frontend, backend, and database via Docker Compose.
-# ==============================================================================
-
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-echo "======================================================================"
-echo "🚉 DB MoveOptimizer — Starting Docker Environment"
-echo "======================================================================"
-
-echo "🔍 Checking Docker..."
-
-if ! command -v docker &> /dev/null; then
-    echo "❌ Error: Docker is not installed or not available in PATH."
-    exit 1
-fi
-
-if ! docker compose version &> /dev/null; then
-    echo "❌ Error: Docker Compose is not available."
-    exit 1
-fi
-
-echo "✅ Docker and Docker Compose are available."
-
-if [ ! -f ".env" ]; then
-    echo "⚠️  Warning: .env file not found."
-    echo "ℹ️  Create one from .env.example if your services need environment variables."
-fi
-
-cleanup() {
-    echo ""
-    echo "🔌 Stopping Docker services..."
-    docker compose down --remove-orphans
-    echo "✅ Docker services stopped."
-}
-
-trap cleanup EXIT SIGINT SIGTERM
-
-echo "🚀 Building and starting services..."
-echo "📡 Backend:  http://localhost:8000"
-echo "🎨 Frontend: http://localhost:5173"
-echo "🗄️  Postgres: localhost:5432"
-echo "======================================================================"
-echo "ℹ️  Press Ctrl+C to stop all services."
-echo "======================================================================"
-
-docker compose up --build
-```
+Das Script `run.sh` ist der empfohlene Wrapper um Docker Compose. Es installiert
+keine lokalen Python- oder Node-Abhängigkeiten. Zusätzlich prüft es, ob der
+Docker-Daemon bereit ist, baut die Anwendung mit festen lokalen Image-Tags und
+wiederholt vorübergehend abgebrochene Docker-Desktop-Anfragen. Die Datei
+`run.sh` im Repository ist dabei die maßgebliche Version.
 
 Ausführbar machen:
 
@@ -540,19 +488,23 @@ UNI_GPT_MODEL=OpenAI GPT OSS 120b KI:Inferenz.nrw
 
 > Hinweis: `.env` enthält Secrets und ist in `.gitignore` — nicht committen.
 
-### Backend — agentic LangGraph
+### Backend — deterministische Analyse + agentischer Advisor
 
 Das Backend vereint die Session-/User-API (FastAPI, für das Frontend) mit einer
-agentischen LangGraph-Engine:
+deterministischen Analyse-Pipeline und einem agentischen LangGraph-Advisor:
 
-- `POST /api/analyze` — LangGraph-Pipeline (`load_context → analyst ∥ forecaster ∥ optimizer → communicator`).
-  Die deterministischen Agenten liefern die Zahlen (stabiler Contract); die Memos werden vom LLM
-  geschrieben (Fallback: Template, wenn kein Key gesetzt ist).
-- `POST /api/chat` — konversationeller Berater (ReAct-Agent mit `lookup_subscriptions`-Tool).
-- `POST /api/onboarding` — geführtes Profil-Onboarding, speichert neue Nutzer in Postgres.
+- `POST /api/analyze` — sequenzielle Pipeline (`load_context → analyze → forecast → communicate`);
+  deterministische Engines bleiben die Quelle aller Kosten- und CO₂-Zahlen.
+- `POST /api/chat/{session_id}` — konversationeller Advisor mit Tools und optionalem LLM.
+- `POST /api/register` — erstellt zunächst nur das essentielle Nutzerkonto.
+- `POST /api/onboarding/{user_id}/complete` — speichert das anschließend optionale Onboarding.
+- `GET /api/profile/{user_id}` — lädt die strukturierten Onboarding- und Profildaten samt
+  aktiven und inaktiven Abos zur reinen Anzeige.
+- `PUT /api/profile/{user_id}` — aktualisiert Profildaten und simulierte Verbindungen zu
+  Mobilitäts-Konten; Abos werden über diesen Endpunkt nicht verändert.
 
-`/api/chat` und `/api/onboarding` benötigen einen API-Key (sonst `503`, Frontend nutzt seinen
-Fallback). `/api/analyze` funktioniert immer.
+Chat-Folgeturns benötigen einen API-Key (sonst `503`, Frontend nutzt seinen Fallback).
+`/api/analyze`, Registrierung und Profilverwaltung funktionieren auch ohne LLM.
 
 Für Vite-Frontend-Variablen gilt: Variablen, die im Frontend-Code verfügbar sein sollen, müssen mit `VITE_` beginnen.
 
@@ -603,6 +555,19 @@ dist/
 ---
 
 ## Troubleshooting
+
+### `unable to get image ...: unexpected end of JSON input`
+
+Diese Meldung stammt von Docker Compose, nicht aus dem Frontend. Compose erwartet
+beim Prüfen eines Images eine JSON-Antwort vom Docker-Daemon, die Verbindung wurde
+aber vor dem vollständigen Empfang beendet. Das kann insbesondere während eines
+Docker-Desktop-Updates oder -Neustarts auftreten.
+
+`./run.sh` prüft deshalb zuerst den Daemon, verwendet feste lokale Image-Namen und
+wiederholt Build beziehungsweise Start bei diesem vorübergehenden Verbindungsfehler
+automatisch. Falls Docker Desktop dauerhaft nicht antwortet, Docker Desktop einmal
+neu starten, auf „Engine running“ warten und `./run.sh` erneut ausführen. Das
+PostgreSQL-Volume wird dabei nicht gelöscht.
 
 ### `services.depends_on must be a mapping`
 

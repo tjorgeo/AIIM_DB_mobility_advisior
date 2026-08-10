@@ -1,6 +1,6 @@
 # API Contract — DB MoveOptimizer Backend
 
-**Status:** Living document. Last reconciled with the code **2026-07-08**.
+**Status:** Living document. Last reconciled with the code **2026-08-10**.
 Source of truth is the code itself: backend routes in [`backend/src/main.py`](../backend/src/main.py)
 and [`backend/src/analysis_service.py`](../backend/src/analysis_service.py); frontend consumers in
 `frontend/src/api/client.js`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/components/chat/useChat.js`.
@@ -36,8 +36,41 @@ carry no hash fall back to the shared demo password (`DEMO_LOGIN_PASSWORD`, defa
 ```
 
 ### `POST /api/register`
-Persists a completed onboarding profile. Body: `{ user, onboarding, subscriptions, credentials }`
-(see `register_endpoint.py`). Rate-limited. Resolves non-2xx with `{ "detail": "…" }`.
+Creates the essential account and an empty onboarding row. Body:
+`{ user, credentials, onboarding?: {}, subscriptions?: [] }` (see `register_endpoint.py`).
+Birth date and home location can be `null`; the endpoint does not create placeholder values.
+Rate-limited. Resolves non-2xx with `{ "detail": "…" }`.
+
+### `POST /api/onboarding/{user_id}/complete`
+Completes the optional onboarding after registration. Body: `{ user, onboarding, subscriptions }`.
+Persists preferences, the simulated mobility-account connections, and the initial subscription
+holdings. Repeated requests after completion are idempotent and do not duplicate subscriptions.
+
+### `GET /api/profile/{user_id}`
+Loads the editable profile form from `users` and `user_onboardings`. The response also contains
+all current/historical `subscriptions` including `subscription_status`, `valid_from`,
+`valid_until`, and `status_changed_at`. Subscriptions are display-only in profile editing.
+
+### `PUT /api/profile/{user_id}`
+Atomically replaces the structured form fields, including simulated mobility-account
+connections. It does not add, remove, cancel, or otherwise mutate subscriptions.
+
+```jsonc
+{
+  "user": { "first_name": "Julia", "last_name": "Berger", "email": "…",
+    "gender": "female", "date_of_birth": "1991-04-12", "home_city": "Leipzig",
+    "home_postal_code": "04109", "home_country_code": "DE" },
+  "onboarding": { "has_driving_license": true, "car_access": "shared",
+    "bike_access": ["own"], "preferred_transport_modes": ["regional_train"],
+    "avoided_transport_modes": [], "score_money": 80, "score_emission": 60,
+    "score_flexibility": 50,
+    "connected_mobility_accounts": ["deutschlandticket", "nextbike"] }
+}
+```
+
+The frontend displays active and inactive subscription records separately. Subscription status
+changes must originate outside this profile endpoint. The frontend forces a fresh analysis after
+a successful profile update.
 
 ---
 

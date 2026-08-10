@@ -28,9 +28,18 @@ ON CONFLICT (user_id) DO NOTHING;
 -- user_onboardings
 -- ----------------------------------------------------------------------------
 CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings);
+ALTER TABLE tmp_user_onboardings ALTER COLUMN onboarding_status SET DEFAULT 'completed';
 ALTER TABLE tmp_user_onboardings ALTER COLUMN bike_access TYPE TEXT;
 
-COPY tmp_user_onboardings
+COPY tmp_user_onboardings (
+    onboarding_id, user_id, employment_status, occupation, work_city,
+    work_postal_code, work_country_code, work_arrangement, remote_work_share,
+    household_size, household_type, income_band, mobility_budget_monthly_eur,
+    has_driving_license, car_access, bike_access, preferred_transport_modes,
+    avoided_transport_modes, mobility_constraints, score_emission, score_money,
+    score_flexibility, typical_weekday_pattern, typical_weekend_pattern,
+    travel_statement, activity_statement
+)
 FROM '/seed/user_onboardings_v4.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 

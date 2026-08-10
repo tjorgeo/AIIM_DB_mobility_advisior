@@ -347,11 +347,16 @@ All endpoints are defined in `src/main.py`.
 | --- | --- | --- |
 | `GET /` | health/info | — |
 | `POST /api/login` | authenticate a user by username/email + shared password | body `{ "identifier": "…", "password": "…" }`; returns the session user object, else `401`. See §8a |
+| `POST /api/register` | create the essential account | writes `users` plus an initially empty `user_onboardings` row |
+| `POST /api/onboarding/{user_id}/complete` | complete optional onboarding | fills preferences/connections and records the initial subscriptions; idempotent after completion |
+| `GET /api/profile/{user_id}` | load editable profile data | returns user/onboarding fields plus active and historical subscriptions for read-only display |
+| `PUT /api/profile/{user_id}` | update editable profile data | atomically updates profile fields and mobility-account connections; never mutates subscriptions |
 | `GET /api/personas` | list DB users + onboarding prefs + subscriptions | reads the production schema directly |
 | `POST /api/analyze` | run the 4‑agent pipeline for a user | body `{ "user_id": "…" }`; persists a `recommendations` row |
 | `POST /api/recommendations/{id}/approve` | mark a recommendation approved | body `{ "scenario_id": "A" }`; sets `analysis_status='approved'`, `selected_scenario_id`, `approved_at` |
-| `POST /api/chat` | conversational advisor (ReAct + catalog tool) | **requires** an LLM key, else `503` |
-| `POST /api/onboarding` | conversational onboarding → writes a new user | **requires** an LLM key, else `503`; writes `users` + `user_onboardings` + `user_subscriptions` |
+| `POST /api/chat/{session_id}` | session-grounded advisor turn or opening briefing | follow-up turns require an LLM key; opening briefing has a template fallback |
+| `POST /api/chat/{session_id}/stream` | SSE streaming advisor turn | emits token/done/confirm-required events |
+| `POST /api/chat/{session_id}/confirm` | resolve a pending subscription change | explicit human-in-the-loop confirmation gate |
 
 ---
 

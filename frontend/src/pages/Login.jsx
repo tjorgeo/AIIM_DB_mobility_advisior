@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { ArrowRight, Wallet, Leaf, Route, AlertCircle, X, Check, Ban, ChevronLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { submitOnboarding } from '../api/client'
+import { completeOnboarding, submitOnboarding } from '../api/client'
 import Logo from '../components/Logo'
 import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
+import { mobilityAccountLabel } from '../lib/mobilityAccounts'
 
 const FEATURES = [
   { icon: Wallet, text: 'Sieh genau, was deine Mobilität kostet – und wo Geld verloren geht.' },
@@ -266,6 +267,7 @@ export default function Login() {
 
   // Onboarding Umfrage-Daten
   const [onboardingStep, setOnboardingStep] = useState(1)
+  const onboardingStepPosition = ({ 11: 10, 13: 11, 14: 12 })[onboardingStep] || onboardingStep
   const [services, setServices] = useState([])
   const [hasLicense, setHasLicense] = useState(null)
   const [carAccess, setCarAccess] = useState('')
@@ -302,54 +304,110 @@ export default function Login() {
   const [lastName, setLastName] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
+  const [regPasswordConfirm, setRegPasswordConfirm] = useState('')
   const [gender, setGender] = useState('')
 
-  // Partner-Konten (Schritt 14): simuliertes Verbinden von Mobilitäts-Anbietern.
-  // Es wird nichts eingegeben oder übertragen — ein Klick startet nur eine kurze
-  // Ladeanimation, danach gilt der Anbieter als verbunden.
+  // Partner-Konten (Schritt 14): Die Anmeldung bleibt simuliert; der verbundene
+  // Status wird aber als Teil des Onboarding-Profils im Backend persistiert.
   const [connectedAccounts, setConnectedAccounts] = useState({}) // { [serviceId]: true }
   const [connectingId, setConnectingId] = useState('')           // welcher Anbieter gerade „verbindet" (Spinner)
+  const connectionTimerRef = useRef(null)
 
   // Kalender-Einbindung (Schritt 14): rein kosmetische Ja/Nein-Abfrage, wird nicht
   // ausgewertet oder übertragen — es gibt keine echte Kalender-Integration.
   const [calendarSync, setCalendarSync] = useState(null) // null | true | false
 
+  const cancelConnectionSimulation = () => {
+    if (connectionTimerRef.current) clearTimeout(connectionTimerRef.current)
+    connectionTimerRef.current = null
+    setConnectingId('')
+  }
+
   const simulateConnect = (sid) => {
     if (connectingId || connectedAccounts[sid]) return
     setConnectingId(sid)
-    setTimeout(() => {
+    connectionTimerRef.current = setTimeout(() => {
       setConnectedAccounts((prev) => ({ ...prev, [sid]: true }))
       setConnectingId('')
+      connectionTimerRef.current = null
     }, 1200)
   }
+
+  useEffect(() => () => {
+    if (connectionTimerRef.current) clearTimeout(connectionTimerRef.current)
+  }, [])
 
   const setSubDetail = (sid, field, value) => {
     setSubscriptionDetails(prev => ({ ...prev, [sid]: { ...(prev[sid] || {}), [field]: value } }))
   }
 
-  const handleFinish = async () => {
+  const handleCreateAccount = async (event) => {
+    event?.preventDefault()
     setError('')
     if (!firstName.trim() || !lastName.trim() || !regEmail.trim() || !regPassword) {
       setError('Bitte Vor-/Nachname, E-Mail und Passwort ausfüllen.')
       return
     }
-    const remoteShare =
-      workArrangement === 'remote' ? 1
-      : workArrangement === 'onsite' ? 0
-      : (workArrangement === 'hybrid' && remoteDaysPerWeek != null) ? Number((remoteDaysPerWeek / 5).toFixed(3))
-      : null
+    if (regPassword.length < 8) {
+      setError('Das Passwort muss mindestens 8 Zeichen lang sein.')
+      return
+    }
+    if (regPassword !== regPasswordConfirm) {
+      setError('Die Passwörter stimmen nicht überein.')
+      return
+    }
+
+    const account = {
+      user: {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: regEmail.trim(),
+        gender: 'not_specified',
+        date_of_birth: null,
+        age: null,
+        home_city: null,
+        home_postal_code: null,
+        home_country_code: 'DE',
+      },
+      onboarding: {},
+      subscriptions: [],
+      credentials: { password: regPassword },
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await submitOnboarding(account)
+      if (!res.ok) {
+        setError(res.error || 'Registrierung fehlgeschlagen. Bitte erneut versuchen.')
+        return
+      }
+      if (!res.data?.user) {
+        setError('Das Konto wurde erstellt, konnte aber nicht automatisch geöffnet werden.')
+        return
+      }
+      setPendingUser(res.data.user)
+      setCurrentView('onboardingChoice')
+    } catch {
+      setError('Verbindung zum Server fehlgeschlagen.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleFinish = async () => {
+    setError('')
+    if (!pendingUser?.id) {
+      setError('Dein Konto konnte nicht zugeordnet werden. Bitte melde dich erneut an.')
+      return
+    }
 
     const workPatternSummary = typicalWorkPatterns.join(', ')
     const leisurePatternSummary = typicalLeisurePatterns.join(', ')
 
     const profile = {
       user: {
-        first_name: firstName.trim() || null,
-        last_name: lastName.trim() || null,
-        email: regEmail.trim() || null,
         gender: gender || 'not_specified',
         date_of_birth: birthYear ? `${birthYear}-01-01` : null,
-        age: birthYear ? (new Date().getFullYear() - Number(birthYear)) : null,
         home_city: homeCity.trim() || null,
         home_postal_code: homePostalCode.trim() || null,
         home_country_code: homeCountry || 'DE'
@@ -363,17 +421,12 @@ export default function Login() {
         score_money: priorityScores.budget * 10,
         score_emission: priorityScores.environmental_concerns * 10,
         score_flexibility: priorityScores.time * 10,
-        work_arrangement: workArrangement || null,
-        work_city: workCity.trim() || null,
-        work_postal_code: workPostalCode.trim() || null,
-        remote_work_share: remoteShare,
         mobility_budget_monthly_eur: mobilityBudget !== '' ? Number(mobilityBudget) : null,
-        household_size: householdSize ? (householdSize === '5+' ? 5 : Number(householdSize)) : null,
-        income_band: incomeBand || null,
         typical_weekday_pattern: workPatternSummary || null,
         typical_weekend_pattern: leisurePatternSummary || null,
         travel_statement: `Bevorzugt: ${frequentModes.join(', ') || 'k. A.'}. Meidet: ${avoidModes.join(', ') || 'nichts'}.`,
-        activity_statement: `Arbeit/Verpflichtungen: ${workPatternSummary || 'k. A.'}. Freizeit/Wochenende: ${leisurePatternSummary || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : '') + (workNote.trim() ? ` Notiz Arbeit: ${workNote.trim()}.` : '')
+        activity_statement: `Arbeit/Verpflichtungen: ${workPatternSummary || 'k. A.'}. Freizeit/Wochenende: ${leisurePatternSummary || 'k. A.'}.` + (weekNote.trim() ? ` Notiz Woche: ${weekNote.trim()}.` : ''),
+        connected_mobility_accounts: Object.keys(connectedAccounts).filter((sid) => connectedAccounts[sid])
       },
       subscriptions: services.filter(s => s !== 'none').map(sid => {
         const config = SUBSCRIPTION_OPTIONS[sid] || {}
@@ -388,28 +441,33 @@ export default function Login() {
           travel_class: config.asksTravelClass ? (details.travel_class || null) : null
         }
       }),
-      credentials: { password: regPassword || null }
     }
 
     setSubmitting(true)
     try {
-      const res = await submitOnboarding(profile)
-      setSubmitting(false)
+      const res = await completeOnboarding(pendingUser.id, profile)
       if (res.ok) {
-        if (res.data?.user) {
-          setPendingUser(res.data.user)
-          setProcMsgIndex(0)
-          setCurrentView('processing')
-        } else {
-          setCurrentView('login')
-        }
+        setPendingUser(res.data?.user || { ...pendingUser, onboardingStatus: 'completed' })
+        setProcMsgIndex(0)
+        setCurrentView('processing')
       } else {
         setError(res.error || 'Speichern fehlgeschlagen. Bitte erneut versuchen.')
       }
     } catch {
-      setSubmitting(false)
       setError('Verbindung zum Server fehlgeschlagen.')
+    } finally {
+      setSubmitting(false)
     }
+  }
+
+  const handleSkipOnboarding = () => {
+    if (!pendingUser?.id) return
+    try {
+      sessionStorage.setItem('moveoptimizer.showOnboardingReminder', pendingUser.id)
+    } catch {
+      /* The one-time reminder is optional if browser storage is unavailable. */
+    }
+    setSession(pendingUser)
   }
 
   const COMPONENT_MESSAGES = [
@@ -432,6 +490,8 @@ export default function Login() {
     setServices(prev => {
       if (serviceId === 'none') {
         setSubscriptionDetails({})
+        setConnectedAccounts({})
+        cancelConnectionSimulation()
         return prev.includes('none') ? [] : ['none']
       }
       const withoutNone = prev.filter(s => s !== 'none')
@@ -441,6 +501,12 @@ export default function Login() {
           delete next[serviceId]
           return next
         })
+        setConnectedAccounts((prevAccounts) => {
+          const next = { ...prevAccounts }
+          delete next[serviceId]
+          return next
+        })
+        if (connectingId === serviceId) cancelConnectionSimulation()
         return withoutNone.filter(s => s !== serviceId)
       }
       return [...withoutNone, serviceId]
@@ -809,7 +875,7 @@ export default function Login() {
           </div>
 
           <div className="welcome-card">
-            <button onClick={() => setCurrentView('onboarding')} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.15)' }}>
+            <button onClick={() => { setError(''); setCurrentView('register') }} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(0, 242, 254, 0.15)' }}>
               Registrieren
             </button>
             <button onClick={() => setCurrentView('login')} style={{ width: '100%', padding: '1.1rem', backgroundColor: 'transparent', color: colors.text, borderRadius: '14px', border: `1px solid ${colors.border}`, fontSize: '1.05rem', fontWeight: '600', cursor: 'pointer' }}>
@@ -824,15 +890,67 @@ export default function Login() {
       )}
 
       {/* =========================================================
+          ANSICHT: ESSENTIELLE KONTOERSTELLUNG
+          ========================================================= */}
+      {currentView === 'register' && (
+        <div className="login-view-container">
+          <div className="login-inner-card">
+            <div style={{ alignSelf: 'flex-start', marginBottom: '2rem' }}>
+              <button type="button" className="premium-back-btn" onClick={() => setCurrentView('welcome')}>
+                <ChevronLeft size={16} /> Zurück
+              </button>
+            </div>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem', textAlign: 'left' }}>Konto erstellen</h2>
+            <p style={{ color: colors.textMuted, marginBottom: '2rem', textAlign: 'left', fontSize: '0.95rem', lineHeight: '1.45' }}>Starte mit den wichtigsten Angaben. Dein Mobilitätsprofil kannst du direkt danach oder später vervollständigen.</p>
+            <form onSubmit={handleCreateAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <div className="responsive-form-grid">
+                <div style={{ textAlign: 'left' }}><label style={inputLabelStyle}>Vorname</label><input autoComplete="given-name" required type="text" placeholder="Max" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={textInputStyle} /></div>
+                <div style={{ textAlign: 'left' }}><label style={inputLabelStyle}>Nachname</label><input autoComplete="family-name" required type="text" placeholder="Mustermann" value={lastName} onChange={(e) => setLastName(e.target.value)} style={textInputStyle} /></div>
+              </div>
+              <div style={{ textAlign: 'left' }}><label style={inputLabelStyle}>E-Mail-Adresse</label><input autoComplete="email" required type="email" placeholder="name@example.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} style={textInputStyle} /></div>
+              <div className="responsive-form-grid">
+                <div style={{ textAlign: 'left' }}><label style={inputLabelStyle}>Passwort</label><input autoComplete="new-password" required minLength={8} type="password" placeholder="Mindestens 8 Zeichen" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} style={textInputStyle} /></div>
+                <div style={{ textAlign: 'left' }}><label style={inputLabelStyle}>Passwort wiederholen</label><input autoComplete="new-password" required minLength={8} type="password" placeholder="Passwort bestätigen" value={regPasswordConfirm} onChange={(e) => setRegPasswordConfirm(e.target.value)} style={textInputStyle} /></div>
+              </div>
+              {error && <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: colors.errorText, backgroundColor: colors.errorBg, padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}><AlertCircle size={16} /><span>{error}</span></div>}
+              <p style={{ fontSize: '0.72rem', color: colors.textMuted, lineHeight: '1.45', textAlign: 'left' }}>Mit der Registrierung akzeptierst du unsere Nutzungsbedingungen und Datenschutzrichtlinie.</p>
+              <button type="submit" disabled={submitting} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.05rem', fontWeight: '700', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.65 : 1 }}>{submitting ? 'Konto wird erstellt…' : 'Konto erstellen'}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          ANSICHT: ONBOARDING JETZT ODER SPÄTER
+          ========================================================= */}
+      {currentView === 'onboardingChoice' && (
+        <div className="login-view-container">
+          <div className="login-inner-card" style={{ textAlign: 'left' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '15px', display: 'grid', placeItems: 'center', color: colors.onAccent, background: `linear-gradient(135deg, ${colors.accentCyan}, ${colors.accentPurple})`, marginBottom: '1.25rem' }}><Check size={24} /></div>
+            <h2 style={{ fontSize: '1.8rem', fontWeight: '800', color: colors.text, marginBottom: '0.5rem' }}>Dein Konto ist erstellt</h2>
+            <p style={{ color: colors.textMuted, marginBottom: '1.75rem', fontSize: '0.95rem', lineHeight: '1.5' }}>Mit ein paar freiwilligen Angaben können wir deine Empfehlungen besser auf dich abstimmen.</p>
+            <div style={{ backgroundColor: colors.inputBg, border: `1px solid ${colors.border}`, borderRadius: '16px', padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ color: colors.text, fontWeight: '750', marginBottom: '.25rem' }}>Mobilitätsprofil vervollständigen</div>
+              <div style={{ color: colors.textMuted, fontSize: '.82rem', lineHeight: '1.45' }}>Führerschein, Verkehrsmittel, Präferenzen, Abos und Wochenmuster · etwa 3 Minuten</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.7rem' }}>
+              <button type="button" onClick={() => { setError(''); setOnboardingStep(1); setCurrentView('onboarding') }} style={{ width: '100%', padding: '1.05rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1rem', fontWeight: '750', cursor: 'pointer' }}>Onboarding jetzt durchführen</button>
+              <button type="button" onClick={handleSkipOnboarding} style={{ width: '100%', padding: '1.05rem', backgroundColor: colors.card, color: colors.text, borderRadius: '14px', border: `1px solid ${colors.border}`, fontSize: '1rem', fontWeight: '650', cursor: 'pointer' }}>Später im Profil vervollständigen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
           ANSICHT 2: FRAGE-SCHRITTE (ONBOARDING KARTEN-WIZARD)
           ========================================================= */}
       {currentView === 'onboarding' && (
         <div className="onboarding-step-layout">
           <div className="onboarding-inner-card">
             
-            {/* Visual Progress Bar (Basiert auf 14 Schritten) */}
+            {/* Visual Progress Bar */}
             <div style={{ width: '100%', height: '4px', backgroundColor: colors.border, borderRadius: '99px', marginBottom: '1.5rem', overflow: 'hidden' }}>
-              <div style={{ width: `${(onboardingStep / 15) * 100}%`, height: '100%', backgroundColor: colors.accentCyan, borderRadius: '99px', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+              <div style={{ width: `${(onboardingStepPosition / 12) * 100}%`, height: '100%', backgroundColor: colors.accentCyan, borderRadius: '99px', transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }} />
             </div>
 
             {/* Header mit Zurück-Button & Schrittanzeige */}
@@ -842,12 +960,18 @@ export default function Login() {
                 className="premium-back-btn"
                 onClick={() => {
                   if (onboardingStep === 1) {
-                    setCurrentView('welcome')
+                    setCurrentView('onboardingChoice')
                   } else if (onboardingStep === 2) {
                     setHasLicense(null)
                     setCarAccess('')
                     setBikeAccess([])
                     setOnboardingStep(1)
+                  } else if (onboardingStep === 11) {
+                    setOnboardingStep(9)
+                  } else if (onboardingStep === 13) {
+                    setOnboardingStep(11)
+                  } else if (onboardingStep === 14) {
+                    setOnboardingStep(13)
                   } else {
                     setOnboardingStep(onboardingStep - 1)
                   }
@@ -857,7 +981,7 @@ export default function Login() {
               </button>
 
               <span style={{ fontSize: '0.82rem', color: colors.textMuted, fontWeight: '700', letterSpacing: '0.02em' }}>
-                Schritt {onboardingStep} von 15
+                Schritt {onboardingStepPosition} von 12
               </span>
             </div>
 
@@ -1275,10 +1399,10 @@ export default function Login() {
                     {(() => {
                       const ready = homeCity.trim() && homePostalCode.trim();
                       return (
-                        <button onClick={() => setOnboardingStep(10)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(11)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setHomeCity(''); setHomePostalCode(''); setOnboardingStep(10); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setHomeCity(''); setHomePostalCode(''); setOnboardingStep(11); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
@@ -1370,10 +1494,10 @@ export default function Login() {
                     {(() => {
                       const ready = mobilityBudget !== '' && Number(mobilityBudget) >= 0;
                       return (
-                        <button onClick={() => setOnboardingStep(12)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
+                        <button onClick={() => setOnboardingStep(13)} disabled={!ready} style={{ width: '100%', padding: '1.1rem', backgroundColor: ready ? colors.accentCyan : colors.card, color: ready ? colors.onAccent : colors.textMuted, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: ready ? 'pointer' : 'not-allowed', transition: 'all 0.2s' }}>Weiter</button>
                       );
                     })()}
-                    <button onClick={() => { setMobilityBudget(''); setOnboardingStep(12); }} style={skipLinkStyle}>Überspringen</button>
+                    <button onClick={() => { setMobilityBudget(''); setOnboardingStep(13); }} style={skipLinkStyle}>Überspringen</button>
                   </div>
                 </div>
               )}
@@ -1458,7 +1582,7 @@ export default function Login() {
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                           {linkable.map((sid) => {
-                            const label = SUBSCRIPTION_OPTIONS[sid]?.label || sid
+                            const label = mobilityAccountLabel(sid)
                             const isConnected = !!connectedAccounts[sid]
                             const isConnecting = connectingId === sid
                             const initial = String(label).replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase() || '•'
@@ -1501,7 +1625,8 @@ export default function Login() {
                       {linkable.length > 0 && (
                         <span style={{ fontSize: '0.8rem', color: colors.textMuted, textAlign: 'center' }}>{connectedCount} von {linkable.length} verbunden</span>
                       )}
-                      <button type="button" onClick={() => setOnboardingStep(15)} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>Weiter</button>
+                      {error && <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: colors.errorText, backgroundColor: colors.errorBg, padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem' }}><AlertCircle size={16} /><span>{error}</span></div>}
+                      <button type="button" onClick={handleFinish} disabled={submitting} style={{ width: '100%', padding: '1.1rem', backgroundColor: colors.accentCyan, color: colors.onAccent, borderRadius: '14px', border: 'none', fontSize: '1.1rem', fontWeight: '700', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.65 : 1, transition: 'all 0.2s' }}>{submitting ? 'Wird gespeichert…' : 'Onboarding abschließen'}</button>
                     </div>
                   </div>
                 )

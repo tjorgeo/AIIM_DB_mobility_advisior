@@ -6,7 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from register_endpoint import register 
+from register_endpoint import OnboardingCompletionRequest, complete_onboarding, register
+from profile_endpoint import (
+    ProfileUpdateRequest,
+    ensure_profile_schema,
+    get_profile,
+    update_profile,
+)
 from auth_utils import verify_password
 
 
@@ -25,6 +31,7 @@ DEMO_LOGIN_PASSWORD = os.environ.get("DEMO_LOGIN_PASSWORD", "mobility")
 async def lifespan(app: FastAPI):
     print("Verifying Postgres connectivity (schema provisioned by database/init)...")
     ping_db()
+    ensure_profile_schema()
     # Build the advisor's LangGraph checkpointer and create its tables up front, so a
     # misconfigured checkpointer fails loudly at boot rather than on the first chat turn.
     # Never fatal: the app still serves analysis + the template briefing without it.
@@ -121,6 +128,20 @@ def read_root():
     }
 
 app.post("/api/register")(register)   
+
+
+@app.post("/api/onboarding/{user_id}/complete")
+def save_completed_onboarding(user_id: str, req: OnboardingCompletionRequest):
+    return complete_onboarding(user_id, req)
+
+app.get("/api/profile/{user_id}")(get_profile)
+
+
+@app.put("/api/profile/{user_id}")
+def save_profile(user_id: str, req: ProfileUpdateRequest):
+    return update_profile(user_id, req)
+
+
 @app.post("/api/login")
 def login(req: LoginRequest):
     """
@@ -134,10 +155,12 @@ def login(req: LoginRequest):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT user_id, first_name, last_name, email, username, password_hash
-        FROM users
-        WHERE username = ? OR email = ?
-        ORDER BY (username = ?) DESC
+        SELECT u.user_id, u.first_name, u.last_name, u.email, u.username,
+               u.password_hash, COALESCE(o.onboarding_status, 'completed') AS onboarding_status
+        FROM users u
+        LEFT JOIN user_onboardings o ON o.user_id = u.user_id
+        WHERE u.username = ? OR u.email = ?
+        ORDER BY (u.username = ?) DESC
         LIMIT 1
         """,
         (req.identifier, req.identifier, req.identifier),
@@ -171,6 +194,7 @@ def login(req: LoginRequest):
         "email": user.get("email"),
         "username": user.get("username"),
         "initials": initials,
+        "onboardingStatus": user.get("onboarding_status") or "completed",
     }
 
 
@@ -215,6 +239,7 @@ def get_personas():
                s.subscription_status, s.is_primary_mobility_option
         FROM user_subscriptions s
         LEFT JOIN subscription_catalogs c ON c.subscription_id = s.subscription_id
+        WHERE s.subscription_status = 'active'
         """
     )
     subs_by_user = {}

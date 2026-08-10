@@ -245,7 +245,10 @@ class AnalysisService:
             "customer_name": user["name"],
             "db_customer_id": user["user_id"],
             "preferences": preferences,
-            "current_subscriptions": subscriptions,
+            "current_subscriptions": [
+                item for item in subscriptions
+                if item.get("subscription_status") == "active"
+            ],
             "summary": {
                 "total_actual_annual_cost_eur": total_actual_annual_cost,
                 "total_co2_kg": analyst_out.get("total_co2_kg"),

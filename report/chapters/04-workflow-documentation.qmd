@@ -8,6 +8,13 @@
 6. **Trying a change before committing to it.** If the customer considers a change like "what if I switch to X", "what if I keep the car but drop the transit pass", the advisor can simulate it and show the new numbers without touching anything real yet.
 7. **A confirmation before anything happens.** Only once the customer explicitly agrees does the advisor carry out the change. Nothing is subscribed, cancelled, or switched without that confirmation.
 
+Customers can also reopen the answers from their original onboarding through **Edit profile**.
+The profile view writes personal data, mobility access, preferences, priority weights, work and
+household context, weekly patterns, and simulated mobility-account connections back to PostgreSQL.
+Active and inactive subscriptions are shown there for context, but the profile view cannot add,
+remove, cancel, or reactivate them. Saving the editable profile data triggers a fresh analysis so
+the new answers affect the dashboard immediately.
+
 Steps 1–3 run as a fixed sequence, each step feeding the next, which is what makes the resulting numbers reproducible rather than best-effort (@fig-pipeline, previous chapter). Steps 4–7 happen inside an open-ended conversation, where the advisor picks from a handful of defined actions, like look something up, simulate a change, or apply one, based on what the customer asks. The fixed sequence is the analysis pipeline; the conversational half is the Advisor.
 
 Two decisions matter here, both because a wrong answer is worse than a slow one. Price is always the deterministic engine's job: the model may forecast how much a customer will travel, but that predicted trip count is priced by the same fixed calculation as everything else, so cost is never invented on the fly (ADR-02). And the advisor may simulate freely, but can only act after the customer's explicit confirmation in Step 7 — trying is reversible, doing is not (ADR-03).

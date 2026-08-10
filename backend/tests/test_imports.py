@@ -25,6 +25,9 @@ HANDLER_DEPS = [
     ("agent.engines", "template_memos"),
     ("agent.context", "load_context"),
     ("register_endpoint", "register"),
+    ("register_endpoint", "complete_onboarding"),
+    ("profile_endpoint", "get_profile"),
+    ("profile_endpoint", "update_profile"),
     ("auth_utils", "verify_password"),
 ]
 
@@ -33,7 +36,9 @@ EXPECTED_ROUTES = {
     "/api/chat/{session_id}",
     "/api/login",
     "/api/register",
+    "/api/onboarding/{user_id}/complete",
     "/api/personas",
+    "/api/profile/{user_id}",
     "/api/recommendations/{rec_id}/approve",
 }
 

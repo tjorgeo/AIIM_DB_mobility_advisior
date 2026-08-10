@@ -14,13 +14,14 @@ import ThemeToggle from '../components/ThemeToggle.jsx'
 import TravelInsights from './TravelInsights.jsx'
 import CostBreakdown from './CostBreakdown.jsx'
 import PortfolioDetail from './PortfolioDetail.jsx'
+import ProfileEdit from './ProfileEdit.jsx'
 import { modeLabel } from '../lib/travelModes'
 
 export default function Dashboard() {
-  const { logout, currentUser } = useAuth()
+  const { logout, currentUser, setSession } = useAuth()
   const [lang, setLang] = useState('DE') // Standardmäßig auf Deutsch
   const [profileMenuOpen, setProfileMenuOpen] = useState(false) // State für das kleine Fenster
-  const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' | 'portfolio' — kein Router nötig, gleiches Muster wie Login.jsx currentView
+  const [view, setView] = useState('overview') // 'overview' | 'insights' | 'cost' | 'portfolio' | 'profile' — kein Router nötig
 
   // DOM node the currently active view has mounted as its chat sidebar slot
   // (an <aside ref={chatSlotRef}>, see each view below). ChatWidget portals
@@ -110,6 +111,10 @@ export default function Dashboard() {
       editProfile: 'Profildaten ändern',
       subAndTickets: 'Abos + Tickets',
       refreshTitle: 'Analyse neu berechnen',
+      onboardingReminderTitle: 'Mobilitätsprofil später vervollständigen',
+      onboardingReminderText: 'Dein Konto ist bereit. Du kannst das übersprungene Onboarding jederzeit über „Profildaten ändern“ fortsetzen.',
+      onboardingReminderOpen: 'Profildaten ändern',
+      onboardingReminderLater: 'Später',
     },
     EN: {
       optimized: "You're optimized",
@@ -144,8 +149,26 @@ export default function Dashboard() {
       editProfile: 'Edit Profile',
       subAndTickets: 'Subscriptions + tickets',
       refreshTitle: 'Recompute analysis',
+      onboardingReminderTitle: 'Complete your mobility profile later',
+      onboardingReminderText: 'Your account is ready. You can continue the skipped onboarding at any time through “Edit profile”.',
+      onboardingReminderOpen: 'Edit profile',
+      onboardingReminderLater: 'Later',
     }
   }[lang]
+
+  const [showOnboardingReminder, setShowOnboardingReminder] = useState(false)
+  useEffect(() => {
+    if (!currentUser?.id) return
+    try {
+      const reminderUserId = sessionStorage.getItem('moveoptimizer.showOnboardingReminder')
+      if (reminderUserId === currentUser.id) {
+        sessionStorage.removeItem('moveoptimizer.showOnboardingReminder')
+        setShowOnboardingReminder(true)
+      }
+    } catch {
+      /* The post-registration reminder is optional if storage is unavailable. */
+    }
+  }, [currentUser?.id])
 
   // Farbpalette exakt passend zur Onboarding/Login-Seite
   const { isDark } = useTheme()
@@ -162,6 +185,7 @@ export default function Dashboard() {
     text: '#ffffff',
     onAccent: '#000000',
     inputBg: '#1c1c1f',
+    menuHoverBg: '#222226',
     selectFill: 'rgba(168,85,247,0.10)',
     cyanFill: 'rgba(0,242,254,0.06)',
     infoText: '#cbd5e1',
@@ -180,6 +204,7 @@ export default function Dashboard() {
     text: '#111827',
     onAccent: '#ffffff',
     inputBg: '#f2f4f7',
+    menuHoverBg: '#eef1f4',
     selectFill: 'rgba(124,58,237,0.08)',
     cyanFill: 'rgba(4,153,173,0.08)',
     infoText: '#3f5a4e',
@@ -231,13 +256,28 @@ export default function Dashboard() {
       .finally(() => setRefreshing(false))
   }
 
+  const handleProfileSaved = (updatedUser) => {
+    if (updatedUser) setSession({ ...currentUser, ...updatedUser })
+    setProfileMenuOpen(false)
+    setCancelledSubs([])
+    setView('overview')
+    setAnalysis(null)
+    setLoadingData(true)
+    analyze(currentUser.id, { force: true })
+      .then((res) => setAnalysis(res))
+      .catch(() => { /* profile is saved even if the follow-up analysis fails */ })
+      .finally(() => setLoadingData(false))
+  }
+
   const langKey = lang.toLowerCase()
   const analyst = analysis?.raw_agent_payloads?.analyst?.output || null
   const summary = analysis?.summary || null
   const communicator = analysis?.raw_agent_payloads?.communicator?.output || null
   const recommended = summary || null
   const currentSubscriptions = analysis?.current_subscriptions || []
-  const visibleSubscriptions = currentSubscriptions.filter((s) => !cancelledSubs.includes(s.provider_plan_name))
+  const visibleSubscriptions = currentSubscriptions.filter(
+    (s) => s.subscription_status === 'active' && !cancelledSubs.includes(s.provider_plan_name)
+  )
   // subscription_coverage carries the per-subscription worth-it check (net_savings_eur);
   // joined on subscription_id (the catalog id, shared with current_subscriptions).
   const coverageBySubId = new Map((analyst?.subscription_coverage || []).map((c) => [c.subscription_id, c]))
@@ -297,7 +337,19 @@ export default function Dashboard() {
   // navigation between views, wiping the conversation each time.
   let pageContent
 
-  if (view === 'insights') {
+  if (view === 'profile') {
+    pageContent = (
+      <ProfileEdit
+        userId={currentUser.id}
+        lang={lang}
+        colors={colors}
+        isDark={isDark}
+        onBack={() => setView('overview')}
+        onSaved={handleProfileSaved}
+        chatSlotRef={chatSlotRef}
+      />
+    )
+  } else if (view === 'insights') {
     pageContent = (
       <TravelInsights
         analysis={analysis}
@@ -504,11 +556,16 @@ export default function Dashboard() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '0.25rem',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                boxShadow: isDark
+                  ? '0 10px 30px rgba(0,0,0,0.5)'
+                  : '0 12px 32px rgba(17,24,39,0.14)',
                 zIndex: 110
               }}>
                 <button 
-                  onClick={() => {}} 
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    setView('profile')
+                  }}
                   style={{
                     backgroundColor: 'transparent',
                     border: 'none',
@@ -521,7 +578,7 @@ export default function Dashboard() {
                     cursor: 'pointer',
                     transition: 'background-color 0.15s'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#222226'}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.menuHoverBg}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   👤 {t.editProfile}
@@ -541,7 +598,7 @@ export default function Dashboard() {
                     cursor: 'pointer',
                     transition: 'background-color 0.15s'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#222226'}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.menuHoverBg}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   ⚙️ {t.settings}
@@ -864,6 +921,21 @@ export default function Dashboard() {
   return (
     <>
       {pageContent}
+      {showOnboardingReminder && (
+        <div role="dialog" aria-modal="true" aria-labelledby="onboarding-reminder-title" style={{ position: 'fixed', right: '1.25rem', bottom: '1.25rem', width: 'min(390px, calc(100vw - 2.5rem))', backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderRadius: '18px', padding: '1.1rem', boxShadow: isDark ? '0 20px 50px rgba(0,0,0,.65)' : '0 20px 50px rgba(17,24,39,.2)', zIndex: 500 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.75rem' }}>
+            <span style={{ width: '36px', height: '36px', borderRadius: '11px', display: 'grid', placeItems: 'center', flexShrink: 0, color: colors.accentCyan, backgroundColor: colors.cyanFill }}><CheckCircle2 size={19} /></span>
+            <div>
+              <div id="onboarding-reminder-title" style={{ color: colors.text, fontWeight: 800, fontSize: '.95rem' }}>{t.onboardingReminderTitle}</div>
+              <p style={{ color: colors.textMuted, fontSize: '.8rem', lineHeight: 1.5, marginTop: '.3rem' }}>{t.onboardingReminderText}</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.55rem', marginTop: '1rem' }}>
+            <button type="button" onClick={() => setShowOnboardingReminder(false)} style={{ color: colors.textMuted, backgroundColor: 'transparent', border: 'none', padding: '.6rem .75rem', fontWeight: 650, cursor: 'pointer' }}>{t.onboardingReminderLater}</button>
+            <button type="button" onClick={() => { setShowOnboardingReminder(false); setView('profile') }} style={{ color: colors.onAccent, backgroundColor: colors.accentCyan, border: 'none', borderRadius: '10px', padding: '.6rem .8rem', fontWeight: 750, cursor: 'pointer' }}>{t.onboardingReminderOpen}</button>
+          </div>
+        </div>
+      )}
       {currentUser?.id && (
         <ChatWidget
           user={currentUser}

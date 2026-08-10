@@ -94,15 +94,15 @@ CREATE TABLE IF NOT EXISTS users (
     -- Person Information
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
-    date_of_birth DATE NOT NULL,
-    age INTEGER NOT NULL CHECK (age >= 0),
+    date_of_birth DATE,
+    age INTEGER CHECK (age IS NULL OR age >= 0),
     gender TEXT NOT NULL DEFAULT 'not_specified'
         CHECK (gender IN ('female', 'male', 'diverse', 'not_specified')),
     life_stage TEXT,
 
     -- Home Location
-    home_city TEXT NOT NULL,
-    home_postal_code TEXT NOT NULL,
+    home_city TEXT,
+    home_postal_code TEXT,
     home_country_code CHAR(2) NOT NULL DEFAULT 'DE'
 );
 
@@ -114,6 +114,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username_lower ON users (lower(userna
 CREATE TABLE IF NOT EXISTS user_onboardings (
     onboarding_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+
+    -- Optional onboarding can be skipped after account creation and completed later.
+    onboarding_status TEXT NOT NULL DEFAULT 'completed'
+        CONSTRAINT ck_user_onboardings_status
+        CHECK (onboarding_status IN ('not_started', 'in_progress', 'completed')),
+    onboarding_completed_at TIMESTAMPTZ,
 
     -- Work / Employment
     employment_status TEXT,
@@ -197,6 +203,10 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
                 'expired'
             )
         ),
+
+    -- Audit timestamp for status transitions. Profile edits never delete a holding;
+    -- cancellation sets subscription_status='cancelled', valid_until and this timestamp.
+    status_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Usage / Relevance
     is_primary_mobility_option BOOLEAN NOT NULL DEFAULT FALSE,
