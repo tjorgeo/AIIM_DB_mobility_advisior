@@ -378,6 +378,22 @@ def chat_session_stream(session_id: str, req: SessionChatRequest):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.get("/api/chat/{session_id}/messages")
+def chat_session_messages(session_id: str):
+    """The stored transcript of one session, oldest first — what the UI re-renders after a
+    page reload.
+
+    Read-only: it never runs a turn, so it needs no LLM key and costs nothing. Each message
+    carries the Langfuse ``trace_id`` of the turn that produced it (nullable), so thumbs
+    feedback keeps working on a restored reply. The agent's own working memory is the
+    checkpointer, not this — see ``agent/advisor``; this endpoint is display only.
+    """
+    from agent.session import get_messages, get_session
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+    return {"session_id": session_id, "messages": get_messages(session_id)}
+
+
 @app.post("/api/feedback")
 def submit_feedback(req: FeedbackRequest):
     """

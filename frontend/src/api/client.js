@@ -198,6 +198,21 @@ export async function openingBriefing(sessionId, lang = 'de', { timeoutMs = 3000
   }
 }
 
+// The stored transcript of a session, oldest first — used to restore the conversation
+// after a page reload. Read-only and LLM-free server-side, so it still works when the
+// model endpoint is down. Throws on a non-OK response (including a backend too old to
+// expose the route), so the caller can fall back to fetching just the briefing.
+export async function chatHistory(sessionId, { timeoutMs = 10000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`/api/chat/${sessionId}/messages`, { signal: controller.signal })
+    return await parseJson(res, 'Chat history')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Streaming variant: POST /api/chat/stream returns Server-Sent Events. Calls
 // onToken(text) for each token as it arrives and resolves to { traceId, gotTokens }.
 // Throws on a non-OK response (e.g. 503 when no LLM key) so the caller can fall back

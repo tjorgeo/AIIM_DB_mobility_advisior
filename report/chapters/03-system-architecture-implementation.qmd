@@ -1,25 +1,44 @@
 # System Architecture & Implementation
 
-*Describe how your agent system is built (meta-level), how it behaves, and how
-it stays robust.*
+*Describe how your agent system is built (meta-level), how it behaves, and how it stays robust.*
 
 ## Architecture Overview
 
-*Suggestions:*
+The architecture conssist of a deterministic and a generative part. The deterministic calculation engine is the first step in 
+processing the user's data into insightfull aggregates (profile, the priorities and free-text constraints given at onboarding, 
+held subscriptions, trip history, upcoming calendar entries). All financial number and CO~2~ estimates are computed here and stored as 
+a snapshot of that customer's state. The snapshot than is used as input for the frontend dashboard and for the two small step 
+LLM-calls. The first reads the customer's calendar entries for upcoming life events and returns demand scenarios expressed in trip 
+counts. The other judges whether switching to a different mode of transport is realistic and usefull for that customer, 
+based on the free text of the onboarding. Each is backed by a deterministic fallback that takes over when the model is unavailable 
+or answers unusably. Neither is ever asked to calculate money or emissions: the forecast's projected trip counts go back into the 
+deterministic engine that prices the customer's plan today, so every figure attached to a scenario is calculated rather than written. 
+It then scores each subscription category against its alternatives, prices possible switches between transport modes, forecasts demand, 
+and writes the result to the session snapshot. The dashboard, the Advisor, and every later change all read from that one snapshot. 
+A repeat visit is served from it rather than recomputed and only an explicit refresh triggers a new run.
 
-- *High-level diagram of the workflow / agent system*
-- *Agent roles or workflow stages, the orchestration logic, and the
-  state-management strategy*
-- *Key components: data sources, model(s), infrastructure, integrations*
-- *Which external APIs, services, or AI components are integrated, how stable
-  is the integration?*
+The advisory agent carries every exchange with the customer after that, beginning with the opening briefing, generated from the 
+sessions snapshot. For that the advisor reads the stored snapshot on its first turn. Every follow-up request, from questions about 
+tariff details to cancelling a BahnCard, is handled by that same continuously reasoning and tool-using ReAct Advisor agent, working 
+through seven tools that include lookups for the tariff-document knowledge base, portfolio insights, and the preview and apply steps 
+for plan changes. The conversation is the only place in the live system where an agent is free to choose its own next step and reach 
+for a tool to get there. When the Advisor proposes a change, such as cancelling a subscription or switching a tariff, it first runs a preview that 
+re-derives the effect deterministically and records it as a scratch proposal. The saved plan is untouched at that point and 
+the dashboard still shows the current state whil the Advisor presents the revised numbers and asks the customer to confirm. The change 
+commits only once a separate confirmation request resumes it, and only against a proposal the customer has already been shown. 
+The portfolio is then updated in the database. Applying does not overwrite the earlier snapshot but writes a new one, so the analysis 
+history stays intact.
 
-<!--
-Store images below assets/ and reference them, for example:
-![Architecture overview](assets/architecture-overview.png){#fig-architecture}
--->
+Both the conversation and the agent's own working context are stored in the database, as two separate records with different jobs. 
+The transcript is the human-readable exchange, which the interface re-renders after a reload, and it carries the reference ids used 
+in feedback scoring. The working context is the agent's full run of tool calls and intermediate steps and lets the Advisor stay coherent 
+across separate requests, and it is the same state the confirmation gate suspends and resumes.
 
-Describe the high-level architecture here.
+In the request path the backend calls exactly one service outside its own database: The university-hosted language-model 
+endpoint, reached through one shared access point in the code. The 62-document tariff knowledge base is built using the Open knowledge 
+Format (OKF), which is a lean and simple way of storing knowledge in textual format [QUELLE].
+The optional observability instrumentation is the only other outbound call, and without an API key configured it becomes a no-op that 
+changes nothing else. Details of the observability fallback behavior for the model endpoint is covered under Error Handling & Robustness below.
 
 ## Agentic Behavior
 
@@ -59,8 +78,8 @@ Describe error handling and robustness here.
 |---|---|
 | **ADR-02** | **Deterministic number guard: the LLM never computes a figure** |
 | **Context** | Subscription costs, CO~2~ estimates, and trip counts are the basis of the recommendation. A plausible-sounding but fabricated number is worse than none, because a customer cannot tell it apart from a correct one. |
-| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any number that reaches the user — all figures come from deterministic engines, and the LLM only narrates them. |
-| **Decision** | (c). `analysis.py`, the optimization/pricing tools, and the forecaster's deterministic fallback compute every euro, CO~2~, and trip figure; the memo and chat model receive these as fixed context they may only explain. |
+| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure — all such figures come from deterministic engines, and the LLM only narrates them. |
+| **Decision** | (c). `analysis.py` and the optimization/pricing engines compute every euro, CO~2~ and time figure; the briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute — the forecaster's projected trip counts per scenario — is priced by those same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
 | **Trade-offs accepted** | The model cannot adapt numerically to a phrasing it was not explicitly given data for, and every new numeric capability requires new deterministic code rather than a prompt change. This restraint is what makes the pipeline's output reproducible and testable in the first place. |
 
 : {tbl-colwidths="[24,76]"}

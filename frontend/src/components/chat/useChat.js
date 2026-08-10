@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { chat as apiChat, streamChat, confirmApply, openingBriefing, submitFeedback } from '../../api/client'
+import { chat as apiChat, streamChat, confirmApply, openingBriefing, chatHistory, submitFeedback } from '../../api/client'
 import { euro, co2 } from '../../lib/format'
 
 // Pick the recommended scenario (or the first) from an analysis result.
@@ -93,6 +93,25 @@ async function scriptedReply(text, { user, lang, getContext, actions }) {
   )
 }
 
+// Map a stored transcript (GET /api/chat/{id}/messages) onto the widget's message shape.
+// `traceId` is carried over so thumbs feedback still works on a restored reply; the vote
+// itself is not persisted, so restored messages come back unvoted. The first assistant
+// message is the opening briefing, so it keeps the button through to the detail page.
+function restoreMessages(stored) {
+  let briefingSeen = false
+  return stored.map((m) => {
+    const isBriefing = m.role === 'assistant' && !briefingSeen
+    if (isBriefing) briefingSeen = true
+    return {
+      role: m.role,
+      content: m.content,
+      traceId: m.trace_id || null,
+      feedback: null,
+      ...(isBriefing ? { action: 'open-portfolio' } : {}),
+    }
+  })
+}
+
 export function useChat({ user, lang, getContext, actions, sessionId }) {
   // Chat starts empty; the opening message is the Advisor's briefing (turn 0), fetched
   // from the backend once the analysis session is ready (see the effect below).
@@ -111,26 +130,46 @@ export function useChat({ user, lang, getContext, actions, sessionId }) {
   const push = (role, content, traceId = null) =>
     setMessages((m) => [...m, { role, content, traceId, feedback: null }])
 
-  // Once the analysis session is ready, fetch the Advisor's opening briefing (turn 0)
-  // and post it as the first assistant message. This IS the recommendation — the memo is
-  // now the agent's opening turn, not a separate panel. Fetched once per session id (a
-  // fresh/forced analysis mints a new id, re-fetching); the backend caches it so this
-  // stays one LLM call per session. `action: 'open-portfolio'` renders a button to the
-  // structured detail page.
+  // Once the analysis session is ready, restore the stored transcript so a page reload
+  // keeps the conversation on screen (the backend persists every turn; the agent's own
+  // memory is the checkpointer and survives regardless — this is purely what the user
+  // sees). Only when nothing is stored yet do we fetch the Advisor's opening briefing
+  // (turn 0). That briefing IS the recommendation — the memo is now the agent's opening
+  // turn, not a separate panel. Runs once per session id (a fresh/forced analysis mints a
+  // new id, re-fetching); the backend caches the briefing, so this stays one LLM call per
+  // session. `action: 'open-portfolio'` renders a button to the structured detail page.
+  //
+  // Callbacks re-check the ref rather than a captured `cancelled` flag: under React 18
+  // StrictMode the effect is invoked twice on mount with a cleanup in between, and a
+  // cleanup-set flag would discard the only in-flight fetch (the second pass bails on the
+  // ref guard). Comparing the ref still drops a stale fetch when the session id changes.
   const briefedSessionRef = useRef(null)
   useEffect(() => {
     if (!sessionId || briefedSessionRef.current === sessionId) return
     briefedSessionRef.current = sessionId
-    let cancelled = false
-    openingBriefing(sessionId, lang)
-      .then((data) => {
-        if (cancelled || !data?.reply) return
+    const isCurrent = () => briefedSessionRef.current === sessionId
+
+    ;(async () => {
+      try {
+        const stored = (await chatHistory(sessionId))?.messages || []
+        if (!isCurrent()) return
+        if (stored.length) {
+          setMessages(restoreMessages(stored))
+          return
+        }
+      } catch {
+        // No transcript route (older backend) or the call failed — the briefing alone is
+        // still a usable chat, so fall through to it rather than showing nothing.
+        if (!isCurrent()) return
+      }
+      try {
+        const data = await openingBriefing(sessionId, lang)
+        if (!isCurrent() || !data?.reply) return
         setMessages((m) => [...m, { role: 'assistant', content: data.reply, traceId: data.trace_id || null, feedback: null, action: 'open-portfolio' }])
-      })
-      .catch(() => {
-        if (!cancelled) setMessages((m) => [...m, { role: 'assistant', content: greetingText(user, lang) }])
-      })
-    return () => { cancelled = true }
+      } catch {
+        if (isCurrent()) setMessages((m) => [...m, { role: 'assistant', content: greetingText(user, lang) }])
+      }
+    })()
   }, [sessionId, lang, user])
 
   const send = useCallback(async (raw) => {
