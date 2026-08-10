@@ -270,14 +270,36 @@ def _category_line(entry: dict, lang: str, include_label: bool = True) -> tuple[
             f"{prefix_with_note}{current} lohnt sich nicht — eine Kündigung zugunsten von "
             f"Einzelfahrscheinen würde geschätzt €{savings:.2f}/Jahr sparen."
         )
+    elif rec == "consider_subscribing" and entry.get("actual_annual_cost_eur") is None:
+        # Same guard as switch_to_alternative/cancel above, for the same reason —
+        # only reachable via a forecast scenario's projected_category_analysis.
+        savings = 0.0
+        text = (
+            f"{prefix_with_note}a {alt_name} looks cheaper here, though your current cost in this "
+            f"category can't be projected, so the savings aren't quantifiable yet ({alt['pricing_basis']})."
+            if en else
+            f"{prefix_with_note}ein {alt_name} wirkt hier günstiger, die aktuellen Kosten in dieser "
+            f"Kategorie lassen sich aber nicht projizieren — die Ersparnis ist daher noch nicht "
+            f"bezifferbar ({alt['pricing_basis']})."
+        )
+        text = _with_provider_dependency_note(text, entry["category"], alt_name, lang)
     elif rec == "consider_subscribing":
-        savings = round(entry["no_subscription_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
+        # Compared against actual_annual_cost_eur (what's really being paid today),
+        # not no_subscription_annual_cost_eur (the full pay-as-you-go baseline) —
+        # the two only coincide when nothing at all is discounting this category
+        # yet. They can diverge even with has_held_subs effectively False for this
+        # bucket, e.g. a BahnCard that isn't itself held "in" this bucket (it lives
+        # in long_distance_rail) but already credits/discounts this bucket's
+        # regional-train spend (see analysis.py's regional_bahncard_credit_eur) —
+        # comparing against the full undiscounted baseline there would overstate
+        # the real savings and hide that a subscription is already doing work here.
+        savings = round(entry["actual_annual_cost_eur"] - alt["estimated_annual_cost_eur"], 2)
         text = (
             f"{prefix_with_note}a {alt_name} could save an estimated €{savings:.2f}/year compared to "
-            f"paying as you go ({alt['pricing_basis']})."
+            f"your current costs ({alt['pricing_basis']})."
             if en else
             f"{prefix_with_note}ein {alt_name} könnte geschätzt €{savings:.2f}/Jahr im Vergleich zu "
-            f"Einzelfahrscheinen sparen ({alt['pricing_basis']})."
+            f"Ihren aktuellen Kosten sparen ({alt['pricing_basis']})."
         )
         text = _with_provider_dependency_note(text, entry["category"], alt_name, lang)
     elif rec == "insufficient_cost_data":

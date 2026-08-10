@@ -889,7 +889,57 @@ def analyze_portfolio(
         ]
         held_ids = {s.get("subscription_id") for s in held_subs if s.get("subscription_id")}
         held_annual_cost = sum(s["_annual_cost"] for s in held_subs)
-        actual_annual_cost = round(stats["annual_effective_cost_eur"] + held_annual_cost, 2)
+
+        # BahnCard-on-regional-train special case: a held BahnCard's %-discount
+        # applies to DB-operated regional_train fares too, not just long-distance
+        # ones -- but ONLY when nothing already covers regional trips for free (no
+        # Deutschlandticket-style flat pass held). With a flat pass held, regional
+        # trips are already free/covered by it, so the BahnCard's regional discount
+        # is moot -- staying inside "no flat pass held" is what keeps this
+        # unambiguous (see the "8b." comment above on why regional_train was
+        # otherwise scoped to Deutschlandticket-only territory: with a flat pass in
+        # the picture there's genuine ambiguity over which product covers a given
+        # regional trip; with none, the BahnCard is the only candidate). Scoped to
+        # *crediting an already-held* BahnCard only -- this never proposes picking
+        # one up fresh from within this bucket, which would double-count the card's
+        # annual fee against long_distance_rail (which already owns that fee and
+        # any "should you get one" call). regional_train legs aren't expected to
+        # carry their own user_subscription_id attribution to the BahnCard (unlike
+        # long_distance_train legs, which do -- see analyze_portfolio's per-leg
+        # loop), so this is computed as a category-level credit rather than
+        # re-deriving it leg by leg; regional_already_discounted guards against
+        # double-crediting on the (currently unused) chance some regional legs
+        # already carry a real recorded discount of their own.
+        regional_bahncard_credit_eur = 0.0
+        if key == "public_transport":
+            held_flat_pass = any(
+                (catalog_by_id.get(s.get("subscription_id")) or {}).get("pricing_model") == "flat_monthly"
+                for s in held_subs
+            )
+            if not held_flat_pass:
+                held_bahncard = next(
+                    (s for s in held_subs_by_category.get(db_category, [])
+                     if _is_bahncard_plan(s.get("provider_plan_name"))),
+                    None,
+                )
+                if held_bahncard:
+                    match = _BAHNCARD_DISCOUNT_RE.search(held_bahncard.get("provider_plan_name") or "")
+                    pct = int(match.group(1)) if match else 0
+                    if 0 < pct <= 100:
+                        regional_stats = _category_annual_stats(lambda m: m == "regional_train")
+                        regional_entitled_discount = round(
+                            regional_stats["annual_cost_eur"] * pct / 100, 2
+                        )
+                        regional_already_discounted = round(
+                            regional_stats["annual_cost_eur"] - regional_stats["annual_effective_cost_eur"], 2
+                        )
+                        regional_bahncard_credit_eur = round(
+                            max(0.0, regional_entitled_discount - regional_already_discounted), 2
+                        )
+
+        actual_annual_cost = round(
+            stats["annual_effective_cost_eur"] + held_annual_cost - regional_bahncard_credit_eur, 2
+        )
 
         current_subscriptions_detail = [
             {
@@ -925,8 +975,34 @@ def analyze_portfolio(
         )
         cheapest_alternative = alternatives[0] if alternatives else None
 
+        # has_held_subs must be True whenever *something* subscription-driven is
+        # already responsible for part of what's cheap about "current" here, even
+        # when that something isn't in this bucket's own held_subs (excluded by
+        # plan_filter, e.g. a BahnCard for the public_transport bucket) — otherwise
+        # the verdict misleadingly reads "no_subscription_needed"/
+        # "consider_subscribing" (implying the low cost has nothing to do with a
+        # subscription at all) instead of "keep_current"/
+        # "cancel_current_go_pay_as_you_go"/"switch_to_alternative". Two
+        # independent ways that can happen:
+        #  1. regional_bahncard_credit_eur > 0 — the category-level credit above
+        #     fired (no per-leg evidence of the discount, so it had to be applied
+        #     in aggregate).
+        #  2. stats["annual_effective_cost_eur"] < stats["annual_cost_eur"] — real
+        #     per-leg attribution already shows a discount (effective can only be
+        #     less than intrinsic when at least one leg here is attributed to an
+        #     active subscription with paid < reference — see the main per-leg
+        #     loop above), even if that subscription is a BahnCard excluded from
+        #     this bucket's own held_subs. This is the case a BahnCard-covered
+        #     regional_train leg would hit in real production data (unlike this
+        #     dataset's synthetic legs, which leave regional_train unattributed —
+        #     see Michael's persona in PERSONAS.md).
+        has_held_subs = (
+            bool(held_subs)
+            or regional_bahncard_credit_eur > 0
+            or stats["annual_effective_cost_eur"] < stats["annual_cost_eur"]
+        )
         best_cost, winning_alternative, score_breakdown, recommendation = _pick_recommendation(
-            actual_annual_cost, no_subscription_annual_cost, alternatives, bool(held_subs),
+            actual_annual_cost, no_subscription_annual_cost, alternatives, has_held_subs,
             stats["annual_co2_kg"], stats["annual_time_minutes"], weights,
         )
 
@@ -1000,7 +1076,22 @@ def analyze_portfolio(
         "monthly_mode_breakdown": monthly_mode_breakdown,
     }
 
-    current_annual_spend = round(total_effective + annual_sub_cost, 2)
+    # total_effective is a raw sum over the actual captured window (data_window_days,
+    # capped at 365 but very often less — see "Aggregates" below), while
+    # annual_sub_cost is already a true annual rate. Despite its name,
+    # current_annual_spend_eur used to just add the two together unscaled — silently
+    # mixing units whenever the window isn't exactly 365 days (the common case), which
+    # made it drift from the properly-annualized sum of category_subscription_analysis
+    # entries' actual_annual_cost_eur (what analysis_service.py's
+    # total_actual_annual_cost_eur — the figure the "current vs. optimized portfolio"
+    # UI comparison actually uses — is built from). Scaling by the same
+    # months_of_data-based factor every other "annual" figure in this module uses
+    # keeps the two consistent (for a persona with no uncategorized-mode spend, they
+    # should now match to the cent; a persona who also has car/taxi/ride_hailing legs
+    # will still show current_annual_spend_eur > total_actual_annual_cost_eur by
+    # design — see the Dashboard.jsx comment on why that comparison deliberately uses
+    # the categories-only total instead of this field).
+    current_annual_spend = round(total_effective / months_of_data * 12 + annual_sub_cost, 2)
 
     return {
         # Data window
@@ -1009,13 +1100,19 @@ def analyze_portfolio(
         "analysis_period_start": analysis_period_start,
         "analysis_period_end": analysis_period_end,
         "data_warning": data_warning,
-        # Aggregates (sums over the last-12-month window)
+        # Aggregates — raw sums over the last-12-month window (NOT extrapolated to a
+        # full year; "what actually happened" during however much of the window is
+        # captured, e.g. total_distance_km stays a real historical total even for a
+        # 9-day-old account rather than an inflated year-long projection):
         "total_trips": total_trips,
         "total_distance_km": round(total_distance, 2),
         "total_co2_kg": round(total_co2, 2),
         "total_intrinsic_spend_eur": round(total_intrinsic, 2),
         "total_effective_spend_eur": round(total_effective, 2),
         "subscription_costs_annual_eur": round(annual_sub_cost, 2),
+        # ...except this one: current_annual_spend_eur IS extrapolated to a full year
+        # (see current_annual_spend's own comment above) so it stays comparable to
+        # every other "annual" figure in this module, unlike its raw-sum neighbors above.
         "current_annual_spend_eur": current_annual_spend,
         # Breakdowns
         "mode_breakdown": mode_breakdown,

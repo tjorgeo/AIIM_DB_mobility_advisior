@@ -69,6 +69,37 @@ const _LIFE_EVENT_NOUN_EN = {
   major_life_change: 'the life change',
 }
 
+// Mirrors backend agent/engines/memo.py's _MODE_LABEL_DE/_MODE_LABEL_EN +
+// _coverage_note: only public_transport and long_distance_rail actually bundle
+// more than one raw transport mode (see schema_map.py's _CATEGORY_COVERAGE — a
+// public_transport subscription also covers regional_train; long_distance_rail is
+// display-only, routed from BahnCard-family plans stored under the same DB
+// category), so only those two categories need a coverage note — every other
+// category maps 1:1 to a single raw mode already named by its own card title,
+// nothing left to disambiguate. Deliberately a distinct dictionary from
+// travelModes.js's modeLabel(), not a reuse of it: modeLabel('public_transport')
+// already IS this card's own title ("ÖPNV"), so reusing it here would read as
+// "ÖPNV (deckt ab: ÖPNV, Regionalbahn)" — these entries name the underlying trip
+// legs, not the subscription product.
+const _COVERAGE_MODE_LABEL_DE = {
+  public_transport: 'lokale Busse/Bahnen',
+  regional_train: 'Regionalzüge',
+  long_distance_train: 'Fernzüge',
+}
+const _COVERAGE_MODE_LABEL_EN = {
+  public_transport: 'local buses/trams',
+  regional_train: 'regional trains',
+  long_distance_train: 'long-distance trains',
+}
+const _CATEGORIES_WORTH_NAMING = new Set(['public_transport', 'long_distance_rail'])
+
+function coverageNote(category, appliesToModes, isDE) {
+  if (!_CATEGORIES_WORTH_NAMING.has(category) || !appliesToModes?.length) return ''
+  const dict = isDE ? _COVERAGE_MODE_LABEL_DE : _COVERAGE_MODE_LABEL_EN
+  const joined = appliesToModes.map((m) => dict[m] || m).join(', ')
+  return isDE ? `deckt ab: ${joined}` : `covers: ${joined}`
+}
+
 function lifeEventLabel(type, isDE) {
   const key = (type || '').trim().toLowerCase()
   const humanized = (type || '').replace(/_/g, ' ')
@@ -408,7 +439,10 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       </div>
                     </div>
                   )}
-                  <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>{t.categoryTrips(c.annual_trips)}</p>
+                  <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>
+                    {t.categoryTrips(c.annual_trips)}
+                    {coverageNote(c.category, c.applies_to_modes, isDE) && ` · ${coverageNote(c.category, c.applies_to_modes, isDE)}`}
+                  </p>
                   {(c.annual_co2_kg != null || c.annual_time_minutes != null) && (
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                       {c.annual_co2_kg != null && (

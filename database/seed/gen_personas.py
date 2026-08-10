@@ -1,4 +1,4 @@
-"""Generator for the 4-persona replacement seed dataset.
+"""Generator for the 10-persona seed dataset.
 
 Produces: user_profiles_v4.csv, user_onboardings_v4.csv, user_subscriptions_v5.csv,
 user_trips_v5.csv, trip_legs_v8.csv, user_calendars_v2.csv
@@ -116,6 +116,18 @@ REF_FN = {
     "e_scooter": lambda km, minutes: ref_e_scooter(minutes),
 }
 
+# 1st-class fare multiplier. None of the REF_FN formulas above take a class
+# parameter (the whole dataset before this was implicitly 2nd class), and
+# ticket_class is never read back by the analyst engine (see agent/engines/
+# analysis.py's module comments on why — no per-leg evidence of fare class exists
+# in real production data either). This exists solely so a 1st-class persona's
+# reference_cost_eur is itself priced higher, the way a real 1st-class Flexpreis
+# fare actually costs more than 2nd class — otherwise only her BahnCard's own
+# (already correctly class-priced) annual fee would look more expensive, while the
+# fare it discounts stayed priced as if she rode 2nd class, understating her real
+# savings. ~1.5x roughly matches DB's real 1st/2nd-class Flexpreis ratio.
+CLASS_1_MULTIPLIER = 1.5
+
 # ---------------------------------------------------------------------------
 # Subscription catalog references (subscription_catalogs_v2.csv)
 # ---------------------------------------------------------------------------
@@ -125,6 +137,7 @@ SUB_BC50_2KL = "d1111111-1111-1111-1111-111111111111"     # BahnCard 50, 2. Klas
 SUB_CAB_MEMBER_PLUS = "m1111111-1111-1111-1111-111111111111"  # Call a Bike Member Plus, 8/mo (96/yr)
 SUB_TEILAUTO_VIELFAHRER = "x1111111-1111-1111-1111-111111111111"  # teilAuto Vielfahrertarif, 30/mo (360/yr)
 SUB_BOLT_UNLIMITED = "t1111111-1111-1111-1111-111111111111"       # Bolt Unbegrenzte Freischaltungen, 1.99/mo (23.88/yr)
+SUB_BC50_1KL = "i1111111-1111-1111-1111-111111111111"      # BahnCard 50, 1. Klasse, 487.00/yr
 
 # ---------------------------------------------------------------------------
 # Output accumulators
@@ -222,10 +235,18 @@ _trip_seq = {}
 
 def add_trip_and_leg(user_id, day, start_time, duration_min, origin_label, origin_city,
                       dest_label, dest_city, purpose, mode, distance_km, is_commute,
-                      is_recurring, user_subscription_id, paid_override=None):
+                      is_recurring, user_subscription_id, paid_override=None,
+                      ticket_class=None, class_multiplier=1.0):
     """Creates one trip + one leg (1:1, matching existing dataset convention).
     paid_override: if given, use this as estimated_cost_eur instead of the
-    reference price (subscription-covered legs)."""
+    reference price (subscription-covered legs).
+    ticket_class: 1 or 2 to record this leg's fare class (the ``ticket_class``
+    column) — None (the default, used by every persona before Claudia) leaves it
+    blank, matching real production data (see analysis.py's module comments on why
+    the analyst engine never reads it back regardless).
+    class_multiplier: scales the computed reference_cost (and, unless paid_override
+    is given, estimated_cost too) — used only to price a 1st-class fare, which none
+    of the REF_FN formulas otherwise know how to do (see CLASS_1_MULTIPLIER)."""
     tz = tz_for(day)
     started_at = datetime.combine(day, start_time, tzinfo=tz)
     ended_at = started_at + timedelta(minutes=duration_min)
@@ -235,7 +256,7 @@ def add_trip_and_leg(user_id, day, start_time, duration_min, origin_label, origi
     trip_id = uid(f"trip:{user_id}:{started_at.isoformat()}:{_trip_seq[seq_key]}")
     leg_id = uid(f"leg:{trip_id}")
 
-    reference_cost = REF_FN[mode](distance_km, duration_min)
+    reference_cost = round(REF_FN[mode](distance_km, duration_min) * class_multiplier, 2)
     estimated_cost = reference_cost if paid_override is None else paid_override
     co2 = round(distance_km * CO2_FACTOR[mode], 3)
 
@@ -252,7 +273,8 @@ def add_trip_and_leg(user_id, day, start_time, duration_min, origin_label, origi
         leg_id, trip_id, user_id, user_subscription_id or "", 1,
         fmt_ts(started_at), fmt_ts(ended_at), duration_min,
         origin_label, origin_city, "", "DE", dest_label, dest_city, "", "DE",
-        mode, ticket_type, "", "", distance_km, estimated_cost, reference_cost, co2,
+        mode, ticket_type, ticket_class if ticket_class is not None else "", "",
+        distance_km, estimated_cost, reference_cost, co2,
         False, True, False, False, "", 0,
     ])
 
@@ -810,6 +832,361 @@ add_calendar(NORA, datetime(2026, 9, 28, 7, 0, tzinfo=TZ_SUMMER), datetime(2026,
              "the new role.", "Munich", "FREQ=MONTHLY;BYDAY=4MO")
 
 print(f"After Maja: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 6: Michael Voss — BahnCard-only regional commuter. His only
+# subscription is a BahnCard 50 (no Deutschlandticket at all), covering a
+# regular regional-train commute plus a handful of long-distance trips a
+# year. Exists specifically to exercise the BahnCard-on-regional-train credit
+# in agent/engines/analysis.py's _build_category_entry (see PERSONAS.md's
+# "BahnCard-on-regional-train rule" note) with real persona data — none of
+# personas 1-5 holds a BahnCard without also holding a Deutschlandticket.
+# ===========================================================================
+MICHAEL = uid("user:michael.voss")
+add_user(MICHAEL, "michael.voss@example.com", "michaelvoss41", "Michael", "Voss",
+          "1984-09-10", 41, "male", "single", "Stuttgart", "70173")
+add_onboarding(
+    MICHAEL, "employed_full_time", "Sales Consultant", "Tübingen", "72070", "hybrid", 0.3,
+    1, "single", "medium", 120.0, True, "none", "none",
+    ["regional_train", "long_distance_train"], ["car"],
+    ["no_fixed_local_pass", "regional_commuter"],
+    50, 65, 50,
+    "Regional-train commute from Stuttgart into the Tübingen office most days on my BahnCard 50; "
+    "a handful of long-distance trips a year on the same card.",
+    "Rarely uses local buses or trams, so never bothered with a Deutschlandticket.",
+    "I commute by regional train several times a week and use my BahnCard for the occasional "
+    "long-distance trip too — I've just never needed a Deutschlandticket on top of it.",
+    "Weekends are mostly on foot or with friends; barely ever uses local public transport.",
+)
+michael_bc50 = add_subscription(MICHAEL, SUB_BC50_2KL, "2021-05-01", True, "several_times_per_week")
+# No Deutschlandticket — that's the whole point of the persona.
+
+for d in daterange(WINDOW_START, WINDOW_END):
+    sf = season_factor(d)
+    weekday = d.weekday()
+    if weekday < 5:
+        # BahnCard-covered regional commute, most weekdays.
+        if random.random() < 0.8 * sf:
+            dist = round(random.uniform(28.0, 34.0), 2)
+            ref = ref_regional_train(dist)
+            paid = round(ref * 0.5, 2)  # BahnCard 50, 50% off
+            dur = round(dist / 0.8)
+            add_trip_and_leg(MICHAEL, d, datetime.min.time().replace(hour=7, minute=random.randint(0, 20)),
+                              dur, "home", "Stuttgart", "office", "Tübingen", "commute",
+                              "regional_train", dist, True, True, michael_bc50, paid_override=paid)
+            add_trip_and_leg(MICHAEL, d, datetime.min.time().replace(hour=17, minute=random.randint(30, 55)),
+                              dur, "office", "Tübingen", "home", "Stuttgart", "home_return",
+                              "regional_train", dist, True, True, michael_bc50, paid_override=paid)
+        # Occasional local errand, pay-as-you-go, undiscounted — BahnCard never
+        # covers local bus/tram — deliberately modest so the regional-train
+        # credit's effect stays easy to see against a small local baseline.
+        if random.random() < 0.12 * sf:
+            dist = round(random.uniform(2.0, 4.0), 2)
+            dur = round(dist / 0.35 + random.uniform(3, 8))
+            add_trip_and_leg(MICHAEL, d, datetime.min.time().replace(hour=random.randint(12, 19)),
+                              dur, "home", "Stuttgart", "supermarket", "Stuttgart", "errands",
+                              "public_transport", dist, False, False, "")
+
+# A handful of long-distance client/training trips a year, same BahnCard 50.
+for month, day, city, base_dist in [(9, 9, "Frankfurt", 155), (11, 18, "Munich", 220),
+                                     (3, 4, "Frankfurt", 155), (5, 20, "Cologne", 320)]:
+    yr = 2025 if month >= 7 else 2026
+    d = date(yr, month, day)
+    dist = round(base_dist * random.uniform(0.97, 1.03), 2)
+    ref = ref_long_distance_train(dist)
+    paid = round(ref * 0.5, 2)
+    dur = round(dist / 3.1)
+    add_trip_and_leg(MICHAEL, d, datetime.min.time().replace(hour=8, minute=0),
+                      dur, "home", "Stuttgart", "client site", city, "business",
+                      "long_distance_train", dist, False, False, michael_bc50, paid_override=paid)
+    add_trip_and_leg(MICHAEL, d, datetime.min.time().replace(hour=18, minute=0),
+                      dur, "client site", city, "home", "Stuttgart", "home_return",
+                      "long_distance_train", dist, False, False, michael_bc50, paid_override=paid)
+
+print(f"After Michael: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 7: Vera Neumann — brand-new user, thin data. Only ~9 days of trip
+# history near the end of the window (she just started using the app) and no
+# subscriptions at all. Exists to exercise analyze_portfolio's data_warning
+# ("too little data for reliable annualization", triggered when
+# data_window_days < 14) with real persona data — every other persona's
+# trip history spans close to the full 12-month window.
+# ===========================================================================
+VERA = uid("user:vera.neumann")
+add_user(VERA, "vera.neumann@example.com", "veraneumann30", "Vera", "Neumann",
+          "1995-12-02", 30, "female", "single", "Munich", "80331")
+add_onboarding(
+    VERA, "employed_full_time", "Product Marketing Manager", "Munich", "80331", "hybrid", 0.4,
+    1, "single", "medium", 110.0, True, "none", "none",
+    ["public_transport"], [],
+    ["new_user", "no_established_pattern"],
+    50, 50, 50,
+    "Just moved to Munich and started commuting by bus/U-Bahn, buying single tickets so far.",
+    "One or two bike-share rides while exploring the new neighbourhood.",
+    "I just moved here and I'm still getting a feel for how I'll get around day to day.",
+    "Too early to tell — only a week and a half of trips on record so far.",
+)
+# No subscriptions — too new to have picked one yet.
+
+VERA_START = WINDOW_END - timedelta(days=8)
+for d in daterange(VERA_START, WINDOW_END):
+    weekday = d.weekday()
+    if weekday < 5:
+        dist = round(random.uniform(4.0, 7.0), 2)
+        dur = round(dist / 0.45)
+        add_trip_and_leg(VERA, d, datetime.min.time().replace(hour=8, minute=random.randint(0, 20)),
+                          dur, "home", "Munich", "office", "Munich", "commute",
+                          "public_transport", dist, True, False, "")
+        add_trip_and_leg(VERA, d, datetime.min.time().replace(hour=17, minute=random.randint(15, 45)),
+                          dur, "office", "Munich", "home", "Munich", "home_return",
+                          "public_transport", dist, True, False, "")
+    elif random.random() < 0.6:
+        dur = random.randint(8, 18)
+        dist = round(dur * 0.14, 2)
+        add_trip_and_leg(VERA, d, datetime.min.time().replace(hour=random.randint(11, 17)),
+                          dur, "home", "Munich", "neighbourhood", "Munich", "leisure",
+                          "bike_sharing", dist, False, False, "")
+
+print(f"After Vera: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 8: Claudia Herrmann — 1st-class business traveler. Her only
+# subscription is a BahnCard 50, 1. Klasse; every long-distance and regional
+# trip is priced with CLASS_1_MULTIPLIER and tagged ticket_class=1. Exists to
+# exercise (a) travel-class matching end-to-end (never compared against a
+# 2nd-class alternative) and (b) a 1st-class fare actually costing more than
+# 2nd class in the reference/no-subscription baseline, not just her
+# BahnCard's own (already correctly class-priced) annual fee looking more
+# expensive — see CLASS_1_MULTIPLIER's module note.
+# ===========================================================================
+CLAUDIA = uid("user:claudia.herrmann")
+add_user(CLAUDIA, "claudia.herrmann@example.com", "claudiaherrmann44", "Claudia", "Herrmann",
+          "1981-02-17", 44, "female", "single", "Düsseldorf", "40213")
+add_onboarding(
+    CLAUDIA, "employed_full_time", "Management Consultant", "Düsseldorf", "40213", "hybrid", 0.1,
+    1, "single", "high", 350.0, True, "none", "none",
+    ["long_distance_train"], ["car"],
+    ["frequent_travel", "values_comfort"],
+    40, 55, 75,
+    "Client visits across the country several times a week, always 1st class on the BahnCard 50 — "
+    "the extra quiet and space is worth it for the work she gets done on the train.",
+    "Local errands around Düsseldorf by bus/tram, pay-as-you-go.",
+    "I travel to clients nationwide constantly, always 1st class — it's how I get real work done "
+    "between meetings, so the comfort more than pays for itself.",
+    "Heavy long-distance travel footprint, always 1st class, light local-only footprint at home.",
+)
+claudia_bc50_1kl = add_subscription(CLAUDIA, SUB_BC50_1KL, "2020-02-01", True, "several_times_per_week")
+
+for d in daterange(WINDOW_START, WINDOW_END):
+    sf = season_factor(d)
+    weekday = d.weekday()
+    if weekday < 5:
+        # Local Düsseldorf errands/short hops, pay-as-you-go, no class distinction
+        # (bus/tram fares don't have a 1st/2nd-class split in this taxonomy).
+        if random.random() < 0.3 * sf:
+            dist = round(random.uniform(2.0, 5.0), 2)
+            dur = round(dist / 0.35 + random.uniform(3, 8))
+            add_trip_and_leg(CLAUDIA, d, datetime.min.time().replace(hour=random.randint(9, 20)),
+                              dur, "home", "Düsseldorf", random.choice(["office", "gym", "restaurant"]),
+                              "Düsseldorf", random.choice(["business", "leisure", "social"]),
+                              "public_transport", dist, False, False, "")
+        # 1st-class long-distance client trip, roughly 1.3 round-trips/week.
+        if random.random() < 0.26 * sf:
+            city, base_dist = random.choice([
+                ("Frankfurt", 225), ("Munich", 610), ("Berlin", 565),
+                ("Hamburg", 400), ("Stuttgart", 375), ("Cologne", 45),
+            ])
+            dist = round(base_dist * random.uniform(0.97, 1.03), 2)
+            ref = round(ref_long_distance_train(dist) * CLASS_1_MULTIPLIER, 2)
+            paid = round(ref * 0.5, 2)
+            dur = round(dist / 3.1)
+            add_trip_and_leg(CLAUDIA, d, datetime.min.time().replace(hour=7, minute=random.randint(0, 30)),
+                              dur, "home", "Düsseldorf", "client site", city, "business",
+                              "long_distance_train", dist, False, False, claudia_bc50_1kl,
+                              paid_override=paid, ticket_class=1, class_multiplier=CLASS_1_MULTIPLIER)
+            add_trip_and_leg(CLAUDIA, d, datetime.min.time().replace(hour=18, minute=random.randint(0, 45)),
+                              dur, "client site", city, "home", "Düsseldorf", "home_return",
+                              "long_distance_train", dist, False, False, claudia_bc50_1kl,
+                              paid_override=paid, ticket_class=1, class_multiplier=CLASS_1_MULTIPLIER)
+        # Occasional 1st-class regional trip to a nearby satellite office — also
+        # BahnCard-50-covered, exercising the BahnCard-on-regional-train credit
+        # for a 1st-class fare specifically (no Deutschlandticket held).
+        if random.random() < 0.08 * sf:
+            dist = round(random.uniform(30.0, 45.0), 2)
+            ref = round(ref_regional_train(dist) * CLASS_1_MULTIPLIER, 2)
+            paid = round(ref * 0.5, 2)
+            dur = round(dist / 0.8)
+            add_trip_and_leg(CLAUDIA, d, datetime.min.time().replace(hour=8, minute=random.randint(0, 20)),
+                              dur, "home", "Düsseldorf", "satellite office", "Wuppertal", "business",
+                              "regional_train", dist, False, False, claudia_bc50_1kl,
+                              paid_override=paid, ticket_class=1, class_multiplier=CLASS_1_MULTIPLIER)
+            add_trip_and_leg(CLAUDIA, d, datetime.min.time().replace(hour=17, minute=random.randint(0, 30)),
+                              dur, "satellite office", "Wuppertal", "home", "Düsseldorf", "home_return",
+                              "regional_train", dist, False, False, claudia_bc50_1kl,
+                              paid_override=paid, ticket_class=1, class_multiplier=CLASS_1_MULTIPLIER)
+
+print(f"After Claudia: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 9: Sabine Krüger — a real, stated mobility constraint (a knee
+# condition ruling out cycling/standing e-scooters). Her Deutschlandticket
+# covers the commute; car-sharing (pay-as-you-go, no membership) covers
+# whatever public transport doesn't reach well. Exists to check that
+# modal_shift.py's candidate filtering actually respects avoided_transport_
+# modes/mobility_constraints (build_modal_shift_suggestions in
+# agent/engines/modal_shift.py) rather than suggesting a switch to bike-
+# sharing/e-scooter on cost or CO2 grounds alone — every other persona's
+# mobility_constraints is "none".
+# ===========================================================================
+SABINE = uid("user:sabine.krueger")
+add_user(SABINE, "sabine.krueger@example.com", "sabinekrueger52", "Sabine", "Krüger",
+          "1973-06-25", 52, "female", "single", "Hannover", "30159")
+add_onboarding(
+    SABINE, "employed_full_time", "Office Administrator", "Hannover", "30159", "in_office", 0.0,
+    1, "single", "medium", 100.0, True, "none", "none",
+    ["public_transport", "car_sharing"], ["bike_sharing", "e_scooter"],
+    ["mobility_impairment", "cannot_cycle"],
+    55, 60, 55,
+    "Deutschlandticket to the office every day; grabs a car-sharing car for anything public "
+    "transport doesn't reach well, like the monthly physio appointment out in the suburbs.",
+    "Rarely goes far outside the daily commute and the occasional car-sharing errand.",
+    "I take the Deutschlandticket to work every day and use car-sharing for anything transit "
+    "doesn't cover well — cycling and standing scooters aren't an option for me because of a "
+    "long-standing knee condition.",
+    "Steady commute footprint; car-sharing fills in the gaps transit can't reach.",
+)
+sabine_dt = add_subscription(SABINE, SUB_DT, "2022-08-01", True, "several_times_per_week")
+
+for d in daterange(WINDOW_START, WINDOW_END):
+    sf = season_factor(d)
+    weekday = d.weekday()
+    if weekday < 5:
+        if random.random() < 0.85 * sf:
+            dist = round(random.uniform(5.0, 7.0), 2)
+            dur = round(dist / 0.45)
+            add_trip_and_leg(SABINE, d, datetime.min.time().replace(hour=8, minute=random.randint(0, 15)),
+                              dur, "home", "Hannover", "office", "Hannover", "commute",
+                              "public_transport", dist, True, True, sabine_dt, paid_override=0.0)
+            add_trip_and_leg(SABINE, d, datetime.min.time().replace(hour=16, minute=random.randint(45, 59)),
+                              dur, "office", "Hannover", "home", "Hannover", "home_return",
+                              "public_transport", dist, True, True, sabine_dt, paid_override=0.0)
+        # Car-sharing errands, pay-as-you-go, no membership — trips public
+        # transport doesn't reach well.
+        if random.random() < 0.09 * sf:
+            dist = round(random.uniform(6.0, 12.0), 2)
+            dur = round(dist / 0.45 + random.uniform(5, 10))
+            add_trip_and_leg(SABINE, d, datetime.min.time().replace(hour=random.randint(10, 17)),
+                              dur, "home", "Hannover", random.choice(["physio clinic", "garden centre"]),
+                              "Hannover", random.choice(["healthcare", "errands"]),
+                              "car_sharing", dist, False, False, "")
+    elif random.random() < 0.15 * sf:
+        dist = round(random.uniform(2.0, 4.0), 2)
+        dur = round(dist / 0.35 + random.uniform(3, 8))
+        add_trip_and_leg(SABINE, d, datetime.min.time().replace(hour=random.randint(11, 17)),
+                          dur, "home", "Hannover", "market square", "Hannover", "shopping",
+                          "public_transport", dist, False, False, sabine_dt, paid_override=0.0)
+
+print(f"After Sabine: {len(trip_rows)}")
+
+
+# ===========================================================================
+# Persona 10: Jan Albrecht — mobility maximalist. Holds a subscription in
+# every one of the 5 category buckets the system tracks (public_transport,
+# long_distance_rail, bike_sharing, car_sharing, e_scooter) at once — no
+# other persona holds more than 3 simultaneously. Exists to stress-test the
+# full category_subscription_analysis output shape (5 populated entries,
+# richest possible current_contracts list) and give modal_shift.py's
+# cross-category comparison the fullest baseline to work from.
+# ===========================================================================
+JAN = uid("user:jan.albrecht")
+add_user(JAN, "jan.albrecht@example.com", "janalbrecht37", "Jan", "Albrecht",
+          "1988-11-03", 37, "male", "single", "Berlin", "10115")
+add_onboarding(
+    JAN, "employed_full_time", "Software Engineer", "Berlin", "10115", "hybrid", 0.5,
+    1, "single", "high", 250.0, True, "none", "none",
+    ["public_transport", "bike_sharing", "car_sharing", "e_scooter"], [],
+    ["values_optionality", "low_cost_sensitivity"],
+    55, 45, 70,
+    "Deutschlandticket for the commute, BahnCard for weekend trips out of the city, a bike-share "
+    "and car-share membership for whatever's fastest that day, plus an e-scooter pass for short hops.",
+    "Mixes all five — whichever's quickest for the errand at hand.",
+    "I like having every option available rather than optimizing hard for one — Deutschlandticket, "
+    "BahnCard, bike-share, car-share, e-scooter, I hold all of them and just grab whichever fits.",
+    "Broad, even footprint across every mode — options matter more to him than shaving cost.",
+)
+jan_dt = add_subscription(JAN, SUB_DT, "2023-01-01", True, "several_times_per_week")
+jan_bc25 = add_subscription(JAN, SUB_BC25_2KL, "2023-06-01", False, "several_times_per_month")
+jan_bike = add_subscription(JAN, SUB_CAB_MEMBER_PLUS, "2023-06-01", False, "several_times_per_week")
+jan_car = add_subscription(JAN, SUB_TEILAUTO_VIELFAHRER, "2023-06-01", False, "several_times_per_week")
+jan_scooter = add_subscription(JAN, SUB_BOLT_UNLIMITED, "2023-06-01", False, "several_times_per_week")
+
+for d in daterange(WINDOW_START, WINDOW_END):
+    sf = season_factor(d)
+    weekday = d.weekday()
+    if weekday < 5:
+        # DT-covered commute, most weekdays.
+        if random.random() < 0.75 * sf:
+            dist = round(random.uniform(5.0, 8.0), 2)
+            dur = round(dist / 0.45)
+            add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=8, minute=random.randint(0, 20)),
+                              dur, "home", "Berlin", "office", "Berlin", "commute",
+                              "public_transport", dist, True, True, jan_dt, paid_override=0.0)
+            add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=17, minute=random.randint(15, 45)),
+                              dur, "office", "Berlin", "home", "Berlin", "home_return",
+                              "public_transport", dist, True, True, jan_dt, paid_override=0.0)
+        # Car-sharing errand, teilAuto-covered.
+        if random.random() < 0.1 * sf:
+            dist = round(random.uniform(5.0, 12.0), 2)
+            dur = round(dist / 0.45 + random.uniform(5, 15))
+            paid = paid_car_sharing_teilauto(dist, dur)
+            add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=random.randint(11, 18)),
+                              dur, "home", "Berlin", random.choice(["hardware store", "supermarket"]),
+                              "Berlin", "errands", "car_sharing", dist, False, False, jan_car,
+                              paid_override=paid)
+        # E-scooter hop, Bolt-covered.
+        if random.random() < 0.25 * sf:
+            dur = random.randint(6, 16)
+            dist = round(dur * 0.18, 2)
+            paid = paid_e_scooter_bolt_unlimited(dur)
+            add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=random.randint(10, 21)),
+                              dur, "home", "Berlin", random.choice(["cafe", "gym", "friend's place"]),
+                              "Berlin", random.choice(["social", "leisure"]), "e_scooter", dist,
+                              False, False, jan_scooter, paid_override=paid)
+    elif random.random() < 0.35 * sf:
+        # Weekend bike-share ride, Call a Bike Member Plus-covered (first 30 min
+        # free, matching Simone's persona).
+        dur = random.randint(10, 28)
+        dist = round(dur * 0.22, 2)
+        paid = paid_bike_sharing_member_plus(dur)
+        add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=random.randint(10, 18)),
+                          dur, "home", "Berlin", "park", "Berlin", "leisure",
+                          "bike_sharing", dist, False, False, jan_bike, paid_override=paid)
+
+# Roughly-monthly BahnCard-covered weekend trip out of the city — checked on
+# Saturdays only (~52/yr) at a probability tuned for ~12 trips/yr, rather than
+# stepping the date by a fixed 14 days: 14 is a multiple of 7, so a fixed-step
+# loop would keep landing on the same weekday every time and (if that first
+# weekday isn't a Sat/Sun) never fire at all.
+for d in daterange(WINDOW_START, WINDOW_END):
+    if d.weekday() == 5 and random.random() < 0.23 * season_factor(d):
+        city, base_dist = random.choice([("Leipzig", 190), ("Dresden", 195), ("Hamburg", 290)])
+        dist = round(base_dist * random.uniform(0.97, 1.03), 2)
+        ref = ref_long_distance_train(dist)
+        paid = round(ref * 0.75, 2)  # BahnCard 25, 25% off
+        dur = round(dist / 3.1)
+        add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=9, minute=0),
+                          dur, "home", "Berlin", "weekend trip", city, "leisure",
+                          "long_distance_train", dist, False, False, jan_bc25, paid_override=paid)
+        add_trip_and_leg(JAN, d, datetime.min.time().replace(hour=19, minute=0),
+                          dur, "weekend trip", city, "home", "Berlin", "home_return",
+                          "long_distance_train", dist, False, False, jan_bc25, paid_override=paid)
+
+print(f"After Jan: {len(trip_rows)}")
 print(f"Total trips: {len(trip_rows)}, total legs: {len(leg_rows)}")
 
 
@@ -885,3 +1262,8 @@ print("Jonas Keller:", JONAS)
 print("Simone Wagner:", SIMONE)
 print("Elif Yildiz:", ELIF)
 print("Maja Hoffmann:", NORA)
+print("Michael Voss:", MICHAEL)
+print("Vera Neumann:", VERA)
+print("Claudia Herrmann:", CLAUDIA)
+print("Sabine Krüger:", SABINE)
+print("Jan Albrecht:", JAN)

@@ -321,6 +321,60 @@ def test_bahncard_alternative_never_offered_in_public_transport_bucket():
     assert "Deutschlandticket" not in ldr_names
 
 
+def test_held_bahncard_discounts_regional_train_when_no_flat_pass_held():
+    """A BahnCard's %-discount applies to regional_train fares too, not just
+    long-distance ones -- but only when no Deutschlandticket-style flat pass is also
+    held (otherwise regional trips are already free/covered by that pass, and which
+    product is "really" discounting a given regional trip becomes ambiguous -- see
+    the "8b."/BahnCard-on-regional-train comments in analysis.py).
+
+    The fixture holds BahnCard 50 only (no Deutschlandticket) with regional_train
+    legs left deliberately unattributed/undiscounted at the per-leg level (same
+    convention as a real BahnCard: it discounts whatever fare you buy rather than
+    being "checked into" a trip the way a flat pass is), so this exercises the
+    category-level credit rather than any pre-existing per-leg discount.
+
+    Local public_transport (bus/tram) legs are priced 3.0/leg, regional_train legs
+    10.0/leg, 20 of each -- so regional_train is 10/13 of the bucket's
+    no-subscription cost, and BahnCard 50 should halve exactly that slice:
+    actual = no_subscription * (1 - 0.5 * 10/13).
+    """
+    history = _mixed_public_transport_history()
+    subs, catalog = _mixed_public_transport_subs_and_catalog()
+    out = analyze_portfolio(history, subs, catalog)
+    pt = _find_entry(out, "public_transport")
+
+    expected_actual = round(pt["no_subscription_annual_cost_eur"] * (1 - 0.5 * 10 / 13), 2)
+    assert abs(pt["actual_annual_cost_eur"] - expected_actual) < 0.5
+    assert pt["actual_annual_cost_eur"] < pt["no_subscription_annual_cost_eur"]
+    # has_held_subs must reflect the BahnCard's real (if indirect) role here --
+    # "no_subscription_needed" would misleadingly imply the low cost has nothing to
+    # do with holding a subscription at all.
+    assert pt["recommendation"] != "no_subscription_needed"
+
+
+def test_bahncard_regional_discount_not_applied_when_flat_pass_also_held():
+    """With a Deutschlandticket (or any flat_monthly public_transport pass) also
+    held, regional trips are already fully covered by it -- the BahnCard's regional
+    discount must NOT additionally apply (that would double-discount an already-free
+    trip and reintroduce the exact ambiguity this feature deliberately avoids)."""
+    history = _mixed_public_transport_history()
+    subs, catalog = _mixed_public_transport_subs_and_catalog()
+    subs = subs + [{
+        "user_subscription_id": "us2", "subscription_status": "active", "subscription_id": "dt",
+        "provider_plan_name": "Deutschlandticket", "subscription_category": "public_transport",
+        "monthly_cost_eur": 49.0, "annual_cost_eur": None,
+    }]
+    out = analyze_portfolio(history, subs, catalog)
+    pt = _find_entry(out, "public_transport")
+    # No regional discount credited: actual cost is exactly effective spend (all
+    # legs here are unattributed to the DT, since none carry its sub id) plus the
+    # DT's own annual fee -- not reduced any further by the BahnCard.
+    assert pt["actual_annual_cost_eur"] == round(
+        pt["no_subscription_annual_cost_eur"] + 49.0 * 12, 2
+    )
+
+
 def test_heavy_long_distance_traveler_keeps_bahncard_50_over_alternatives():
     """A heavy long-distance traveler's BahnCard 50 should beat both BahnCard 25 (worse
     discount) and no-subscription — mirrors the real persona this whole redesign was
