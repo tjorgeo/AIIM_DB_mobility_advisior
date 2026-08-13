@@ -298,7 +298,7 @@ add_onboarding(
     1, "single", "high", 220.0, True, "none", "none",
     ["long_distance_train", "regional_train", "public_transport"], ["car"],
     ["frequent_travel", "time_efficiency"],
-    60, 65, 60,
+    50, 75, 50,
     "Regional-train commute into the Leipzig office most days, long-distance train to client sites "
     "1-2x/week on the BahnCard.",
     "Mostly local errands, occasional weekend trip to see family.",
@@ -497,7 +497,7 @@ add_onboarding(
     2, "couple_without_children", "high", 160.0, True, "none", "none",
     ["public_transport", "regional_train"], ["car"],
     ["signed_up_for_perks", "low_usage"],
-    55, 45, 55,
+    60, 30, 60,
     "In the office by regional train about three days a week; works from home the rest.",
     "Rarely travels beyond the neighbourhood; the BahnCard and bike-share membership mostly sit unused.",
     "I picked up the BahnCard 25 and the Call a Bike membership years ago and just never got around to "

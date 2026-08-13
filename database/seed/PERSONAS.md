@@ -78,9 +78,13 @@ Frankfurt, Hamburg, Cologne) on the BahnCard 25; occasional DT-covered weekend
 leisure trips; reduced ~65% during summer holidays (Jul/Aug) and the Dec
 20–Jan 5 lull.
 
-**Onboarding:** `score_emission=60, score_money=65, score_flexibility=60` —
+**Onboarding:** `score_emission=50, score_money=75, score_flexibility=50` —
 cost-conscious about the frequent business travel, wants to know if the
-BahnCard is still the right one.
+BahnCard is still the right one. Money is the clear top priority here (not
+just nominally highest): `resolve_weights` normalizes the three scores
+relative to each other, so a shallow gap between them (the pre-2026-08 values
+were `60/65/60`) washes out to a ~33/33/33 split indistinguishable from "no
+preference stated" — see "Priority-score spread" below.
 
 **Verified analyst output:** Deutschlandticket `cost=€756/yr`,
 `realized_savings=€1,788.79/yr`, **`net_savings=+€1,032.79`** — not flagged,
@@ -157,9 +161,12 @@ occasional DT-covered weekend errands; only 2 long-distance round-trips/year
 on the BahnCard 25 (a conference in Leipzig); ~15 short (<30 min) Call a Bike
 rides/year, each free under the membership's 30-free-minutes allowance.
 
-**Onboarding:** `score_emission=55, score_money=45, score_flexibility=55` —
+**Onboarding:** `score_emission=60, score_money=30, score_flexibility=60` —
 low money-priority is the narrative reason she hasn't noticed/cancelled the
-two unused subscriptions.
+two unused subscriptions; money is now the clear *lowest* of the three (the
+pre-2026-08 values, `55/45/55`, only had a 10-point gap, which normalizes to
+a barely-there ~6pp difference from an even split — see "Priority-score
+spread" below).
 
 **Verified analyst output:** Deutschlandticket `net=+€366.72` — not flagged,
 `public_transport` recommendation `keep_current`. BahnCard 25
@@ -496,6 +503,37 @@ respectively — the teilAuto Vielfahrertarif is real overkill for how little
 he actually drives). `e_scooter` `switch_to_alternative` to Dott Pro
 (`€153.08/yr` vs. actual `€164.07/yr`). `detected_seasonality`: peak in
 September (1.5×), lowest in July (0.3×).
+
+---
+
+## Priority-score spread
+
+Each persona's `score_emission`/`score_money`/`score_flexibility` (0-100,
+onboarding) feed `agent/engines/scoring.py::resolve_weights`, which
+normalizes them **relative to each other** (`cost/total`, `co2/total`,
+`time/total`) rather than against a fixed scale — so what actually drives the
+keep/switch/cancel and modal-shift weighting isn't how high a score is, but
+how far apart the three scores are for that persona. A persona whose scores
+sit close together (e.g. `60/65/60`) normalizes to something like
+`35%/32%/32%` — a couple of points from an even three-way split, i.e.
+practically indistinguishable from "no preference stated" at all, even if the
+narrative claims a clear priority.
+
+As of 2026-08, whenever a persona's story asserts a directional priority, its
+three raw scores are chosen so the resulting normalized spread (max share −
+min share) clears roughly **15 percentage points** — enough to read as a real
+lean rather than noise. Near-equal raw scores are reserved for personas whose
+story is explicitly "no strong preference yet" (Vera, 7. — too new to have
+one) or "fairly balanced" (Sabine, 9. — the persona's point is the hard
+mobility-constraint filter, not priority-weighted ranking). Julia (1.) and
+Simone (3.) were tightened to this rule on 2026-08-12 (Julia: `60/65/60` →
+`50/75/50`; Simone: `55/45/55` → `60/30/60`) — the earlier gaps normalized to
+~3pp and ~6pp respectively, both reading as flat despite their narratives
+explicitly calling out cost-consciousness (Julia) and a deliberately low
+money-priority (Simone). Verified this doesn't flip any documented
+recommendation for either persona (category recommendations and modal-shift
+suggested-shift targets are identical before/after — only the underlying
+weights and candidate scores move).
 
 ---
 
