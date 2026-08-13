@@ -22,6 +22,7 @@ from agent.engines import analyze_portfolio, attach_projected_category_analysis,
 from agent.engines.modal_shift import build_modal_shift_suggestions
 from agent.llm_steps.feasibility_judge import judge as feasibility_judge
 from agent.llm_steps.forecast_reasoner import forecast
+from agent.observability import trace
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,15 @@ def run_analysis(user_id: str) -> dict:
     if ctx.get("error"):
         return {"error": ctx["error"]}
 
+    # One trace per analysis run, so the two LLM steps below (modal-shift feasibility,
+    # forecast reasoning) nest under it and an analysis has a single, countable token
+    # total. No-op without Langfuse keys.
+    with trace("analyze-pipeline", user_id=user_id, tags=["analyze", "main-pipeline"]):
+        return _run_analysis(ctx)
+
+
+def _run_analysis(ctx: dict) -> dict:
+    """The analysis itself; separated so ``run_analysis`` owns the trace boundary."""
     travel_history = ctx["travel_history"]
     subscriptions = ctx["subscriptions"]
     preferences = ctx["user_preferences"]

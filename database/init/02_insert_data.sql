@@ -27,7 +27,10 @@ ON CONFLICT (user_id) DO NOTHING;
 -- ----------------------------------------------------------------------------
 -- user_onboardings
 -- ----------------------------------------------------------------------------
-CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings);
+-- INCLUDING DEFAULTS so columns added by the later migrations (e.g.
+-- `connected_mobility_accounts`, 06) keep their defaults when this script is
+-- re-run by hand against an already-migrated database.
+CREATE TEMP TABLE tmp_user_onboardings (LIKE user_onboardings INCLUDING DEFAULTS);
 ALTER TABLE tmp_user_onboardings ALTER COLUMN onboarding_status SET DEFAULT 'completed';
 ALTER TABLE tmp_user_onboardings ALTER COLUMN bike_access TYPE TEXT;
 
@@ -70,14 +73,27 @@ ON CONFLICT (subscription_id) DO NOTHING;
 -- ----------------------------------------------------------------------------
 -- user_subscriptions
 -- ----------------------------------------------------------------------------
-CREATE TEMP TABLE tmp_user_subscriptions (LIKE user_subscriptions);
+-- INCLUDING DEFAULTS so the NOT NULL `status_changed_at` (absent from the CSV)
+-- gets its NOW() default in the temp table instead of failing the load.
+CREATE TEMP TABLE tmp_user_subscriptions (LIKE user_subscriptions INCLUDING DEFAULTS);
 
-COPY tmp_user_subscriptions
+-- Explicit column list: the table carries `status_changed_at` (position 7, see
+-- 01_create_table.sql) which the CSV does not, so a bare positional COPY would
+-- feed `is_primary_mobility_option` into it and abort the whole script.
+COPY tmp_user_subscriptions (
+    user_subscription_id, user_id, subscription_id, valid_from, valid_until,
+    subscription_status, is_primary_mobility_option, estimated_usage_frequency
+)
 FROM '/seed/user_subscriptions_v5.csv'
 WITH (FORMAT csv, HEADER true, DELIMITER ',', QUOTE '"', NULL '');
 
-INSERT INTO user_subscriptions
-SELECT * FROM tmp_user_subscriptions
+INSERT INTO user_subscriptions (
+    user_subscription_id, user_id, subscription_id, valid_from, valid_until,
+    subscription_status, is_primary_mobility_option, estimated_usage_frequency
+)
+SELECT user_subscription_id, user_id, subscription_id, valid_from, valid_until,
+       subscription_status, is_primary_mobility_option, estimated_usage_frequency
+FROM tmp_user_subscriptions
 ON CONFLICT (user_subscription_id) DO NOTHING;
 
 -- ----------------------------------------------------------------------------

@@ -195,10 +195,15 @@ def reason_demand(
         }
 
     try:
-        response = get_llm().invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
+        from agent.observability import llm_config
+
+        response = get_llm().invoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ],
+            config=llm_config("forecast-reasoner"),
+        )
         data = extract_json(response.content)
         if data:
             return ForecastOutput(**data).model_dump()

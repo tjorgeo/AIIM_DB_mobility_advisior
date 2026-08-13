@@ -117,10 +117,15 @@ def judge(candidates: list[dict], onboarding: dict) -> dict[str, dict]:
         "activity_statement": onboarding.get("activity_statement"),
     }
     try:
-        response = get_llm().invoke([
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
+        from agent.observability import llm_config
+
+        response = get_llm().invoke(
+            [
+                SystemMessage(content=_SYSTEM_PROMPT),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ],
+            config=llm_config("feasibility-judge"),
+        )
         data = extract_json(response.content)
         if not data:
             return fallback
