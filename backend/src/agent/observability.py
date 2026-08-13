@@ -24,11 +24,24 @@ Env (see .env.example):
     LANGFUSE_RELEASE                          — release/version tag for traces
 """
 
+import contextvars
 import logging
 import os
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
+
+# Trace attributes (user/session/tags) of the innermost active :func:`trace` block.
+#
+# Attributes reach a trace through the LangChain config's ``langfuse_*`` metadata keys,
+# not through an SDK trace-update call (the client has no ``update_current_trace`` and
+# 4.x dropped ``span.update_trace`` — see :class:`_Trace`). A nested LLM step that
+# builds its own config therefore has no way to know the enclosing trace's attributes
+# unless they are published here; without this, an ``analyze-pipeline`` trace ends up
+# with ``user_id=None`` and no tags, and cannot be attributed to a customer at all.
+_trace_meta: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "langfuse_trace_meta", default=None
+)
 
 # The Python SDK reads LANGFUSE_HOST; the Langfuse CLI/docs also use
 # LANGFUSE_BASE_URL. Accept either so a single .env works for both.
@@ -67,6 +80,30 @@ def get_callback_handler():
             _handler_failed = True
             return None
     return _handler
+
+
+def llm_config(name: str) -> dict:
+    """LangChain ``config`` for a standalone LLM step that is not already inside a
+    :func:`trace` block.
+
+    Returns ``{}`` when Langfuse is disabled, so spreading it into ``.invoke()``
+    changes nothing — the same degradation contract as :meth:`_Trace.config`.
+
+    Use this for the deterministic pipeline's small LLM steps (forecast reasoning,
+    modal-shift feasibility). They are called both from ``pipeline.run_analysis``
+    and directly from tests, so they cannot rely on an enclosing trace existing.
+    When one does exist the callback nests the generation under it; when it does
+    not, the step becomes its own root trace instead of going unrecorded — which
+    is what previously left these two steps with no token usage at all.
+    """
+    handler = get_callback_handler()
+    if handler is None:
+        return {}
+    config: dict = {"callbacks": [handler], "run_name": name}
+    inherited = _trace_meta.get()
+    if inherited:
+        config["metadata"] = dict(inherited)
+    return config
 
 
 # --- Tracing -----------------------------------------------------------------
@@ -160,10 +197,24 @@ def trace(
     if source:
         all_tags.append(f"memo_source:{source}")
 
+    # Publish the attributes so LLM steps nested inside this block that build their own
+    # config (via llm_config) carry them too — otherwise the trace has no user or tags.
+    meta: dict = {}
+    if user_id:
+        meta["langfuse_user_id"] = user_id
+    if session_id:
+        meta["langfuse_session_id"] = session_id
+    if all_tags:
+        meta["langfuse_tags"] = all_tags
+    token = _trace_meta.set(meta or None)
+
     # start_as_current_observation exists in both SDK 3.x and 4.x and makes the
     # trace id retrievable via get_current_trace_id() inside the block.
-    with client.start_as_current_observation(as_type="span", name=name):
-        yield _Trace(client, handler, name, user_id, session_id, all_tags)
+    try:
+        with client.start_as_current_observation(as_type="span", name=name):
+            yield _Trace(client, handler, name, user_id, session_id, all_tags)
+    finally:
+        _trace_meta.reset(token)
 
 
 # --- Prompt management -------------------------------------------------------

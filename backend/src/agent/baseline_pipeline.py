@@ -17,6 +17,7 @@ wired into any API endpoint or frontend — run it via
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from agent.context import load_context
@@ -27,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_PATH = Path(__file__).with_name("prompts") / "baseline_system.md"
 _SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
+
+# This pipeline's whole point is a single call over the *entire* raw history — the
+# largest seed persona sends ~550 legs — so it needs far more than the 30s interactive
+# budget in agent/llm.py, and a retry to absorb the shared endpoint's rate limiting.
+_LLM_TIMEOUT_S = int(os.getenv("BASELINE_LLM_TIMEOUT_S", "300"))
+_LLM_MAX_RETRIES = int(os.getenv("BASELINE_LLM_MAX_RETRIES", "3"))
 
 # Same action vocabulary the deterministic engine emits (see _pick_recommendation
 # in agent/engines/analysis.py), so baseline and main pipeline outputs are
@@ -248,7 +255,7 @@ def run_baseline_from_context(ctx: dict, user_id: str | None = None) -> dict:
         tags=["baseline", "analyze-pipeline-baseline"],
         metadata={"pipeline": "baseline"},
     ) as tr:
-        response = get_llm().invoke(
+        response = get_llm(timeout=_LLM_TIMEOUT_S, max_retries=_LLM_MAX_RETRIES).invoke(
             [
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(

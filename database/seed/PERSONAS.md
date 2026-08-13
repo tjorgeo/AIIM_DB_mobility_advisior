@@ -56,6 +56,19 @@ gaps involve the forecaster/calendar path.
 
 ---
 
+| Persona | Scenario class | Decision path exercised |
+|---|---|---|
+| Julia Berger | happy path | two subscriptions, two different verdicts (keep and upgrade) |
+| Jonas Keller | happy path | no subscription held, should acquire one |
+| Simone Wagner | happy path | over-subscribed, should cancel |
+| Elif Yildiz | normal, richer | consumption-based pricing (per-minute, per-km, per-hour tariffs) |
+| Maja Hoffmann | normal, richer | CO~2~-dominant preference in tension with stated habit; modal shift |
+| Jan Albrecht | structural stress | all five category buckets populated in one run |
+| Michael Voss | edge case | BahnCard-only regional commuter; cross-category discount credit; downgrade verdict |
+| Vera Neumann | edge case | 8 days of history, triggering `data_warning` with seasonality suppressed |
+| Claudia Herrmann | edge case | 1st-class travel-class matching end to end |
+| Sabine Krüger | edge case, safety | hard mobility constraint must suppress bike and e-scooter suggestions |
+
 ## 1. Julia Berger — BahnCard 25 should become BahnCard 50, Deutschlandticket already pays off
 
 `ce92d8e0-065e-589b-a60e-c692ef2d2ff9` · Leipzig · 35 · Key Account Manager, hybrid

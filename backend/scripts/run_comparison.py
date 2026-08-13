@@ -20,6 +20,7 @@ Env: UNI_GPT_API_KEY (baseline + judge), LANGFUSE_* (dataset + tracing).
 Usage (from backend/):
     python scripts/run_comparison.py
     python scripts/run_comparison.py --assert-main-agreement
+    python scripts/run_comparison.py --dataset dummy-users --experiment dummy-set-baseline
 """
 
 import argparse
@@ -97,11 +98,11 @@ def _run_evaluations(result) -> dict:
     return {e.name: float(e.value) for e in result.run_evaluations}
 
 
-def _print_comparison(scores_by_arm: dict) -> None:
+def _print_comparison(scores_by_arm: dict, completed: dict, total_items: int) -> None:
     """Combined baseline-vs-main table over the union of run-level score names."""
     names = sorted({n for arm in scores_by_arm.values() for n in arm})
     arms = list(scores_by_arm.keys())
-    width = max((len(n) for n in names), default=10) + 2
+    width = max((len(n) for n in names + ["items completed"]), default=10) + 2
 
     print("\n" + "=" * (width + 12 * len(arms)))
     print("Baseline vs main — run-level scores")
@@ -109,6 +110,10 @@ def _print_comparison(scores_by_arm: dict) -> None:
     header = "score".ljust(width) + "".join(a.ljust(12) for a in arms)
     print(header)
     print("-" * len(header))
+    coverage = "items completed".ljust(width)
+    for arm in arms:
+        coverage += f"{completed.get(arm, 0)}/{total_items}".ljust(12)
+    print(coverage)
     for name in names:
         row = name.ljust(width)
         for arm in arms:
@@ -119,11 +124,23 @@ def _print_comparison(scores_by_arm: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--dataset", default=DATASET_NAME, help="Langfuse dataset to run over")
+    parser.add_argument(
+        "--experiment",
+        help="experiment name; each arm is registered as '<experiment>-<arm>' "
+             "(default: the dataset name)",
+    )
+    parser.add_argument(
+        "--max-concurrency", type=int, default=4,
+        help="parallel items per arm (default 4; the SDK's 50 rate-limits the shared "
+             "university endpoint into timeouts on the baseline's large prompts)",
+    )
     parser.add_argument(
         "--assert-main-agreement", action="store_true",
         help="exit non-zero if the main arm's category-agreement-mean is not 1.0 (smoke check)",
     )
     args = parser.parse_args()
+    experiment = args.experiment or args.dataset
 
     from agent.llm import llm_available
 
@@ -136,27 +153,40 @@ def main() -> int:
     from eval.recommendation_judges import all_evaluators
 
     scores_by_arm = {}
+    completed = {}
     try:
         client = get_client()
-        dataset = client.get_dataset(DATASET_NAME)
+        dataset = client.get_dataset(args.dataset)
+        total_items = len(dataset.items)
         evaluators = all_evaluators()
 
         for arm, task in (("baseline", baseline_task), ("main", main_task)):
             print(f"\n### Running '{arm}' arm ...", file=sys.stderr)
             result = dataset.run_experiment(
-                name=f"{DATASET_NAME}-{arm}",
+                name=f"{experiment}-{arm}",
+                description=f"{experiment}: {arm} pipeline over the '{args.dataset}' dataset",
                 task=task,
                 evaluators=evaluators,
                 run_evaluators=[_aggregate],
+                max_concurrency=args.max_concurrency,
+                metadata={"experiment": experiment, "arm": arm, "dataset": args.dataset},
             )
             print(result.format())
             scores_by_arm[arm] = _run_evaluations(result)
+            # An item whose task raised (e.g. an LLM timeout) is dropped from
+            # item_results, and the run-level aggregates above silently average over
+            # whatever survived. Report coverage so a half-run arm can't read as a
+            # clean score.
+            completed[arm] = len(result.item_results)
+            if completed[arm] < total_items:
+                print(f"! '{arm}' arm: only {completed[arm]}/{total_items} items completed — "
+                      "its scores below cover just those.", file=sys.stderr)
     finally:
         from agent.observability import flush
 
         flush()
 
-    _print_comparison(scores_by_arm)
+    _print_comparison(scores_by_arm, completed, total_items)
 
     if args.assert_main_agreement:
         main_agreement = scores_by_arm.get("main", {}).get("category-agreement-mean", 0.0)
