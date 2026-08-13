@@ -132,6 +132,121 @@ python scripts/run_experiment.py     # runs the experiment; exits non-zero if gr
 The dataset stores each persona's **grounding data**, so the experiment only
 needs an LLM key — no database.
 
+### Baseline vs. main comparison
+
+A second, separate experiment compares the two *pipelines* rather than the memo
+text: the single-LLM-call baseline ([`baseline_pipeline.py`](../src/agent/baseline_pipeline.py))
+against the deterministic engine, both scored by the same five evaluators in
+[`recommendation_judges.py`](./recommendation_judges.py) — four deterministic code
+checks plus one LLM soundness judge:
+
+| Evaluator | Type | Fails when |
+|---|---|---|
+| `plan-in-catalog` | deterministic, BOOLEAN | a recommended plan name does not exist in the catalog (hallucinated tariff) |
+| `action-in-vocabulary` | deterministic, BOOLEAN | an action falls outside the six-value shared vocabulary |
+| `savings-non-negative` | deterministic, BOOLEAN | a recommendation claims a negative annual saving |
+| `category-agreement` | deterministic, NUMERIC 0 to 1 | fraction of ground-truth categories whose action does not match |
+| `recommendation-soundness` | LLM judge, BOOLEAN | any action, saving or plan contradicts the deterministic cost table |
+
+```bash
+cd backend
+# the original four-persona set
+python scripts/seed_comparison_dataset.py
+python scripts/run_comparison.py
+
+# all ten seed personas (database/seed/PERSONAS.md)
+python scripts/seed_comparison_dataset.py --dataset dummy-users --personas all
+python scripts/run_comparison.py --dataset dummy-users --experiment dummy-set-baseline
+```
+
+Each run registers two dataset runs, `<experiment>-baseline` and `<experiment>-main`,
+so Langfuse shows them side by side. The **main arm is the ground truth by
+construction** — it echoes the deterministic recommendations computed from the DB at
+seed time — so it scores 1.0 on `category-agreement` by definition; the number to read
+is the baseline's.
+
+#### Measured results
+
+The `dummy-set-baseline` experiment over the ten seed personas, both arms completing
+all ten items. These are the reference figures quoted in the project report; regenerate
+them with the two commands above plus `scripts/measure_token_usage.py`.
+
+| Metric | Agent system (main) | Naive baseline |
+|---|---:|---:|
+| Items completed | 10/10 | 10/10 |
+| `category-agreement` (mean) | 1.00 (definitional) | **0.61 / 0.65 / 0.69** |
+| `recommendation-soundness` (pass rate) | 1.00 (definitional) | **0.00** |
+| `plan-in-catalog` (pass rate) | 1.00 | 1.00 |
+| `action-in-vocabulary` (pass rate) | 1.00 | 1.00 |
+| `savings-non-negative` (pass rate) | 1.00 | 1.00 |
+| Tokens per run, mean (measured) | **7,845** | **46,619** |
+| Tokens per run, range | 2,110 to 11,592 | 12,946 to 69,963 |
+| LLM calls per run | 1 to 2 | 1 |
+| Latency per run (median) | **28.3 s** | **71.1 s** |
+| Latency per run (range) | 4.9 to 64.6 s | 11.1 to 878.5 s |
+
+`category-agreement` is given for three independent runs of the baseline arm; every
+other score was identical across all three.
+
+**Latency is only comparable when both arms run sequentially.** The figures above come
+from a `--max-concurrency 1` run of each. At the default of 4 the baseline's per-item
+latency inflates badly through contention on the shared university endpoint (median
+74 s, but with a 1,105 s worst case), which measures the endpoint's queue rather than
+the pipeline. The main pipeline's numbers are wall-clock around `run_analysis`, which
+matched its Langfuse span latency to within 0.1 s, so `load_context` is negligible.
+Both distributions are right-skewed; the baseline's far more so (mean 160.9 s against a
+71.1 s median), because a timed-out call is retried up to `BASELINE_LLM_MAX_RETRIES`.
+
+Per-step token counts, measured from Langfuse traces:
+
+| LLM step | Runs | Mean input | Mean output | Mean total |
+|---|---:|---:|---:|---:|
+| Baseline: whole leg history and catalog, one call | 10/10 | 32,280 | 14,340 | **46,619** |
+| Ours: `forecast-reasoner` | 10/10 | 3,138 | 3,824 | 6,962 |
+| Ours: `feasibility-judge` | 5/10 | 673 | 1,093 | 1,766 |
+| **Ours: per analysis run** | | ~3,475 | ~4,370 | **7,845** |
+
+The `feasibility-judge` row covers five of ten personas because the deterministic hard
+filter in `modal_shift.py` resolves the other five candidates before any model call, so
+an analysis costs one or two LLM calls depending on the customer.
+
+Two things this experiment is sensitive to:
+
+- **Seeding needs the database**; the run itself does not (the item input is the
+  stored raw context).
+- **The baseline sends a persona's entire leg history in one prompt** (~550 legs for
+  the largest). It runs on its own LLM timeout (`BASELINE_LLM_TIMEOUT_S`, default
+  300s) rather than the 30s interactive budget, and `run_comparison.py` caps
+  `--max-concurrency` at 4. At the SDK default of 50 the shared university endpoint
+  rate-limits and most items fail with `Request timed out`. The printed table's
+  `items completed` row reports coverage — treat any arm below the full item count as
+  an incomplete result, not a score.
+
+### Token usage
+
+```bash
+cd backend
+python scripts/measure_token_usage.py --include-baseline
+```
+
+Runs the main pipeline over the ten seed personas and reads the resulting
+`analyze-pipeline` traces back out of Langfuse, reporting measured input/output
+tokens per persona and per LLM step (`--no-run` skips the run and only reads
+existing traces). `--include-baseline` adds the same for `baseline-recommendation`
+traces, so the two pipelines can be compared on measured tokens rather than
+estimates.
+
+Two things to know about what is and isn't measured:
+
+- **All LLM steps are traced.** `forecast-reasoner` and `feasibility-judge` take
+  their callback config from `observability.llm_config()`, and `run_analysis` opens
+  the enclosing `analyze-pipeline` trace they nest under, so one analysis run is one
+  trace with one countable token total. Before this was wired up, both steps ran
+  untraced and their token usage was simply absent.
+- **Euro cost is not available.** The university endpoint's model has no price
+  configured in Langfuse, so `total_cost` is always `0.0`. Tokens are real; cost has
+  to be derived externally from a per-token rate if you need it.
+
 **No CI gate (intentionally).** While the pipeline is still changing a lot, an
 automated PR gate would just create noise, so it isn't wired up. Re-enabling it
 later is one file: add a GitHub Actions workflow that runs

@@ -28,6 +28,8 @@ format:
     toc: false
     number-sections: true
     highlight-style: github
+    include-in-header:
+      - tex/continuous-chapters.tex
 
 execute:
   echo: false

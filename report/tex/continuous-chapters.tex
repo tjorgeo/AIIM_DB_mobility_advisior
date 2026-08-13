@@ -1,0 +1,24 @@
+% Chapters flow continuously instead of each starting on a fresh page.
+%
+% `scrreprt` maps every level-1 heading to \chapter, and a KOMA \chapter always
+% issues \clearpage before it. With eight chapters plus appendices that wasted
+% roughly half the page budget on whitespace.
+%
+% \RedeclareSectionCommand[style=section]{chapter} is KOMA's documented way to do
+% this: it retypesets \chapter using the section algorithm, which has no page
+% break, while `level` stays untouched so chapter numbering and the 1.1 / 1.1.1
+% subsection scheme are unchanged.
+\RedeclareSectionCommand[
+  style=section,
+  font=\Large\bfseries,
+  beforeskip=-1.8\baselineskip plus -.3\baselineskip minus -.2\baselineskip,
+  afterskip=.8\baselineskip plus .1\baselineskip
+]{chapter}
+
+% The chapter heading no longer owns a whole page, so the section heading beneath
+% it needs to sit visibly lower in the hierarchy.
+\RedeclareSectionCommand[
+  font=\large\bfseries,
+  beforeskip=-1.2\baselineskip plus -.2\baselineskip minus -.2\baselineskip,
+  afterskip=.5\baselineskip plus .1\baselineskip
+]{section}

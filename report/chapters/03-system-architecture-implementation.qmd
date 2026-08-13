@@ -1,7 +1,5 @@
 # System Architecture & Implementation
 
-*Describe how your agent system is built (meta-level), how it behaves, and how it stays robust.*
-
 ## Architecture Overview
 
 The architecture conssist of a deterministic and a generative part. The deterministic calculation engine is the first step in 
@@ -50,7 +48,7 @@ changes nothing else. Details of the observability fallback behavior for the mod
 
 Describe the agentic behavior here.
 
-## Error Handling & Robustness
+## Error Handling & Robustness {#sec-error-handling}
 
 *Suggestions:*
 
