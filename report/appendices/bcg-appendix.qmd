@@ -12,3 +12,83 @@ BCG-appendix report.
 
 Add the BCG-appendix content here.
 
+## Context Record: (Maike)
+- A locked snapshot of all decisions, constraints, and open questions captured during the clarification phase
+- Serves as the single source of truth for why the architecture looks the way it does
+
+## Architecture Blueprint (Tjorge)
+
+### Stakeholder view
+
+The product answers one question for a customer: given how you actually travelled over
+the past year, is the set of mobility subscriptions you are paying for the right one?
+
+It works in four steps. At onboarding the customer states what matters to them on three
+sliders, cost, CO~2~ and flexibility, and connects their mobility accounts. The system
+then reconstructs twelve months of travel from that data, showing every trip, what it
+cost and what it emitted, so the customer sees their own behaviour before being asked
+to change it. Against that history it prices each subscription they hold, plus every
+comparable plan on the market, and issues one verdict per travel category: keep, switch,
+cancel, or take one up. Upcoming calendar entries such as a house move or a new office
+are folded in, so the advice reflects where the customer is heading. Finally, an
+advisory chat answers follow-up questions about tariff terms and can execute a change
+directly, though never without the customer confirming the specific change first.
+
+The commercial claim rests on one property. Every euro and CO~2~ figure the customer
+sees is calculated, never written by a language model, which is what makes the advice
+auditable and the savings defensible.
+
+### Technical view
+
+```
+   Browser: React 18 SPA (Vite)
+        |  REST / SSE
+        v
+   FastAPI service (Python 3.12) ------------> PostgreSQL 16
+        |                                      domain data, session
+        |                                      snapshots, agent state
+        |
+        +-- analyze path (synchronous, one shot):
+        |      load_context -> analyze -> forecast -> communicate
+        |      deterministic engines carry every figure;
+        |      2 small LLM steps (forecast reasoning, modal-shift feasibility),
+        |      each with a deterministic fallback
+        |
+        +-- chat path (multi-turn):
+               LangGraph ReAct advisor, 7 tools,
+               Postgres checkpointer, interrupt() confirmation gate
+                          |
+                          v
+        University GPT endpoint (kiconnect.nrw, openai/gpt-oss-120b)
+        Langfuse (tracing, prompt versions, scores, experiments)
+```
+
+The two paths differ in who decides the next step. The analyze path is a plain
+sequential function chain with no agent runtime, so it is reproducible and unit-testable.
+The chat path is the only place where a model chooses its own next action and reaches
+for a tool, and the one irreversible action it can take is gated on an explicit
+confirmation enforced by the runtime rather than by the prompt.
+
+### Key components
+
+| Layer | What it holds | Implementation |
+|---|---|---|
+| **Data** | Customer profile and onboarding priorities, held subscriptions, trip and leg history, calendar entries, recommendations, and the advisor's conversation state | PostgreSQL 16, 13 tables. A 54-plan tariff catalogue and a 62-document tariff knowledge base in Open Knowledge Format sit alongside it |
+| **Model** | One endpoint, three call sites: calendar-based demand forecasting, modal-shift feasibility, and the advisory conversation | University-hosted OpenAI-compatible endpoint (`openai/gpt-oss-120b`). Never asked to compute a cost, emission or time figure |
+| **Infrastructure** | Three containers, one command to start | Docker Compose: FastAPI backend, Vite frontend, PostgreSQL. No cloud dependency |
+| **Integrations** | Exactly two outbound calls in the request path | The model endpoint and Langfuse. Both degrade to no-ops when unconfigured, so the system stays functional offline |
+
+: {tbl-colwidths="[17,47,36]"}
+
+Deterministic engines in `agent/engines/` carry the analysis: per-category pricing and
+eligibility, cross-category modal-shift comparison, seasonal projection, and the
+preference weighting that turns the three onboarding sliders into the weights used by
+every ranking.
+
+## Architecture Deicision Records (ADRs) → Same as Uni (Franzi)
+- One short document per significant design choice
+- Each ADR captures: the decision context, the options considered, thechosen option, and the trade-offs accepted
+- ADRs make your rationale inspectable and challengeable
+
+## Component Description (Lennart)
+- Explanation of each selected service or module and its responsibility
