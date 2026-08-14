@@ -1,16 +1,16 @@
 # Use Case & Value Proposition
 
 Managing personal mobility today means navigating a market that has grown considerably more complex than a single transit pass or car lease.
-Across rail, regional bus, car-sharing, bike- and scooter-sharing alone, users face dozens of providers, each offering multiple subscription tiers, usage-based alternatives, and discount conditions.
-No single application shows a user the full picture: what they actually spent, how many trips they made, which modes they used, and whether the subscriptions they are paying for were worth it.
-Reconstructing that picture manually is tedious; comparing it against the available market, subscription by subscription, is prohibitive for most people.
+Across rail, regional bus, car-sharing, bike- and scooter-sharing alone, users face various providers, each offering multiple subscription tiers, usage-based alternatives or discount conditions.
+No single application shows a user a comperehensive overview of what they actually spent, how many trips they made, which modes they used, and whether their subscriptions are suitable.
+Reconstructing those information manually is difficult, as it includes comparing the own subscriptions against the available market, subscription by subscription, and is therefore not feasible for most people.
 
 Our solution gives users what they would otherwise have to piece together by hand.
-It starts with a transparent reconstruction of their own travel history across every mode, i.e. trips taken, costs incurred, distribution across providers, and CO~2~ emissions, so they can understand their travel patterns before being asked to change it.
-On that basis, it generates a personalised recommendation for the optimal subscription portfolio, weighted by what each user actually cares about: cost savings, CO~2~ reduction, or time efficiency, in whatever proportion they choose.
-Crucially, the optimisation is not purely backward-looking: scheduled changes already on the calendar, like an upcoming relocation or a new commute pattern are factored in, so the recommendation reflects where the user is heading, not only where they have been.
-Two further layers of friction are removed on top of this: users can query the terms and conditions of any subscription directly, rather than hunting through provider websites, and once they decide to act, the platform executes the change, like cancelling, modifying, or creating subscriptions, rather than leaving it as a task for the user to complete elsewhere.
+It starts with a transparent reconstruction of their own travel history across every mode, i.e. trips taken, costs incurred, distribution across providers, and CO~2~ emissions, so they can understand their travel patterns before changing their subscriptions to accomodate it.
+On that basis, the solution generates a personalised recommendation for the optimal subscription portfolio, weighted by what each user actually cares about, like cost savings, CO~2~ reduction, or time efficiency, in whatever proportion they choose.
+Crucially, the optimisation is not purely backward-looking, but scheduled changes already on the calendar, like an upcoming relocation or a new commute pattern are factored in, so the recommendation reflects where the user is heading, not only where they have been.
+Two further layers of friction are removed on top of this. Users can query the terms and conditions of any subscription directly, rather than searching through provider websites, and once they decide to act, the platform executes the change, like cancelling, modifying, or creating subscriptions, rather than leaving it as a task for the user to complete elsewhere.
 
-The potential user base is broad: anyone who moves across multiple modes of transport stands to benefit, regardless of how frequently they travel or how complex their routine appears.
-A student commuting within their university city and taking occasional long-distance trains home faces a genuinely different optimisation problem than a professional who travels regularly across the country for work or to maintain friendships, yet both are navigating a market too fragmented to assess without dedicated tooling.
+The potential user base is broad. Anyone who moves across multiple modes of transport stands to benefit, regardless of how frequently they travel or how complex their routine appears.
+A student commuting within their university city and taking occasional long-distance trains home faces a genuinely different optimisation problem than a professional who travels regularly across the country for work, yet both are navigating a market too fragmented to assess without dedicated solutions.
 The current prototype focuses on individual users, though the same logic applies wherever mobility costs are managed collectively, such as employer-covered travel budgets, making a B2B extension a natural next step.
