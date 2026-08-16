@@ -189,7 +189,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`, shiftAction: (label) => `Zu ${label} wechseln`,
       shiftDone: (label) => `Gewechselt zu ${label}`,
       noBetterShift: 'Kein anderes Verkehrsmittel schneidet nach deiner Gewichtung besser ab.',
-      confidenceLow: 'geringe Sicherheit',
       priorityTitle: 'DEINE PRIORITÄTEN', prioritySubtitle: 'Bestimmt, welche Option unten als optimal gilt.',
       priorityCost: 'Kosten', priorityCo2: 'CO₂', priorityFlex: 'Flexibilität / Zeit',
       noCurrentToCompare: 'kein aktuelles Abo zum Vergleich',
@@ -230,7 +229,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`, shiftAction: (label) => `Switch to ${label}`,
       shiftDone: (label) => `Switched to ${label}`,
       noBetterShift: 'No other mode scores better under your weighting.',
-      confidenceLow: 'low confidence',
       priorityTitle: 'YOUR PRIORITIES', prioritySubtitle: 'Determines which option below counts as optimal.',
       priorityCost: 'Cost', priorityCo2: 'CO₂', priorityFlex: 'Flexibility / Time',
       noCurrentToCompare: 'no current plan to compare against',
@@ -707,11 +705,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                           </span>
                         )}
                       </div>
-                      {shift.feasibility?.confidence === 'low' && (
-                        <div style={{ fontSize: '0.68rem', color: colors.textMuted, marginTop: '0.4rem', fontStyle: 'italic' }}>
-                          ({t.confidenceLow}{shift.feasibility?.reasoning ? `: ${shift.feasibility.reasoning}` : ''})
-                        </div>
-                      )}
                       {executableAction(shiftActionKey, { label: t.shiftAction(modeLabel(shift.to_category, langKey)), done: t.shiftDone(modeLabel(shift.to_category, langKey)) }, colors.accentCyan)}
                     </div>
                   )}
