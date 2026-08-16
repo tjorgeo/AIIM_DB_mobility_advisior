@@ -232,6 +232,15 @@ export default function Dashboard() {
     if (list.length === 0) return
     setCancelledSubs((prev) => Array.from(new Set([...prev, ...list])))
   }
+  // Fake "execute this recommendation" actions on the portfolio page (switch plan,
+  // subscribe, apply a modal-shift/forecast suggestion) — purely client-side state,
+  // never sent to the backend, so a reload puts everything back to how it was. Keyed
+  // by an action-specific string (see PortfolioDetail) so each button tracks its own
+  // done/not-done state independently.
+  const [executedActions, setExecutedActions] = useState({})
+  const handleExecuteAction = (key, message) => {
+    setExecutedActions((prev) => ({ ...prev, [key]: message }))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -381,6 +390,8 @@ export default function Dashboard() {
         onBack={() => setView('overview')}
         cancelledSubs={cancelledSubs}
         onCancelSubscriptions={handleCancelSubscriptions}
+        executedActions={executedActions}
+        onExecuteAction={handleExecuteAction}
         chatSlotRef={chatSlotRef}
       />
     )

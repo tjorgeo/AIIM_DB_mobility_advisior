@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar, Euro, Leaf, Clock } from 'lucide-react'
+import { ChevronLeft, ChevronDown, Wallet, PiggyBank, TrendingUp, Calendar, Euro, Leaf, Clock, Check } from 'lucide-react'
 import { euro, number } from '../lib/format'
 import { modeColor, modeLabel } from '../lib/travelModes'
 
@@ -19,6 +19,41 @@ function recMeta(rec, colors, isDE) {
     case 'consider_subscribing': return { label: isDE ? 'Abo empfohlen' : 'Consider subscribing', color: colors.accentAmber }
     default: return { label: rec || (isDE ? 'Unbekannt' : 'Unknown'), color: colors.textMuted }
   }
+}
+
+// Button label + "done" confirmation text for a fake "execute this recommendation"
+// action — shared between a category's own recommendation and a forecast box that
+// projects a *different* recommendation for the same category, so both read with
+// identical wording. Returns null for recommendations with nothing to execute
+// (keep_current / no_subscription_needed are already the status quo).
+function actionCopy(rec, planName, isDE) {
+  switch (rec) {
+    case 'switch_to_alternative':
+      return {
+        label: isDE ? `Zu ${planName} wechseln` : `Switch to ${planName}`,
+        done: isDE ? `Abo gewechselt zu ${planName}` : `Switched to ${planName}`,
+      }
+    case 'consider_subscribing':
+      return {
+        label: isDE ? `${planName} abonnieren` : `Subscribe to ${planName}`,
+        done: isDE ? `Abo abgeschlossen: ${planName}` : `Subscribed to ${planName}`,
+      }
+    case 'cancel_current_go_pay_as_you_go':
+      return {
+        label: isDE ? 'Jetzt kündigen' : 'Cancel now',
+        done: isDE ? 'Abo gekündigt' : 'Subscription cancelled',
+      }
+    default:
+      return null
+  }
+}
+
+// Turns an action button's label ("Zu X wechseln") into its Ja/Nein confirm
+// question ("Wirklich zu X wechseln?") — one rule instead of a separate
+// translated question per action type, so new action types need no extra copy.
+function confirmQuestion(label, isDE) {
+  const lower = label.charAt(0).toLowerCase() + label.slice(1)
+  return isDE ? `Wirklich ${lower}?` : `Really ${lower}?`
 }
 
 // The target plan name for a "switch" / "consider subscribing" recommendation —
@@ -115,10 +150,12 @@ function lifeEventDativePhrase(type, isDE) {
   return _LIFE_EVENT_NOUN_EN[key] || (humanized ? `the ${humanized}` : 'the event')
 }
 
-export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions, chatSlotRef }) {
+export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack, cancelledSubs = [], onCancelSubscriptions, executedActions = {}, onExecuteAction, chatSlotRef }) {
   const isDE = lang === 'DE'
-  // Welche Kategorie zeigt gerade die „Wirklich kündigen?"-Rückfrage
-  const [confirmingCategory, setConfirmingCategory] = useState(null)
+  // Which single action button is currently showing its "really do this?" Ja/Nein
+  // step — keyed the same way as executedActions (see executableAction below), so
+  // only one confirm prompt is open across the whole page at a time.
+  const [confirmingKey, setConfirmingKey] = useState(null)
   const langKey = isDE ? 'de' : 'en'
   const t = isDE
     ? {
@@ -149,13 +186,18 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       recommendedBadge: 'EMPFOHLEN',
       recommendedNotCheapest: 'Nicht die günstigste Option, aber besser nach deiner Kosten-/CO₂-/Zeit-Gewichtung.',
       orDifferentMode: 'Oder: anderes Verkehrsmittel',
-      stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`,
+      stayLabel: 'Aktuell dabei bleiben', shiftTo: (label) => `Wechsel zu ${label}`, shiftAction: (label) => `Zu ${label} wechseln`,
+      shiftDone: (label) => `Gewechselt zu ${label}`,
       noBetterShift: 'Kein anderes Verkehrsmittel schneidet nach deiner Gewichtung besser ab.',
       confidenceLow: 'geringe Sicherheit',
-      priorityIntro: (cost, co2, time) => `Gewichtet nach deinen Prioritäten: Kosten ${cost}/100, CO₂ ${co2}/100, Flexibilität/Zeit ${time}/100`,
+      priorityTitle: 'DEINE PRIORITÄTEN', prioritySubtitle: 'Bestimmt, welche Option unten als optimal gilt.',
+      priorityCost: 'Kosten', priorityCo2: 'CO₂', priorityFlex: 'Flexibilität / Zeit',
       noCurrentToCompare: 'kein aktuelles Abo zum Vergleich',
       showAlternatives: (n) => (n === 1 ? 'Die 1 Alternative anzeigen' : `Alle ${n} Alternativen anzeigen`),
       hideAlternatives: 'Alternativen ausblenden',
+      cancelEyebrow: 'EMPFEHLUNG: KÜNDIGEN', cancelReason: 'Reine Einzelfahrten sind günstiger als jedes Abo.',
+      cancelledLabel: 'Gekündigt', applyRecommendation: 'Diese Empfehlung übernehmen',
+      confirmYes: 'Ja', confirmNo: 'Nein',
     }
     : {
       back: 'Back to dashboard', title: 'Cost-Optimized Portfolio', subtitle: "Today's costs, alternatives compared, and what's ahead",
@@ -185,13 +227,18 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       recommendedBadge: 'RECOMMENDED',
       recommendedNotCheapest: "Not the cheapest option, but scores better on your cost/CO₂/time weighting.",
       orDifferentMode: 'Or: different mode',
-      stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`,
+      stayLabel: 'Stay as-is', shiftTo: (label) => `Switch to ${label}`, shiftAction: (label) => `Switch to ${label}`,
+      shiftDone: (label) => `Switched to ${label}`,
       noBetterShift: 'No other mode scores better under your weighting.',
       confidenceLow: 'low confidence',
-      priorityIntro: (cost, co2, time) => `Weighted by your priorities: cost ${cost}/100, CO₂ ${co2}/100, flexibility/time ${time}/100`,
+      priorityTitle: 'YOUR PRIORITIES', prioritySubtitle: 'Determines which option below counts as optimal.',
+      priorityCost: 'Cost', priorityCo2: 'CO₂', priorityFlex: 'Flexibility / Time',
       noCurrentToCompare: 'no current plan to compare against',
       showAlternatives: (n) => (n === 1 ? 'Show the 1 alternative' : `Show all ${n} alternatives`),
       hideAlternatives: 'Hide alternatives',
+      cancelEyebrow: 'RECOMMENDATION: CANCEL', cancelReason: 'Pay-per-trip is cheaper than any subscription.',
+      cancelledLabel: 'Cancelled', applyRecommendation: 'Apply this recommendation',
+      confirmYes: 'Yes', confirmNo: 'No',
     }
 
   // Per-category "all alternatives" table — collapsed by default so the page leads
@@ -214,7 +261,6 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
   const modalShiftSuggestions = [...(summary?.modal_shift_suggestions || [])]
     .sort((a, b) => (tripsByCategory[b.from_category] || 0) - (tripsByCategory[a.from_category] || 0))
   const shiftByCategory = Object.fromEntries(modalShiftSuggestions.map((s) => [s.from_category, s]))
-  const anyShiftSuggested = modalShiftSuggestions.some((s) => s.suggested_shift)
   const preferences = analysis?.preferences || {}
   const totalCurrent = summary?.total_actual_annual_cost_eur || 0
   const totalSavings = summary?.total_estimated_savings_eur || 0
@@ -313,6 +359,65 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
       <div style={{ fontSize: '1.3rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{value}</div>
     </div>
   )
+  const priorityBar = (icon, label, value, color) => (
+    <div style={{ backgroundColor: `${color}14`, border: `1px solid ${color}40`, borderRadius: '12px', padding: '0.55rem 0.75rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+          <span style={{ color, display: 'flex', flexShrink: 0 }}>{icon}</span>
+          <span style={{ fontSize: '0.8rem', fontWeight: '700' }}>{label}</span>
+        </div>
+        <span style={{ fontSize: '1rem', fontWeight: '800', color, flexShrink: 0 }}>{value}</span>
+      </div>
+      <div style={{ height: '5px', borderRadius: '999px', backgroundColor: colors.inputBg, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.max(0, Math.min(100, value))}%`, height: '100%', borderRadius: '999px', backgroundColor: color }} />
+      </div>
+    </div>
+  )
+
+  // One button style, reused for every "execute this recommendation" action
+  // (switch plan, subscribe, cancel, apply a shift/forecast suggestion) so they
+  // all look and behave the same wherever they appear on the page.
+  const actionButtonEl = (label, onClick, color = colors.accentCyan) => (
+    <button type="button" onClick={onClick} style={{ marginTop: '0.6rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.95rem', borderRadius: '10px', border: `1px solid ${color}66`, backgroundColor: `${color}12`, color, fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer' }}>
+      {label}
+    </button>
+  )
+  // Its counterpart once the fake action has been "executed" — same slot, same
+  // shape, so clicking a button doesn't shift the surrounding layout.
+  const doneBadge = (message) => (
+    <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', borderRadius: '10px', backgroundColor: `${colors.successGreen}18`, border: `1px solid ${colors.successGreen}55`, color: colors.successGreen, fontWeight: '700', fontSize: '0.82rem' }}>
+      <Check size={14} /> {message}
+    </div>
+  )
+  // Third slot in the same spot: the inline Ja/Nein step shown while this action's
+  // key is the one being confirmed. Ja runs onConfirm and clears the prompt, Nein
+  // just clears it — nothing is executed on a plain click of the action button itself.
+  const confirmBox = (label, onConfirm, color, detail) => (
+    <div style={{ marginTop: '0.6rem' }}>
+      <div style={{ fontSize: '0.82rem', fontWeight: '700', color: colors.text, marginBottom: detail ? '0.15rem' : '0.5rem' }}>
+        {confirmQuestion(label, isDE)}
+      </div>
+      {detail && <div style={{ fontSize: '0.75rem', color: colors.textMuted, marginBottom: '0.5rem' }}>{detail}</div>}
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button type="button" onClick={() => { onConfirm(); setConfirmingKey(null) }} style={{ flex: 1, padding: '0.5rem', borderRadius: '10px', border: 'none', backgroundColor: color, color: '#ffffff', fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer' }}>
+          {t.confirmYes}
+        </button>
+        <button type="button" onClick={() => setConfirmingKey(null)} style={{ flex: 1, padding: '0.5rem', borderRadius: '10px', border: `1px solid ${colors.border}`, backgroundColor: colors.card, color: colors.text, fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer' }}>
+          {t.confirmNo}
+        </button>
+      </div>
+    </div>
+  )
+  // Renders the button/confirm/done-badge triplet for a generic (non-cancel) fake
+  // action, keyed so each spot on the page (a category's own recommendation vs.
+  // the same recommendation surfaced again in the forecast box) tracks its own
+  // confirm and done state independently.
+  const executableAction = (key, copy, color = colors.accentAmber) => {
+    if (!copy) return null
+    if (executedActions[key]) return doneBadge(executedActions[key])
+    if (confirmingKey === key) return confirmBox(copy.label, () => onExecuteAction?.(key, copy.done), color)
+    return actionButtonEl(copy.label, () => setConfirmingKey(key), color)
+  }
 
   return (
     <div style={{ backgroundColor: colors.bg, color: colors.text, fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh' }}>
@@ -320,11 +425,12 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
         .portfolio-container { display: grid; grid-template-columns: 1fr; gap: 1.25rem; min-width: 0; }
         .portfolio-kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; min-width: 0; }
         .portfolio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; min-width: 0; }
+        .priority-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; min-width: 0; margin-bottom: 0.5rem; }
         /* Queries the actual space beside the chat sidebar (see
            .page-split__main in components.css), not the viewport, so this
            collapses to one column whenever there's genuinely too little
            room for three, sidebar or no sidebar. */
-        @container page-main (max-width: 480px) { .portfolio-kpis { grid-template-columns: 1fr; } }
+        @container page-main (max-width: 480px) { .portfolio-kpis { grid-template-columns: 1fr; } .priority-grid { grid-template-columns: 1fr; } }
       `}</style>
 
       <header style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${colors.border}`, position: 'sticky', top: 0, backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)', zIndex: 10 }}>
@@ -350,15 +456,17 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               {kpi(<PiggyBank size={14} />, t.savings.toUpperCase(), euro(totalSavings, { lang: langKey }))}
             </div>
 
-            {anyShiftSuggested && (
-              <p style={{ fontSize: '0.78rem', color: colors.textMuted, fontWeight: '600', margin: 0 }}>
-                {t.priorityIntro(
-                  preferences.cost_priority ?? 50,
-                  preferences.co2_priority ?? 50,
-                  preferences.convenience_priority ?? 50,
-                )}
-              </p>
-            )}
+            <div style={{ ...cardStyle, padding: '1rem 1.1rem' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.3rem', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: '800', letterSpacing: '0.08em', color: colors.textMuted }}>{t.priorityTitle}</span>
+                <span style={{ fontSize: '0.75rem', color: colors.textMuted }}>{t.prioritySubtitle}</span>
+              </div>
+              <div className="priority-grid">
+                {priorityBar(<Euro size={14} />, t.priorityCost, preferences.cost_priority ?? 50, colors.accentCyan)}
+                {priorityBar(<Leaf size={14} />, t.priorityCo2, preferences.co2_priority ?? 50, colors.successGreen)}
+              </div>
+              {priorityBar(<Clock size={14} />, t.priorityFlex, preferences.convenience_priority ?? 50, colors.accentPurple)}
+            </div>
 
             {/* Per-category cost comparison — "Vergleich Kosten heute" + "Vergleich mit anderen Abos" */}
             {categoryAnalysis.map((c) => {
@@ -384,7 +492,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const subNames = currentSubs.map((s) => s.provider_plan_name).filter(Boolean)
               const isCancelled = subNames.length > 0 && subNames.every((n) => cancelledSubs.includes(n))
               const canCancel = c.recommendation === 'cancel_current_go_pay_as_you_go' && subNames.length > 0 && !!onCancelSubscriptions
-              const isConfirming = confirmingCategory === c.category
+              const cancelActionKey = `cancel:${c.category}`
               const alternatives = [...(c.alternatives || [])].sort((a, b) => a.estimated_annual_cost_eur - b.estimated_annual_cost_eur)
               const cheapest = c.cheapest_alternative
               const best = c.recommended_alternative || cheapest
@@ -398,6 +506,20 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
               const showBestAlternative = best
                 && (c.recommendation === 'switch_to_alternative' || c.recommendation === 'consider_subscribing')
               const isAlternativesExpanded = expandedAlternatives.has(c.category)
+              // Fake "execute this recommendation" copy — cancel goes through the
+              // shared confirm-dialog + cancelledSubs flow (see canCancel below),
+              // switch/subscribe go through the generic executedActions map.
+              const primaryActionKey = `primary:${c.category}`
+              const primaryActionCopy = showBestAlternative ? actionCopy(c.recommendation, best.provider_plan_name, isDE) : null
+              const cancelCopy = actionCopy('cancel_current_go_pay_as_you_go', null, isDE)
+              const shiftActionKey = `shift:${c.category}`
+              const forecastActionKey = `forecast:${c.category}`
+              const forecastActionCopy = projectedRec
+                ? (actionCopy(projectedRec.recommendation, recAltPlanName(projectedRec), isDE) || (
+                  (projectedRec.recommendation === 'switch_to_alternative' || projectedRec.recommendation === 'consider_subscribing')
+                    ? { label: t.applyRecommendation, done: t.applyRecommendation } : null
+                ))
+                : null
 
               return (
                 <div key={c.category} style={cardStyle}>
@@ -406,39 +528,19 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                       <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: swatch, display: 'inline-block' }} />
                       <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>{modeLabel(c.category, langKey)}</h3>
                     </div>
-{isCancelled ? (
+{/* Status-only badge — purely informational now, every recommendation type reads
+                        the same way here; the actual action lives in a callout box below,
+                        in the same spot for every category (see canCancel / showBestAlternative). */}
+                    {isCancelled ? (
                       <span style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.textMuted, backgroundColor: colors.inputBg, padding: '0.4rem 0.85rem', borderRadius: '999px' }}>
-                        {isDE ? 'Gekündigt' : 'Cancelled'}
+                        {t.cancelledLabel}
                       </span>
-                    ) : canCancel ? (
-                      <button type="button" onClick={() => setConfirmingCategory(isConfirming ? null : c.category)} style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.accentRed, backgroundColor: `${colors.accentRed}18`, padding: '0.4rem 0.95rem', borderRadius: '999px', border: `1px solid ${colors.accentRed}55`, cursor: 'pointer' }}>
-                        {meta.label}
-                      </button>
                     ) : (
                       <span style={{ fontSize: '0.85rem', fontWeight: '700', color: meta.color, backgroundColor: `${meta.color}40`, border: `1px solid ${meta.color}66`, padding: '0.4rem 0.85rem', borderRadius: '999px' }}>
                         {meta.label}
                       </span>
                     )}
                   </div>
-                  {/* Doppelte Bestätigung vor dem Kündigen */}
-                  {isConfirming && !isCancelled && (
-                    <div style={{ backgroundColor: `${colors.accentRed}12`, border: `1px solid ${colors.accentRed}55`, borderRadius: '14px', padding: '0.85rem 1rem', marginBottom: '1rem' }}>
-                      <div style={{ fontSize: '0.85rem', fontWeight: '700', color: colors.text, marginBottom: '0.15rem' }}>
-                        {isDE ? 'Dieses Abo wirklich kündigen?' : 'Really cancel this subscription?'}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.75rem' }}>
-                        {subNames.join(', ')}
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button type="button" onClick={() => { onCancelSubscriptions(subNames); setConfirmingCategory(null) }} style={{ flex: 1, padding: '0.6rem', borderRadius: '10px', border: 'none', backgroundColor: colors.accentRed, color: '#ffffff', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
-                          {isDE ? 'Ja, kündigen' : 'Yes, cancel'}
-                        </button>
-                        <button type="button" onClick={() => setConfirmingCategory(null)} style={{ flex: 1, padding: '0.6rem', borderRadius: '10px', border: `1px solid ${colors.border}`, backgroundColor: colors.card, color: colors.text, fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
-                          {isDE ? 'Nein' : 'No'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
                   <p style={{ fontSize: '0.78rem', color: colors.textMuted, marginBottom: '0.5rem' }}>
                     {t.categoryTrips(c.annual_trips)}
                     {coverageNote(c.category, c.applies_to_modes, isDE) && ` · ${coverageNote(c.category, c.applies_to_modes, isDE)}`}
@@ -497,6 +599,21 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                           {t.recommendedNotCheapest}
                         </div>
                       )}
+                      {executableAction(primaryActionKey, primaryActionCopy)}
+                    </div>
+                  )}
+
+                  {canCancel && (
+                    <div style={{ border: `1px dashed ${colors.accentRed}`, borderRadius: '14px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: '700', color: colors.accentRed, letterSpacing: '0.04em' }}>
+                        {t.cancelEyebrow}
+                      </span>
+                      <p style={{ fontSize: '0.8rem', color: colors.textMuted, marginTop: '0.3rem', marginBottom: 0 }}>{t.cancelReason}</p>
+                      {isCancelled
+                        ? doneBadge(cancelCopy.done)
+                        : confirmingKey === cancelActionKey
+                          ? confirmBox(cancelCopy.label, () => onCancelSubscriptions(subNames), colors.accentRed, subNames.join(', '))
+                          : actionButtonEl(cancelCopy.label, () => setConfirmingKey(cancelActionKey), colors.accentRed)}
                     </div>
                   )}
 
@@ -595,6 +712,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                           ({t.confidenceLow}{shift.feasibility?.reasoning ? `: ${shift.feasibility.reasoning}` : ''})
                         </div>
                       )}
+                      {executableAction(shiftActionKey, { label: t.shiftAction(modeLabel(shift.to_category, langKey)), done: t.shiftDone(modeLabel(shift.to_category, langKey)) }, colors.accentCyan)}
                     </div>
                   )}
 
@@ -611,6 +729,11 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                         {recMeta(projectedRec.recommendation, colors, isDE).label}
                         {(projectedRec.recommendation === 'switch_to_alternative' || projectedRec.recommendation === 'consider_subscribing') && recAltPlanName(projectedRec) && t.recPlanSuffix(recAltPlanName(projectedRec))}
                       </div>
+                      {executableAction(
+                        forecastActionKey,
+                        forecastActionCopy,
+                        projectedRec.recommendation === 'cancel_current_go_pay_as_you_go' ? colors.accentRed : colors.accentAmber,
+                      )}
                       {baselineProj?.annual_trips != null && (
                         <p style={{ fontSize: '0.75rem', color: colors.textMuted, marginTop: '0.3rem' }}>
                           {t.forecastBoxReason(baselineProj.annual_trips, projectedRec.annual_trips)}
