@@ -589,10 +589,12 @@
   container-type: inline-size;
   container-name: page-main;
 }
-.page-split__sidebar { flex: 0 0 auto; width: 100%; }
+/* Width transitions along with .chat-sidebar's own (see below) whenever the
+   chat is collapsed/expanded, so the reserved gap and the panel's actual
+   width shrink/grow in visual lockstep instead of one snapping ahead. */
+.page-split__sidebar { flex: 0 0 auto; width: 100%; transition: width 0.22s var(--ease-out); }
 @media (min-width: 768px) {
   .page-split { flex-direction: row; max-width: 1100px; }
-  .page-split--narrow { max-width: 900px; }
   /* Explicit width, not `auto`: .chat-sidebar itself is `position: fixed`
      below (so it never moves at all while scrolling, not even briefly),
      which takes it out of normal flow — so this box can no longer size
@@ -600,6 +602,12 @@
      has to match .chat-sidebar's own width exactly, or the reserved gap in
      the row and the fixed box's actual width drift apart. */
   .page-split__sidebar { width: 360px; }
+  /* Collapsed: shrink the reserved slot to match .chat-sidebar--collapsed's
+     rail width below — .page-split__main (flex: 1 1 0) reflows to fill the
+     freed space on its own, no per-page changes needed. Toggled as a single
+     body class (see Dashboard.jsx) rather than a prop threaded through every
+     page that renders a .page-split__sidebar. */
+  body.chat-collapsed .page-split__sidebar { width: 56px; }
 }
 
 /* ==========================================================================
@@ -640,6 +648,61 @@
     height: calc(100dvh - var(--chat-fixed-top, 88px) - 16px);
   }
 }
+
+/* Collapsed rail — same element, a second class swaps it from the full 360px
+   panel to a slim strip. On mobile (in normal flow, not yet `position: fixed`)
+   it's a short full-width bar; at 768px+ it matches .page-split__sidebar's
+   56px collapsed width above so the fixed panel and its reserved gap agree. */
+.chat-sidebar.chat-sidebar--collapsed {
+  width: 100%;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+@media (min-width: 768px) {
+  .chat-sidebar.chat-sidebar--collapsed { width: 56px; }
+}
+.chat-collapse-rail {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 56px;
+  padding: 14px 0;
+  border: none;
+  background: none;
+  color: var(--slate-500);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.chat-collapse-rail:hover { color: var(--slate-600); background: var(--slate-50); }
+@media (min-width: 768px) {
+  .chat-collapse-rail { flex-direction: column; gap: 6px; }
+}
+
+.chat__collapse-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--slate-400);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.chat__collapse-btn:hover { color: var(--slate-600); background: var(--slate-100); }
 
 .chat__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--slate-100); background: var(--white); }
 .chat__avatar { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #00f2fe, #4facfe); color: #04141a; font-weight: 700; font-size: var(--text-sm); }
@@ -775,6 +838,10 @@
 [data-theme="dark"] .status-dot { background: #a855f7; }
 [data-theme="dark"] .chat__status { color: #a855f7; }
 [data-theme="dark"] .chat__title { color: #ffffff; }
+[data-theme="dark"] .chat__collapse-btn { color: #747c82; }
+[data-theme="dark"] .chat__collapse-btn:hover { color: #ffffff; background: #26262b; }
+[data-theme="dark"] .chat-collapse-rail { color: #9aa1a8; }
+[data-theme="dark"] .chat-collapse-rail:hover { color: #ffffff; background: #16161a; }
 
 /* Nachrichten */
 [data-theme="dark"] .chat__body { background: #0e0e10; }

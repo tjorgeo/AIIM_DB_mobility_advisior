@@ -439,7 +439,7 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
         </button>
       </header>
 
-      <div className="page-split page-split--narrow">
+      <div className="page-split">
       <main className="portfolio-container page-split__main">
         <div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: '800', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>{t.title}</h1>

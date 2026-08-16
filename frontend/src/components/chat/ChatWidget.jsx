@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Send, ThumbsUp, ThumbsDown, Check } from 'lucide-react'
+import { Send, ThumbsUp, ThumbsDown, Check, MessageCircle, ChevronRight } from 'lucide-react'
 import { useChat } from './useChat'
 import Markdown from './Markdown'
 
@@ -17,7 +17,7 @@ function describeConstraints(c, lang) {
   return parts.join(' · ')
 }
 
-export default function ChatWidget({ user, lang, getContext, actions, sessionId, onOpenPortfolio, slotEl, fixedPos }) {
+export default function ChatWidget({ user, lang, getContext, actions, sessionId, onOpenPortfolio, slotEl, fixedPos, collapsed, onToggleCollapsed }) {
   const [input, setInput] = useState('')
   const { messages, sending, send, sendFeedback, pending, confirm } = useChat({ user, lang, getContext, actions, sessionId })
   const bodyRef = useRef(null)
@@ -39,10 +39,32 @@ export default function ChatWidget({ user, lang, getContext, actions, sessionId,
     send(v)
   }
 
-  const content = (
+  const fixedStyle = fixedPos ? { '--chat-fixed-left': `${fixedPos.left}px`, '--chat-fixed-top': `${fixedPos.top}px` } : undefined
+
+  // Collapsed: a slim rail (56px) instead of the full panel. Main content
+  // reflows into the freed space through the same .page-split flex layout
+  // that already sizes the reserved sidebar slot (see .page-split__sidebar /
+  // body.chat-collapsed in components.css) — the actual panel and its
+  // in-flow placeholder always agree on width, so nothing has to be
+  // hand-synced across breakpoints the way the old floating-launcher +
+  // body-margin approach did (see git history: "make chat window permanent").
+  const content = collapsed ? (
+    <div className="chat-sidebar chat-sidebar--collapsed" style={fixedStyle}>
+      <button
+        type="button"
+        className="chat-collapse-rail"
+        onClick={onToggleCollapsed}
+        aria-label={t('Open assistant chat', 'Chat öffnen')}
+        title={t('Open assistant chat', 'Chat öffnen')}
+      >
+        <MessageCircle size={20} />
+        <span>{t('Chat', 'Chat')}</span>
+      </button>
+    </div>
+  ) : (
     <div
       className="chat-sidebar"
-      style={fixedPos ? { '--chat-fixed-left': `${fixedPos.left}px`, '--chat-fixed-top': `${fixedPos.top}px` } : undefined}
+      style={fixedStyle}
       aria-label={t('MoveOptimizer assistant', 'MoveOptimizer-Assistent')}
     >
       <div className="chat__header">
@@ -51,6 +73,17 @@ export default function ChatWidget({ user, lang, getContext, actions, sessionId,
           <div className="chat__title">{t('Mobility Assistant', 'Mobilitäts-Assistent')}</div>
           <div className="chat__status">● {t('Online', 'Online')}</div>
         </div>
+        {onToggleCollapsed && (
+          <button
+            type="button"
+            className="chat__collapse-btn"
+            onClick={onToggleCollapsed}
+            aria-label={t('Collapse chat', 'Chat einklappen')}
+            title={t('Collapse chat', 'Chat einklappen')}
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
       </div>
 
       <div className="chat__body" ref={bodyRef}>

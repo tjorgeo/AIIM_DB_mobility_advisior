@@ -65,6 +65,23 @@ export default function Dashboard() {
     }
   }, [chatSlotEl])
 
+  // Collapse the chat into a slim rail — persisted so it stays collapsed across
+  // reloads once the user picks it. A body class (not a prop threaded through
+  // every page) drives the reserved slot's width in CSS (see body.chat-collapsed
+  // in components.css), so .page-split__sidebar shrinks and .page-split__main
+  // reflows into the freed space on its own; the ResizeObserver above then
+  // re-measures the slot and the fixed panel (or collapsed rail) follows it —
+  // no per-page changes needed, unlike the earlier floating-launcher version
+  // whose body-margin hacks drifted out of sync across breakpoints.
+  const [chatCollapsed, setChatCollapsed] = useState(() => {
+    try { return localStorage.getItem('mo-chat-collapsed') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    document.body.classList.toggle('chat-collapsed', chatCollapsed)
+    try { localStorage.setItem('mo-chat-collapsed', chatCollapsed ? '1' : '0') } catch { /* ignore */ }
+    return () => { document.body.classList.remove('chat-collapsed') }
+  }, [chatCollapsed])
+
   // Identität des eingeloggten Users (statt fest verdrahtetem Demo-Avatar)
   const displayName = currentUser?.name?.trim() || currentUser?.firstName || 'Du'
   const initials = (currentUser?.initials
@@ -957,6 +974,8 @@ export default function Dashboard() {
           onOpenPortfolio={() => setView('portfolio')}
           slotEl={chatSlotEl}
           fixedPos={chatSlotPos}
+          collapsed={chatCollapsed}
+          onToggleCollapsed={() => setChatCollapsed((v) => !v)}
         />
       )}
     </>
