@@ -66,9 +66,9 @@ Describe error handling and robustness here.
 |---|---|
 | **ADR-01** | **Sequential pipeline for analysis, LangGraph agent for chat** |
 | **Context** | The system needs a fast, auditable one-shot analysis when a customer opens the dashboard, and a separate interactive advisor that can hold a multi-turn conversation and act on follow-up requests ("keep my car", "cancel the BahnCard"). A single orchestration mechanism has to serve both. |
-| **Options considered** | (a) run everything as one LangGraph state graph; (b) run everything as a plain sequential Python pipeline; (c) split by need — a plain pipeline for the one-shot analysis, a LangGraph ReAct agent with a Postgres-backed checkpointer for the conversational advisor. |
+| **Options considered** | (a) run everything as one LangGraph state graph; (b) run everything as a plain sequential Python pipeline; (c) split by need, i.e. a plain pipeline for the one-shot analysis, a LangGraph ReAct agent with a Postgres-backed checkpointer for the conversational advisor. |
 | **Decision** | (c). `load_context → analyze → forecast → communicate` stays a deterministic function chain with no graph runtime. The `/api/chat` advisor is a LangGraph `create_react_agent` whose state is checkpointed in Postgres, so a conversation survives across separate HTTP requests. |
-| **Trade-offs accepted** | Two orchestration mechanisms instead of one, so consistency between them is a convention (both call the same underlying engines) rather than a runtime guarantee. This is offset by simplicity where it matters: the analysis path stays a plain, unit-testable function chain instead of a graph. |
+| **Trade-offs accepted** | Two orchestration mechanisms instead of one, so consistency between them is a convention (both call the same underlying engines) rather than a runtime guarantee. This is offset by simplicity where it matters. The analysis path stays a plain, unit-testable function chain instead of a graph. |
 
 : {tbl-colwidths="[24,76]"}
 
@@ -76,8 +76,8 @@ Describe error handling and robustness here.
 |---|---|
 | **ADR-02** | **Deterministic number guard: the LLM never computes a figure** |
 | **Context** | Subscription costs, CO~2~ estimates, and trip counts are the basis of the recommendation. A plausible-sounding but fabricated number is worse than none, because a customer cannot tell it apart from a correct one. |
-| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure — all such figures come from deterministic engines, and the LLM only narrates them. |
-| **Decision** | (c). `analysis.py` and the optimization/pricing engines compute every euro, CO~2~ and time figure; the briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute — the forecaster's projected trip counts per scenario — is priced by those same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
+| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure. All figures come from deterministic engines, and the LLM only narrates them. |
+| **Decision** | (c). `analysis.py` and the optimization/pricing engines compute every euro, CO~2~ and time figure. The briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute, i.e. the forecaster's projected trip counts per scenario, is priced by the same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
 | **Trade-offs accepted** | The model cannot adapt numerically to a phrasing it was not explicitly given data for, and every new numeric capability requires new deterministic code rather than a prompt change. This restraint is what makes the pipeline's output reproducible and testable in the first place. |
 
 : {tbl-colwidths="[24,76]"}
@@ -85,9 +85,9 @@ Describe error handling and robustness here.
 | Field | Decision record |
 |---|---|
 | **ADR-03** | **`interrupt()`-based confirmation gate for irreversible actions** |
-| **Context** | Once the chat advisor can call a tool that writes to the database (cancelling or switching a subscription), a misparsed request or a wrongly-triggered tool call could execute a change the customer never asked for. |
+| **Context** | Once the chat advisor can call a tool that writes to the database for cancelling or switching a subscription, a misparsed request or a wrongly-triggered tool call could execute a change the customer never asked for. |
 | **Options considered** | (a) trust the LLM's tool call directly; (b) check a boolean "confirmed" flag in application code before writing; (c) pause the agent at the point of the write with a runtime-enforced `interrupt()`, and resume only once the user has explicitly confirmed. |
-| **Decision** | (c). The `apply_change` tool calls LangGraph's `interrupt()` to pause the graph before any write; execution resumes only via an explicit `Command(resume=...)` carrying the user's decision. |
+| **Decision** | (c). The `apply_change` tool calls LangGraph's `interrupt()` to pause the graph before any write. Execution resumes only via an explicit `Command(resume=...)` carrying the user's decision. |
 | **Trade-offs accepted** | The chat endpoint now depends on the Postgres checkpointer being available to pause and resume state across requests, which a stateless boolean-flag check would not require. In return, the guarantee holds regardless of how the model behaves, rather than depending on the model reliably asking first. |
 
 : {tbl-colwidths="[24,76]"}
