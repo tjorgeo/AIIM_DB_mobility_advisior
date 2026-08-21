@@ -58,7 +58,8 @@ Describe the agentic behavior here.
   strategies exist?*
 - *What happens if a tool call fails or an external service is unavailable?*
 
-Describe error handling and robustness here.
+To test a consistent behavior we implemented an observability system, 
+further described in section six.
 
 ## Architecture Decision Records (ADRs)
 
