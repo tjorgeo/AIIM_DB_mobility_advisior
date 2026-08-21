@@ -1,144 +1,149 @@
-# Managerial Reports mit Quarto
+# Managerial report (Quarto)
 
-Dieser Ordner enthält zwei PDF-Reports:
+This folder builds two PDFs from one set of Quarto sources:
 
-1. den vollständigen Managerial Report mit allen acht Kapiteln und dem
-   BCG-Appendix am Ende;
-2. einen eigenständigen PDF-Report, der ausschließlich den BCG-Appendix enthält.
+1. the **full managerial report** — all eight chapters followed by the BCG
+   appendix;
+2. a **standalone BCG appendix report** containing only that appendix.
 
-Die Kapitelstruktur des vollständigen Reports basiert auf
-`Report_Template_Managerial.docx`. Beide PDFs verwenden dieselbe
-Projektkonfiguration und dieselbe Datei `appendices/bcg-appendix.qmd`, sodass der
-Appendix nur an einer Stelle gepflegt werden muss.
+Both use the same project configuration and the same
+`appendices/bcg-appendix.qmd`, so the appendix is maintained in exactly one
+place. The chapter structure follows `Report_Template_Managerial.docx`.
+
+> [!NOTE]
+> This is the last link in the documentation chain: the
+> [root README](../README.md) runs the stack, [`backend/README.md`](../backend/README.md)
+> explains how it works, [`backend/eval/README.md`](../backend/eval/README.md)
+> measures it — and the evaluation figures quoted in chapter 6 come from there.
+
+---
 
 ## Requirements
 
-Erforderlich sind:
+- [Quarto CLI](https://quarto.org/docs/get-started/), recent version (the build
+  was verified with Quarto 1.9.38)
+- a LaTeX distribution providing `xelatex` —
+  [TinyTeX](https://quarto.org/docs/output-formats/pdf-engine.html#installing-tex)
+  is recommended
+- the **Times New Roman** font, which `_quarto.yml` configures for body text and
+  headings in both PDFs
+- a PDF viewer for the final visual check
 
-- [Quarto CLI](https://quarto.org/docs/get-started/) in einer aktuellen Version
-  (der Build wurde mit Quarto 1.9.38 geprüft);
-- eine LaTeX-Distribution mit `xelatex`; empfohlen wird
-  [TinyTeX](https://quarto.org/docs/output-formats/pdf-engine.html#installing-tex);
-- die Schriftart **Times New Roman**, da sie für Fließtext und Überschriften
-  beider PDFs in `_quarto.yml` konfiguriert ist;
-- ein PDF-Viewer für die finale Sichtprüfung;
-- optional Python, R oder Julia, aber nur wenn ausführbare Codeblöcke dieser
-  Sprache ergänzt werden.
+Python, R and Julia are only needed if executable code blocks in those languages
+are added. Quarto ships with Pandoc, so no separate Pandoc install is required,
+and the repository's Python packages are not needed for the current text-only
+report.
 
-Quarto und die LaTeX-Engine lassen sich so prüfen:
+Check the toolchain:
 
 ```bash
 quarto --version
 xelatex --version
 ```
 
-Falls noch keine LaTeX-Distribution vorhanden ist, kann Quarto TinyTeX
-installieren:
+If no LaTeX distribution is present, Quarto can install one:
 
 ```bash
 quarto install tinytex
 ```
 
-Quarto bringt Pandoc mit. Eine separate Pandoc-Installation und die
-Python-Pakete des Repositorys sind für den aktuellen, rein textbasierten Report
-nicht erforderlich.
+---
 
-## Ordnerstruktur
+## Folder structure
 
 ```text
 report/
-├── _quarto.yml                    # Gemeinsame Projekt- und PDF-Konfiguration
-├── report.qmd                     # Einstiegspunkt für den vollständigen Report
-├── bcg-appendix-report.qmd        # Einstiegspunkt für den BCG-Report
-├── chapters/                      # Eine QMD-Datei je Hauptkapitel
+├── _quarto.yml                    # shared project and PDF configuration
+├── report.qmd                     # entry point for the full report
+├── bcg-appendix-report.qmd        # entry point for the BCG-only report
+├── chapters/                      # one .qmd per main chapter
+│   ├── 01-use-case-value-proposition.qmd
+│   ├── 02-solution-concept-originality.qmd
+│   ├── 03-system-architecture-implementation.qmd
+│   ├── 04-workflow-documentation.qmd
+│   ├── 05-scalability-extensibility.qmd
+│   ├── 06-evaluation-trade-offs.qmd
+│   ├── 07-reflection-learnings.qmd
+│   └── 08-references-appendix.qmd
 ├── appendices/
-│   └── bcg-appendix.qmd           # Gemeinsamer Inhalt des BCG-Appendix
-├── assets/                        # Abbildungen und statische Dateien
-├── references.bib                 # Quellen im BibTeX-Format
-└── _output/                       # Generierte PDFs; wird nicht versioniert
+│   └── bcg-appendix.qmd           # shared BCG appendix content
+├── assets/                        # figures and static files
+├── references.bib                 # sources in BibTeX format
+└── _output/                       # generated PDFs; not version-controlled
 ```
 
-`report.qmd` bindet zuerst die acht Kapitel und anschließend
-`appendices/bcg-appendix.qmd` ein. `bcg-appendix-report.qmd` bindet nur diesen
-Appendix ein. Die Reihenfolge sollte ausschließlich in den beiden
-Einstiegspunkten geändert werden.
+`report.qmd` includes the eight chapters and then the appendix;
+`bcg-appendix-report.qmd` includes only the appendix. **Change the ordering only
+in those two entry points.**
 
-## Inhalte bearbeiten
+---
 
-1. In `_quarto.yml` den Platzhalter `[Team Name]` und die fünf Teammitglieder
-   ersetzen. Nicht benötigte Autoreneinträge entfernen.
-2. Die Inhalte in den acht Dateien unter `chapters/` ergänzen und sichtbare
-   Platzhalter ersetzen.
-3. Den BCG-Inhalt ausschließlich in `appendices/bcg-appendix.qmd` pflegen. Die
-   Änderung erscheint dadurch in beiden PDF-Ausgaben.
-4. Abbildungen unter `assets/` ablegen und mit einem relativen Pfad einbinden:
+## Editing the content
+
+1. In `_quarto.yml`, replace the `[Team Name]` placeholder and the five team
+   member entries, removing any that are unused.
+2. Fill in the eight files under `chapters/`, replacing the visible
+   placeholders.
+3. Maintain BCG content **only** in `appendices/bcg-appendix.qmd` — the change
+   then appears in both PDFs.
+4. Put figures in `assets/` and include them with a relative path:
 
    ```markdown
    ![Architecture overview](assets/architecture-overview.png){#fig-architecture}
    ```
 
-5. Literatur in `references.bib` im BibTeX-Format erfassen und im Text mit
-   `[@citation-key]` zitieren.
-6. Code- und Videolink in
-   `chapters/08-references-appendix.qmd` aktualisieren.
+5. Record sources in `references.bib` and cite them in the text with
+   `[@citation-key]`.
+6. Update the code and video links in `chapters/08-references-appendix.qmd`.
 
-## Vollständigen Report als PDF erzeugen
+Chapter 6 (evaluation and trade-offs) draws on the measured results in
+[`backend/eval/README.md`](../backend/eval/README.md). Regenerate those figures
+before quoting them if the pipeline has changed since they were recorded.
 
-Aus dem Repository-Root:
+---
 
-```bash
-quarto render report/report.qmd
-```
+## Rendering
 
-Ergebnis:
+Run from the repository root.
 
-```text
-report/_output/report.pdf
-```
-
-Dieser Report enthält die Kapitel 1–8 und danach den BCG-Appendix.
-
-## Nur den BCG-Appendix als PDF erzeugen
-
-Aus dem Repository-Root:
+**Full report** — chapters 1–8 followed by the BCG appendix:
 
 ```bash
-quarto render report/bcg-appendix-report.qmd
+quarto render report/report.qmd     # -> report/_output/report.pdf
 ```
 
-Ergebnis:
+**BCG appendix only** — title page plus the appendix content:
 
-```text
-report/_output/bcg-appendix-report.pdf
+```bash
+quarto render report/bcg-appendix-report.qmd   # -> report/_output/bcg-appendix-report.pdf
 ```
 
-Dieser Report enthält neben der Titelseite ausschließlich den Inhalt aus
-`appendices/bcg-appendix.qmd`.
-
-Optional können beide PDFs in einem Durchlauf erzeugt werden:
+**Both in one pass:**
 
 ```bash
 quarto render report
 ```
 
-## Prüfung vor der Abgabe
+---
 
-1. Beide Dateien unter `report/_output/` öffnen und auf Renderfehler prüfen.
-2. Im vollständigen Report Kapitelnummerierung, Tabellen, Abbildungen, Links
-   und Literaturverzeichnis prüfen.
-3. Kontrollieren, dass der BCG-Appendix im vollständigen Report am Ende steht
-   und der eigenständige Report keinen Inhalt aus den Kapiteln 1–8 enthält.
-4. Schriftart, Seitenumbrüche und Lesbarkeit kontrollieren.
-5. Für den vollständigen Report die in der ursprünglichen Vorlage genannte
-   Grenze von **maximal 10 Seiten** prüfen.
-6. Sicherstellen, dass keine Platzhalter wie `[Team Name]`, `[Value]`,
-   `[Team member ...]` oder `REPLACE-ME` verbleiben.
+## Pre-submission checklist
 
-## Anpassungen
+1. Open both files in `report/_output/` and check for rendering errors.
+2. In the full report, check chapter numbering, tables, figures, links and the
+   bibliography.
+3. Confirm the BCG appendix sits at the end of the full report, and that the
+   standalone report contains nothing from chapters 1–8.
+4. Check the font, page breaks and general readability.
+5. Verify the full report stays within the template's limit of **10 pages**.
+6. Make sure no placeholders remain — `[Team Name]`, `[Value]`,
+   `[Team member ...]`, `REPLACE-ME`.
 
-- Weitere Hauptkapitel werden unter `chapters/` angelegt und in `report.qmd`
-  eingebunden.
-- Weitere Appendix-Dateien werden unter `appendices/` angelegt und am Ende von
-  `report.qmd` eingebunden.
-- Gemeinsame PDF-Optionen wie LaTeX-Engine, Papierformat, Schrift und
-  Nummerierung stehen in `_quarto.yml` unter `format.pdf`.
+---
+
+## Customisation
+
+- Additional chapters go in `chapters/` and are included from `report.qmd`.
+- Additional appendices go in `appendices/` and are included at the end of
+  `report.qmd`.
+- Shared PDF options — LaTeX engine, paper size, font, numbering — live in
+  `_quarto.yml` under `format.pdf`.

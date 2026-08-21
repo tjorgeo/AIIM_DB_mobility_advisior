@@ -1,13 +1,18 @@
-# DB MoveOptimizer — Backend
+# Backend — FastAPI service and analysis pipeline
 
-The backend is a **FastAPI** service that powers a mobility‑subscription advisor.
-It loads a customer's mobility data from **PostgreSQL**, runs a **multi‑agent
-LangGraph pipeline** to audit spending, forecast demand, optimise the
-subscription portfolio and write a customer‑facing memo, and returns a single
-JSON payload that the **React frontend** renders as a dashboard.
+The backend is a **FastAPI** service that powers the mobility-subscription
+advisor. It loads a customer's travel history from **PostgreSQL**, runs a
+deterministic analysis pipeline with targeted LLM steps to audit spending,
+forecast demand and compare subscription options, and returns a single JSON
+payload that the React frontend renders as a dashboard. A conversational
+advisor agent then explains and adjusts the result.
 
-This document explains how the three moving parts — **data, backend, frontend** —
-fit together.
+> [!NOTE]
+> Setup, `.env` and Docker commands are in the [root README](../README.md).
+> The UI is in [`frontend/README.md`](../frontend/README.md), the tariff corpus
+> in [`data/README.md`](../data/README.md), and observability and evaluation in
+> [`eval/README.md`](eval/README.md). This document covers the architecture, the
+> data model, the pipeline, the API and the test suite.
 
 ---
 
@@ -26,20 +31,46 @@ flowchart LR
 
     FE -- "/api/* (Vite proxy)" --> BE
     BE -- "SQL (psycopg2)" --> DB
-    BE -. "optional, for memos / chat / onboarding" .-> LLM
+    BE -. "optional: forecast, feasibility, chat" .-> LLM
 
-    INIT["database/init/*.sql<br/>schema + dummy seed"] -- "auto-loaded on first boot" --> DB
+    INIT["database/init/*.sql<br/>schema + persona seed"] -- "auto-loaded on first boot" --> DB
 ```
 
-* The frontend never talks to Postgres directly — it only calls the backend's
-  `/api/*` HTTP endpoints (proxied by the Vite dev server).
-* The backend owns all data access and all business logic.
-* The database **schema and seed data are provisioned by Postgres itself** from
-  `database/init/*.sql`; the backend does not create tables.
-* The LLM is **optional**. Without an API key the app still works — memos fall
-  back to deterministic templates, and chat/onboarding return `503`.
+Four properties shape everything below:
 
-Everything runs via `docker-compose.yml` at the repo root (start with `./run.sh`).
+- The frontend never talks to Postgres. It only calls the backend's `/api/*`
+  endpoints, proxied by the Vite dev server, so the browser always makes
+  same-origin requests.
+- The backend owns all data access and all business logic.
+- The **schema and seed data are provisioned by Postgres itself** from
+  `database/init/*.sql`. The backend does not create tables; at startup it only
+  confirms the database is reachable (`ping_db()`).
+- **The LLM is optional and never authoritative.** Deterministic engines produce
+  every number the dashboard shows. The LLM adds a forecast rationale, a
+  feasibility judgement and the chat advisor's prose. Without a key the analysis
+  still runs end to end on deterministic fallbacks; only the chat advisor
+  returns `503`.
+
+### Component taxonomy
+
+Every backend component is exactly one of three kinds. This is the single most
+useful framing for reasoning about the system:
+
+| Kind | What it means | LLM calls | Components |
+| --- | --- | :---: | --- |
+| **Deterministic** | Pure Python engines, or thin adapters and stores. The authoritative source of every euro, gram of CO₂, minute and trip. | 0 | `context`, `analysis_service`, `session`, all of `engines/`, all of `tools/` |
+| **Single-call LLM step** | Exactly one completion over a fixed payload, no tools. Predicts, judges or narrates — never a figure. Each has a deterministic fallback. | 1 | `llm_steps/forecast_reasoner`, `llm_steps/feasibility_judge`, `baseline_pipeline` (eval only) |
+| **Agent** | One LLM that autonomously calls tools in a loop until it answers. There is exactly **one**. | loop | `advisor/agent.py` |
+
+| Component | Kind | LLM calls | On-error fallback |
+| --- | :---: | :---: | --- |
+| `load_context`, `analyze_portfolio`, `scoring` | deterministic | 0 | — |
+| modal-shift pricing, `seasonal_projection`, `reoptimize` | deterministic | 0 | — |
+| session store, `analysis_service`, template memo | deterministic | 0 | — |
+| `forecast_reasoner` | LLM step | 1 | deterministic seasonal projection |
+| `feasibility_judge` | LLM step | 1 (batched) | deterministic feasible/low |
+| `simulate_change` / `apply_change` | deterministic | 0 | `apply` pauses for confirmation |
+| **Advisor** | **agent** | loop | template memo (turn 0), else `503` |
 
 ---
 
@@ -48,48 +79,69 @@ Everything runs via `docker-compose.yml` at the repo root (start with `./run.sh`
 | Concern | Choice |
 | --- | --- |
 | Web framework | FastAPI + Uvicorn (`src/main.py`) |
-| Agent orchestration | Deterministic pipeline (`src/agent/pipeline.py`) + single-call grounded Analyst memo (`src/agent/analyst_agent.py`) + ReAct chat (`src/agent/communicator_agent.py`) |
-| LLM access | LangChain + `langchain-openai`, pointed at University GPT (`src/agent/llm.py`) |
+| Analysis | Deterministic engines (`src/agent/engines/`) driven by `src/agent/pipeline.py` |
+| Targeted LLM steps | `src/agent/llm_steps/` — forecast reasoner, feasibility judge |
+| Chat advisor | ReAct agent with tools (`src/agent/advisor/agent.py`) |
+| LLM access | LangChain + `langchain-openai` against University GPT (`src/agent/llm.py`) |
+| Observability | Langfuse, optional (`src/agent/observability.py`) |
 | Database driver | `psycopg2` (`src/database.py`) |
-| Database | PostgreSQL 16 (Docker service `db`, database `app_db`) |
+| Database | PostgreSQL 16 (Compose service `db`, database `app_db`) |
 | Runtime | Python 3.12 (`backend/dockerfile`) |
 
-Dependencies live in [`requirements.txt`](requirements.txt).
+Dependencies are in [`requirements.txt`](requirements.txt); test-only
+dependencies in [`requirements-dev.txt`](requirements-dev.txt), which the
+Dockerfile also installs into the image.
 
 ---
 
 ## 3. Directory layout
 
-```
+```text
 backend/
 ├── dockerfile            # python:3.12-slim, runs `python src/main.py`
-├── requirements.txt
-├── requirements-dev.txt  # test-only deps (pytest); baked into the image
 ├── pytest.ini            # pythonpath = src ; testpaths = tests
-├── tests/                # fast, deterministic unit + smoke tests (no DB, no LLM) — see §11
+├── tests/                # deterministic unit + smoke tests (no DB, no LLM) — see §9
+├── scripts/              # one-off seed and experiment scripts — see eval/README.md
+├── eval/                 # Langfuse judges + calibration harness — see eval/README.md
 └── src/
-    ├── main.py           # FastAPI app + all HTTP endpoints
-    ├── analysis_service.py # /api/analyze request lifecycle (cache/persist/shape) over the pipeline
-    ├── database.py       # Postgres connection helper (get_connection / ping_db)
-    └── agent/            # Unified agent package (replaces the old agents/ + graph/)
-        ├── llm.py            # University GPT client + llm_available()
-        ├── schema_map.py     # Adapters: production schema  ->  agent vocabulary
-        ├── context.py        # load_context(user_id): DB read shaping the agent context
-        ├── pipeline.py       # deterministic /analyze driver (numbers guaranteed)
-        ├── analyst_agent.py  # Analyst: one grounded LLM call over pipeline's numbers + tariff docs, writes memo
-        ├── communicator_agent.py  # customer chat advisor (ReAct + tool use)
-        ├── engines/          # Deterministic compute — the authoritative numbers
-        │   ├── analysis.py       # audits travel history + subscriptions
-        │   ├── forecasting.py    # 90-day demand forecast (LLM + deterministic fallback)
-        │   ├── optimization.py   # simulates subscription portfolios
-        │   └── memo.py           # drafts the EN/DE memo (template baseline)
-        ├── tools/            # tools the agents call
-        │   ├── catalog.py        # lookup_subscriptions tool (reads catalog)
-        │   └── knowledge.py      # OKF tariff RAG: list_tariff_docs / read_tariff_doc
-        └── prompts/          # Analyst + Communicator system prompts
+    ├── main.py               # FastAPI app + HTTP endpoints
+    ├── analysis_service.py   # /api/analyze lifecycle: cache, persist, shape the response
+    ├── register_endpoint.py  # POST /api/register, POST /api/onboarding/{id}/complete
+    ├── profile_endpoint.py   # GET + PUT /api/profile/{id}
+    ├── auth_utils.py         # shared-password login helpers
+    ├── database.py           # Postgres connection helper (get_connection / ping_db)
+    └── agent/
+        ├── pipeline.py           # the deterministic /analyze driver
+        ├── baseline_pipeline.py  # single-LLM-call baseline, evaluation only — see eval/README.md
+        ├── context.py            # load_context(user_id): the DB read behind every analysis
+        ├── llm.py                # University GPT client + llm_available()
+        ├── observability.py      # Langfuse tracing, managed prompts, scores
+        ├── schema_map.py         # coverage rules, preference mapping, type coercion
+        ├── mode_factors.py       # transport-mode cost/CO₂/time factors
+        ├── session.py            # chat session state
+        ├── json_extract.py       # tolerant JSON parsing of LLM output
+        ├── engines/              # deterministic compute — the authoritative numbers
+        │   ├── analysis.py           # audits travel history + subscriptions per category
+        │   ├── forecasting.py        # demand forecast (LLM reasoner + deterministic fallback)
+        │   ├── modal_shift.py        # cross-category mode-switch candidates
+        │   ├── scoring.py            # preference-weighted candidate ranking
+        │   ├── reoptimize.py         # re-runs the comparison under chat-supplied constraints
+        │   └── memo.py               # deterministic template memo
+        ├── llm_steps/            # narrow, single-purpose LLM calls
+        │   ├── forecast_reasoner.py
+        │   └── feasibility_judge.py
+        ├── advisor/agent.py      # customer chat advisor (ReAct + tool use)
+        ├── tools/                # tools the advisor calls
+        │   ├── catalog.py            # subscription catalog lookup
+        │   ├── knowledge.py          # tariff document RAG
+        │   ├── insights.py           # read analysis results
+        │   ├── simulate.py           # what-if re-optimisation
+        │   └── apply.py              # apply a subscription change
+        └── prompts/              # advisor_system.md, baseline_system.md
 ```
-Note: onboarding was removed. The tariff knowledge base (OKF `index.md` + docs) lives in
-`data/Markdownfiles Abos/`.
+
+The tariff knowledge base lives outside this folder, in `data/Markdownfiles Abos/` —
+see [`data/README.md`](../data/README.md).
 
 ---
 
@@ -97,15 +149,15 @@ Note: onboarding was removed. The tariff knowledge base (OKF `index.md` + docs) 
 
 ### 4.1 Where the schema comes from
 
-The production schema lives in **`database/init/*.sql`** (repo root, **not** in
-this folder). `docker-compose.yml` mounts that directory into the Postgres
-container's `/docker-entrypoint-initdb.d`, so Postgres runs every `.sql` file in
-filename order **the first time the data volume is created**. The backend's only
-startup responsibility is to confirm the DB is reachable (`ping_db()` in
-`src/database.py`).
+The schema lives in **`database/init/*.sql`** at the repo root, not in this
+folder. Compose mounts that directory into the Postgres container's
+`/docker-entrypoint-initdb.d`, so Postgres runs every `.sql` file in filename
+order **the first time the data volume is created**.
 
-> ⚠️ Init scripts only run on a **fresh** volume. To re-apply schema/seed changes:
-> `docker compose down -v && docker compose up`.
+> [!WARNING]
+> Init scripts only run on a **fresh** volume. To re-apply schema or seed
+> changes: `docker compose down -v && docker compose up`. This deletes all
+> local database data.
 
 ### 4.2 Schema overview
 
@@ -118,12 +170,12 @@ erDiagram
     users ||--o{ recommendations : "receives"
     subscription_catalogs ||--o{ user_subscriptions : "instantiated as"
     user_trips ||--o{ trip_legs : "split into"
-    user_subscriptions ||--o{ trip_legs : "pays for"
 
     users {
         text user_id PK
-        text first_name
-        text last_name
+        text username
+        text email
+        text external_auth_id
         int  age
         text home_city
     }
@@ -146,11 +198,6 @@ erDiagram
         text subscription_id FK
         text subscription_status
     }
-    user_trips {
-        text trip_id PK
-        text user_id FK
-        text main_transport_mode
-    }
     trip_legs {
         text leg_id PK
         text trip_id FK
@@ -163,337 +210,290 @@ erDiagram
         text recommendation_id PK
         text user_id FK
         text analyst_output
-        text optimizer_scenarios
         text analysis_status
+        text memo_trace_id
     }
 ```
 
-Key facts the backend relies on:
+Four facts the backend depends on:
 
-* **Preferences** are 0–100 scores on `user_onboardings`
-  (`score_money`, `score_emission`, `score_flexibility`) — not a JSON blob.
-* **Cost, CO₂, distance and mode live at the `trip_legs` level**, not on the trip.
-  A trip is a journey; its legs are the individual segments that actually carry
-  the money/carbon. The backend treats each **leg** as a unit of "travel history".
-* **Subscriptions** are split: `subscription_catalogs` is the product catalog;
-  `user_subscriptions` is which products a user holds.
-* **`recommendations`** stores each analysis run's agent outputs as JSON.
+- **Preferences are 0–100 scores** on `user_onboardings` (`score_money`,
+  `score_emission`, `score_flexibility`), not a JSON blob.
+- **Cost, CO₂, distance and mode live on `trip_legs`, not on the trip.** A trip
+  is a journey; its legs are the segments that actually carry the money and
+  carbon. The backend treats each **leg** as the unit of travel history.
+- **Subscriptions are split in two:** `subscription_catalogs` is the product
+  catalog, `user_subscriptions` is what a given user holds.
+- **`recommendations`** stores each analysis run's outputs as JSON, plus
+  `memo_trace_id` linking the row to its Langfuse trace.
 
-### 4.3 The dummy user
+### 4.3 The seeded personas
 
-`database/init/99_seed_dummy_user.sql` seeds exactly one fully‑formed user,
-`dummy-user-001` ("Test User", Berlin, holds a Deutschlandticket), spanning every
-table. This is the user the frontend logs in as. The numbered prefix (`99_`)
-ensures it runs after all `CREATE TABLE`s.
+`database/init/02_insert_data.sql` seeds **10 personas** from the CSVs in
+`database/seed/`, each constructed to exercise one distinct
+subscription-decision path — an upgrade case, a first-subscription case, an
+over-subscribed case, a too-little-data case, and so on. Trip data spans a fixed
+12-month window.
+
+Each persona and the gap it exists to cover is documented in
+[`database/seed/PERSONAS.md`](../database/seed/PERSONAS.md). These same personas
+are the evaluation set used in [`eval/README.md`](eval/README.md).
 
 ---
 
-## 5. The domain helpers (`schema_map.py`)
+## 5. Domain helpers (`schema_map.py`)
 
-The deterministic agents compute over the **production schema natively** — the full
-transport‑mode taxonomy, trips/legs, and the generic `subscription_catalogs`. They
-do not translate the data into a simplified vocabulary on input. `schema_map.py`
-holds only the small amount of shared domain knowledge they need:
+The engines compute over the production schema natively — the full
+transport-mode taxonomy, trips and legs, and the generic catalog. They do not
+translate data into a simplified vocabulary on input. `schema_map.py` holds only
+the shared domain knowledge they need:
 
 | Helper | Purpose |
 | --- | --- |
-| `group_mode()` | collapse the 11 production transport modes into the frontend's display buckets (`train`/`bus`/`car`/`bike`/`scooter`/…) — applied only when shaping `mode_breakdown` for the UI |
-| `category_covers_mode()` | the **coverage assumption**: which transport modes a subscription category pays for (`public_transport` covers `public_transport`+`regional_train`; `car_sharing` covers `car_sharing`; etc.). This is the generic replacement for the old hardcoded product logic |
-| `preferences_from_onboarding()` | `score_money/emission/flexibility` → `cost_priority` / `co2_priority` / `convenience_priority` |
-| `clean_row()` / `jsonable()` | coerce psycopg2 `Decimal` / `datetime` → `float` / ISO string (so agent math and `json.dumps` don't break) |
+| `category_covers_mode()` | the **coverage assumption**: which transport modes a subscription category pays for (a public-transport pass covers regional but not long-distance rail, and so on) |
+| `preferences_from_onboarding()` | `score_money` / `score_emission` / `score_flexibility` → `cost_priority` / `co2_priority` / `convenience_priority` |
+| `clean_row()` / `jsonable()` | coerce psycopg2 `Decimal` and `datetime` into `float` and ISO strings, so arithmetic and `json.dumps` both work |
 
-**Coverage & cost model.** A leg's `estimated_cost_eur` is its *intrinsic*
-pay‑as‑you‑go price. A subscription covers a leg when its category covers the leg's
-transport mode — a covered leg then costs €0. The optimizer values every portfolio
-(including the user's current one) through the same `simulate()` against these
-intrinsic prices, so adding or dropping a plan is symmetric.
+**The cost model.** A leg's `estimated_cost_eur` is its intrinsic pay-as-you-go
+price. `analysis.py` prices every current-versus-alternative-versus-no-subscription
+comparison directly off the user's actual legs rather than assuming that holding
+any plan makes a whole category free, so adding and dropping a plan are valued
+symmetrically.
 
 ---
 
-## 6. The analyze pipeline (the heart of the system)
+## 6. The analysis pipeline
 
-`POST /api/analyze` is where data, agents and LLM come together. The
-**Orchestrator** (`orchestrator.py`) invokes a **LangGraph** (`graph/pipeline.py`),
-then persists the result and shapes the response the frontend expects.
+`POST /api/analyze` is where the data, the engines and the LLM meet.
+`analysis_service.py` owns the request lifecycle — cache lookup, persistence and
+response shaping — and delegates the analysis itself to
+`agent/pipeline.py::run_analysis`.
+
+> [!IMPORTANT]
+> **`/api/analyze` is a read-through cache.** The dashboard auto-runs it on every
+> mount, so an unforced call rebuilds the payload from the user's most recent
+> **session snapshot** rather than recomputing. Pass `{"force": true}` to run the
+> pipeline fresh. A missing or partial snapshot falls through to a fresh run
+> automatically. This is what keeps repeat dashboard mounts fast, and it is why a
+> code change to an engine appears to have no effect until you force a run.
 
 ```mermaid
 flowchart TD
-    A["POST /api/analyze<br/>{ user_id }"] --> O[Orchestrator.run_analysis]
-    O --> G{{LangGraph: graph.invoke}}
+    A["POST /api/analyze<br/>{ user_id }"] --> S[analysis_service]
+    S --> LC[load_context<br/>users, onboarding, subscriptions,<br/>trip_legs, catalog, calendar]
 
-    subgraph Graph["graph/pipeline.py"]
-        LC[load_context_node<br/>reads users, onboarding,<br/>subscriptions, trip_legs, catalog<br/>via schema_map] --> AN[analyst_node]
-        LC --> FC[forecaster_node]
-        AN --> OP[optimizer_node]
-        FC --> OP
-        OP --> CM[communicator_node<br/>template memo + optional LLM memo]
+    subgraph Pipeline["agent/pipeline.py — one Langfuse trace"]
+        LC --> AN[analyze_portfolio<br/>deterministic spend audit +<br/>per-category comparison]
+        AN --> MS[build_modal_shift_suggestions<br/>deterministic candidates +<br/>batched LLM feasibility judge]
+        MS --> FC[forecast<br/>LLM reasoner,<br/>deterministic fallback]
+        FC --> PR[attach_projected_category_analysis<br/>deterministic projection]
+        PR --> MM[template_memos<br/>deterministic memo]
     end
 
-    G --> P[Persist to 'recommendations']
+    MM --> P[persist to 'recommendations']
     P --> R["JSON payload<br/>(summary + raw_agent_payloads)"]
-    R --> A
 ```
 
-What each node does:
+What each stage contributes:
 
-| Node | Reads | Produces |
+| Stage | Reads | Produces |
 | --- | --- | --- |
-| `load_context` | `users`, `user_onboardings`, `user_subscriptions ⋈ subscription_catalogs`, `trip_legs`, `subscription_catalogs` | catalog‑native context (user, preferences, subscriptions, leg‑level travel history, catalog) |
-| `analyst` | travel history + subscriptions | spend audit, grouped mode breakdown, **generic** coverage‑based inefficiencies (unused / missing subscription) |
-| `forecaster` | travel history | projected 6‑month demand by mode |
-| `optimizer` | history + subscriptions + catalog + preferences | **catalog‑driven** ranked **scenarios** (cost‑optimized + balanced): any catalog plan is a candidate, costed via `category_covers_mode` + flat price — no hardcoded products |
-| `communicator` | analyst + optimizer output | EN/DE memo — deterministic template, upgraded to an **LLM‑written** memo when a key is configured |
+| `load_context` | users, onboarding, subscriptions ⋈ catalog, trip legs, calendar | the full analysis context |
+| `analyze_portfolio` | travel history, subscriptions, catalog, preferences | spend audit, mode breakdown, per-category current/alternative/no-subscription comparison |
+| `build_modal_shift_suggestions` | mode breakdown, category analysis, onboarding constraints | cross-category mode-switch candidates; deterministic pricing plus **one batched LLM call** judging free-text feasibility |
+| `forecast` | the analyst's forecaster summary + upcoming calendar entries | 365-day demand forecast; uses the LLM reasoner when available, otherwise the deterministic baseline |
+| `attach_projected_category_analysis` | forecast + mode breakdown + subscriptions | the same comparison projected onto forecasted demand — reuses `analyze_portfolio`'s pricing, so the forecaster never touches money |
+| `template_memos` | analyst + forecaster output | the deterministic memo the dashboard falls back to |
 
-The agents are **deterministic** — they are the authoritative source of every
-number the dashboard shows. The LLM only rewrites prose (the memo); if it is
-absent or errors, the template memo stands.
+**Numbers are never LLM-generated.** The two LLM steps are deliberately narrow:
+the feasibility judge rules on free-text constraints, and the forecast reasoner
+supplies a rationale. Both have deterministic fallbacks, and money is always
+recomputed by the engines afterwards.
 
-After the graph runs, the orchestrator inserts a row into `recommendations`
-(`analyst_output`, `forecaster_output`, `optimizer_scenarios`, `analysis_status =
-'ready'`) and returns a payload shaped like:
+**The rich briefing is not on this path.** The LLM-written customer briefing is
+the advisor agent's opening chat turn, fetched on demand via
+`POST /api/chat/{session_id}`, which keeps the synchronous analyze request fast.
+
+The response is shaped like:
 
 ```jsonc
 {
   "session_id": "…",            // = recommendation_id
   "status": "ready",
-  "customer_name": "Test User",
+  "timestamp": "…",
+  "user_id": "…",
+  "customer_name": "…",
   "preferences": { … },
-  "current_subscriptions": [ … ],
+  "current_subscriptions": [ … ],   // active holdings only
   "summary": {
-    "baseline_cost": 588.0,
-    "baseline_co2": 0.5,
-    "recommended_scenario": "A",
-    "scenarios": [ … ],
+    "total_actual_annual_cost_eur": 588.0,
+    "total_co2_kg": 0.5,
+    "total_estimated_savings_eur": 120.0,
+    "category_subscription_analysis": [ … ],   // per category: current vs alternative vs none
+    "modal_shift_suggestions": [ … ],
     "memos": { "english": "…", "german": "…" }
   },
-  "raw_agent_payloads": { "analyst": …, "forecaster": …, "optimizer": …, "communicator": … }
+  "raw_agent_payloads": { "analyst": …, "forecaster": …, "communicator": … }
 }
 ```
 
-### 6.1 The single-call LLM baseline (evaluation only)
-
-[`src/agent/baseline_pipeline.py`](src/agent/baseline_pipeline.py) is the
-evaluation counterpart to this pipeline: the same raw context `load_context`
-produces (profile, preferences, subscriptions, full leg-level travel history,
-catalog, calendar) is handed to the LLM in **one call**, and the LLM derives the
-recommended portfolio changes itself — no deterministic engines, no forecaster,
-no number guard. Its output uses the same action vocabulary as
-`category_subscription_analysis[*].recommendation` / `actions_required`
-(`keep_current`, `switch_to_alternative`, `cancel_current_go_pay_as_you_go`,
-`consider_subscribing`, `no_subscription_needed`, `insufficient_cost_data`), so
-main-pipeline and baseline recommendations can be judged against the same rubric.
-
-It is not wired into any endpoint or the frontend. Run it from `backend/` (needs
-`DATABASE_URL` + `UNI_GPT_API_KEY`):
-
-```bash
-python scripts/run_baseline.py <user_id> [...]   # or --all, optionally --out results.json
-```
-
-### 6.2 Baseline-vs-main comparison (Langfuse experiment)
-
-To quantify **how close the bare-LLM baseline gets to the deterministic main
-pipeline**, `scripts/run_comparison.py` runs both over the same four seed personas
-as two Langfuse experiment runs and scores their *recommendations* (not prose). The
-deterministic engine's own output is the ground truth — its per-category
-`recommendation` uses the same action vocabulary as the baseline (see §6.1), so the
-two are directly comparable, and the main arm scores a perfect 1.0 as the ceiling.
-
-Each recommendation set is scored by five evaluators in
-[`eval/recommendation_judges.py`](eval/recommendation_judges.py) — four deterministic
-code checks (`plan-in-catalog`, `action-in-vocabulary`, `savings-non-negative`, and
-the headline `category-agreement`) plus one LLM judge (`recommendation-soundness`).
-Both pipelines are mapped to one shape by [`eval/normalize.py`](eval/normalize.py).
-
-**Prerequisites**
-
-* Postgres running — seeding reads the personas' context from the DB
-  (`docker compose up -d db`). The comparison run itself needs no DB (it uses the
-  context stored in the dataset).
-* `UNI_GPT_API_KEY` (baseline + judge) and `LANGFUSE_PUBLIC_KEY` /
-  `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` set. All three scripts auto-load the
-  repo-root `.env`, so no manual `export` is needed.
-
-**How to run** (from `backend/`, in order):
-
-```bash
-# 1. one-time: create the score configs (types/ranges) in Langfuse — idempotent
-python scripts/seed_score_configs.py
-
-# 2. seed the `recommendation-comparison` dataset from the four personas
-#    (raw context as input, deterministic recommendations as expected_output)
-python scripts/seed_comparison_dataset.py
-
-# 3. run both arms, print the side-by-side score table, push scores to Langfuse
-python scripts/run_comparison.py                     # add --assert-main-agreement for a CI smoke check
-```
-
-Re-run step 2 whenever the personas or the analysis engine change; step 3 as often as
-you like — **each run creates a fresh Langfuse run**, so run it several times to average
-out the baseline's run-to-run variance.
-
-**Where the results appear.** This is not a UI "Evaluator" — the evaluators run
-locally inside the script and attach **scores** to the experiment runs. See them under
-**Datasets → `recommendation-comparison` → Runs** (baseline vs main side-by-side) and
-**Evaluation → Scores**; the score configs live under **Settings → Scores**.
+> [!IMPORTANT]
+> The summary is **per-category**, not scenario-based. An earlier design emitted
+> `summary.scenarios` and `summary.recommended_scenario`; those were replaced by
+> `category_subscription_analysis` when the standalone optimizer was folded into
+> the analyst (§12). Two frontend spots still read the old shape — see
+> [`frontend/README.md`](../frontend/README.md#known-issues-and-cleanup).
 
 ---
 
 ## 7. HTTP API
 
-All endpoints are defined in `src/main.py`.
+All routes are registered in `src/main.py`; the register, onboarding and profile
+handlers live in `register_endpoint.py` and `profile_endpoint.py`. The code is
+the source of truth — the shapes below are a reference, not a frozen contract.
 
-| Method & path | Purpose | Notes |
-| --- | --- | --- |
-| `GET /` | health/info | — |
-| `POST /api/login` | authenticate a user by username/email + shared password | body `{ "identifier": "…", "password": "…" }`; returns the session user object, else `401`. See §8a |
-| `POST /api/register` | create the essential account | writes `users` plus an initially empty `user_onboardings` row |
-| `POST /api/onboarding/{user_id}/complete` | complete optional onboarding | fills preferences/connections and records the initial subscriptions; idempotent after completion |
-| `GET /api/profile/{user_id}` | load editable profile data | returns user/onboarding fields plus active and historical subscriptions for read-only display |
-| `PUT /api/profile/{user_id}` | update editable profile data | atomically updates profile fields and mobility-account connections; never mutates subscriptions |
-| `GET /api/personas` | list DB users + onboarding prefs + subscriptions | reads the production schema directly |
-| `POST /api/analyze` | run the 4‑agent pipeline for a user | body `{ "user_id": "…" }`; persists a `recommendations` row |
-| `POST /api/recommendations/{id}/approve` | mark a recommendation approved | body `{ "scenario_id": "A" }`; sets `analysis_status='approved'`, `selected_scenario_id`, `approved_at` |
-| `POST /api/chat/{session_id}` | session-grounded advisor turn or opening briefing | follow-up turns require an LLM key; opening briefing has a template fallback |
-| `POST /api/chat/{session_id}/stream` | SSE streaming advisor turn | emits token/done/confirm-required events |
-| `POST /api/chat/{session_id}/confirm` | resolve a pending subscription change | explicit human-in-the-loop confirmation gate |
+Base: same origin, proxied by Vite `/api` → backend `:8000`.
 
----
+### Accounts and authentication
 
-## 8a. Login & authentication
-
-> **Naming note.** Despite being referred to as the "OAuth login", this is **not
-> OAuth** — there is no external identity provider, no token grant flow and no
-> JWT. It is a deliberately minimal **shared-password credential login** against
-> the real database users, suitable for the sandbox/demo. The `users` table
-> already carries an `external_auth_id` column, which is the natural hook for a
-> real OAuth/OIDC integration later (see "Upgrading to real OAuth" below).
-
-### Why it exists
-
-The frontend used to log in as a single hardcoded persona (`dummy-user-001` in
-`frontend/src/data/personas.js`). After the seed data was replaced with 23 real
-users, that persona no longer existed, so every login posted a missing `user_id`
-to `/api/analyze` → `404` → "We couldn't load your plan". The login was
-restructured into a real **username/email + password** sign-in against the seeded
-users; the quick-start persona buttons and `personas.js` were removed.
-
-### The flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as Frontend (:5173)
-    participant BE as Backend (:8000)
-    participant DB as Postgres
-
-    U->>FE: enter username/email + password
-    FE->>BE: POST /api/login { identifier, password }
-    BE->>BE: password == DEMO_LOGIN_PASSWORD ?
-    alt wrong password
-        BE-->>FE: 401 "Incorrect password."
-    else password ok
-        BE->>DB: SELECT … WHERE username = ? OR email = ?<br/>ORDER BY (username = ?) DESC LIMIT 1
-        alt no match
-            BE-->>FE: 401 "No account matches that username or email."
-        else match
-            BE-->>FE: 200 { id, name, firstName, email, username, initials }
-        end
-    end
-    FE->>FE: store user object in localStorage (moveoptimizer.session)
-    FE->>BE: POST /api/analyze { user_id: user.id }
-```
-
-### Contract
-
-`POST /api/login` (defined in `src/main.py`):
-
-* **Request:** `{ "identifier": "<username or email>", "password": "<password>" }`
-* **Auth rule:** the `password` must equal `DEMO_LOGIN_PASSWORD` (a single shared
-  secret read from the environment, default `mobility`). It is **not** stored
-  per-user — the seed data has no password column.
-* **Lookup:** the identifier is matched against `username` **first**, then `email`
-  (`ORDER BY (username = ?) DESC`). Usernames are unique; emails may collide, so
-  username-first keeps logins deterministic.
-* **Success (200):** the compact session object the frontend stores and reuses —
-  `id` (= `users.user_id`, the key for every later `/api/analyze` call), `name`,
-  `firstName`, `email`, `username`, `initials`.
-* **Failure (401):** `"Incorrect password."` (bad password) or
-  `"No account matches that username or email."` (unknown identifier). The
-  frontend surfaces `detail` directly in the form's error banner.
-
-### Frontend wiring
-
-| Concern | Location |
+| Route | Purpose |
 | --- | --- |
-| API call (resolves, not throws, on 401) | `frontend/src/api/client.js` → `login()` |
-| Session state + `localStorage` persistence | `frontend/src/context/AuthContext.jsx` |
-| Sign-in form (identifier + password) | `frontend/src/pages/Login.jsx` |
+| `POST /api/login` | authenticate by username **or** email — see §8 |
+| `POST /api/register` | create the account plus an empty onboarding row; rate-limited |
+| `POST /api/onboarding/{user_id}/complete` | complete the optional onboarding; idempotent |
+| `GET /api/profile/{user_id}` | load the editable profile |
+| `PUT /api/profile/{user_id}` | atomically replace profile fields |
 
-The full user object is persisted to `localStorage` under
-`moveoptimizer.session`, so a page reload restores the session; `logout()` clears
-it. There is no server-side session — the backend treats every request as
-stateless and trusts the `user_id` the frontend sends.
-
-### Try it
-
-```bash
-# success (use a user that has travel data so the dashboard is non-empty)
-curl -X POST localhost:8000/api/login \
-     -H 'Content-Type: application/json' \
-     -d '{"identifier":"jank_frankfurt","password":"mobility"}'
-
-# email also works
-curl -X POST localhost:8000/api/login \
-     -H 'Content-Type: application/json' \
-     -d '{"identifier":"jan.klein@example.com","password":"mobility"}'
-
-# wrong password / unknown user -> 401
-curl -i -X POST localhost:8000/api/login \
-     -H 'Content-Type: application/json' \
-     -d '{"identifier":"jank_frankfurt","password":"nope"}'
+```jsonc
+// POST /api/login
+{ "identifier": "julia.berger@example.com", "password": "mobility" }
+// 200
+{ "id": "ce92d8e0-…", "name": "Julia Berger", "firstName": "Julia",
+  "email": "…", "username": "…", "initials": "JB" }
+// 401 { "detail": "Incorrect password." }
 ```
 
-### Security caveats (demo only)
+`POST /api/register` takes `{ user, credentials, onboarding?, subscriptions? }`.
+Birth date and home location may be `null` — the endpoint does not invent
+placeholder values.
 
-* One shared password for everyone; credentials are checked in plaintext.
-* `401` messages distinguish "wrong password" from "unknown user" (a minor user
-  enumeration leak) — acceptable for a sandbox, not for production.
-* No tokens/sessions: any client that knows a `user_id` can call `/api/analyze`
-  for it.
+`GET /api/profile/{user_id}` returns the user and onboarding fields plus **all**
+subscription records, active and historical, each with `subscription_status`,
+`valid_from`, `valid_until` and `status_changed_at`.
 
-### Upgrading to real OAuth
+> [!IMPORTANT]
+> **`PUT /api/profile` never mutates subscriptions.** It atomically replaces the
+> structured form fields and the simulated mobility-account connections only.
+> Subscription changes must originate from the advisor's apply flow (§9). The
+> frontend forces a fresh analysis after a successful profile update.
 
-To make this genuine OAuth/OIDC: add an identity provider (e.g. an OAuth2
-authorization-code flow), store the provider's subject in the existing
-`users.external_auth_id` column, exchange the provider token for a backend
-session/JWT, and replace the `DEMO_LOGIN_PASSWORD` check in `/api/login` with
-token verification. The frontend's `AuthContext` would store the issued token
-instead of the user object, and protected endpoints would validate it.
+### Analysis
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/personas` | every user, enriched with onboarding preferences and catalog-joined subscriptions |
+| `POST /api/analyze` | run or serve the cached analysis — see §6 |
+| `POST /api/recommendations/{rec_id}/approve` | record approval, write a Langfuse score |
+
+```jsonc
+// POST /api/analyze
+{ "user_id": "ce92d8e0-…", "force": false }
+```
+
+The response envelope is documented in §6. Errors: `404` for an unknown user id,
+`500` on a pipeline exception.
+
+```jsonc
+// POST /api/recommendations/{rec_id}/approve
+{ "scenario_id": "A" }
+// 200 { "status": "success", "recommendation_id": "…", "scenario_id": "A" }
+// 404 when the recommendation id is unknown
+```
+
+> [!NOTE]
+> `scenario_id` is legacy naming kept for wire compatibility — the system no
+> longer produces scenarios (see §6). It is stored on the row as
+> `selected_scenario_id` and echoed into the Langfuse score comment.
+
+`raw_agent_payloads.analyst.output` carries the deterministic engine's full
+output, which is what the dashboard's detail views read:
+
+```jsonc
+{
+  "total_trips": 468,
+  "total_distance_km": 28641.6,
+  "total_co2_kg": 229.1,
+  "current_annual_spend_eur": 696.0,       // extrapolated to a full year
+  "mode_breakdown": { "public_transport": { "trips": …, "cost": …, "co2_kg": … } },
+  "category_subscription_analysis": [ … ],
+  "modal_shift_suggestions": [ … ],
+  "forecaster_summary": { … }              // handed to the forecaster
+}
+```
+
+> [!WARNING]
+> `current_annual_spend_eur` (analyst output) and `total_actual_annual_cost_eur`
+> (summary) are **different figures** and can legitimately differ — the former is
+> extrapolated to a full year, the latter is the actual observed cost. Do not use
+> them interchangeably.
+
+### Chat advisor
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/chat/{session_id}` | an an advisor turn, or the opening briefing at turn 0 |
+| `POST /api/chat/{session_id}/stream` | the same, as SSE — emits `token`, `done`, `confirm_required` |
+| `POST /api/chat/{session_id}/confirm` | resolve a pending change — see §9 |
+| `GET /api/chat/{session_id}/messages` | replay the stored history |
+
+`session_id` is the `recommendation_id` returned by `/api/analyze`. Follow-up
+turns return `503` without an LLM key; the opening briefing falls back to the
+template memo.
+
+### Feedback and debugging
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/feedback` | `{ trace_id, value, comment }` — attaches a thumbs score to a Langfuse trace; a no-op `200` when tracing is off |
+| `GET /api/analyst/{user_id}` | run the analyst engine alone |
+| `GET /api/forecaster/{user_id}` | run `load_context → analyze → forecast`, stopping before the memo |
+| `POST /api/forecaster/test` | run the forecaster against a supplied payload |
+
+The three debugging routes are not consumed by the UI.
+
+CORS is wide open (`allow_origins=["*"]`) for development.
 
 ---
 
-## 8. The LLM layer (optional, graceful)
+## 8. Login and authentication
 
-`agent/llm.py` is the single point that knows how to reach **University GPT**
-(an OpenAI‑compatible endpoint) and whether it is configured:
+> [!NOTE]
+> Despite sometimes being called "the OAuth login", this is **not OAuth** — no
+> external identity provider, no token grant, no JWT. The `users` table carries
+> an `external_auth_id` column, which is the natural hook for real OAuth later.
 
-* `llm_available()` is `True` only when `UNI_GPT_API_KEY` is set.
-* `get_llm()` lazily builds a shared `ChatOpenAI` client.
+### Two password paths
 
-Degradation when no key is present:
+`POST /api/login` checks the password one of two ways, depending on the account:
 
-| Feature | With key | Without key |
-| --- | --- | --- |
-| `/api/analyze` memo | LLM‑written EN/DE memo | deterministic template memo |
-| `/api/chat` | works | `503` (frontend uses a scripted fallback) |
-| `/api/onboarding` | works | `503` |
+| Account | Check |
+| --- | --- |
+| **Registered** via `/api/register` — has a `password_hash` | `verify_password()` against the stored hash: **PBKDF2-HMAC-SHA256**, per-user random salt, compared with `hmac.compare_digest` ([`auth_utils.py`](src/auth_utils.py)) |
+| **Seed persona** — no hash in the seed data | equality against `DEMO_LOGIN_PASSWORD`, one shared secret from the environment (default `mobility`) |
 
-So the core analyze/persona/approve flow is **fully functional with no API key**.
+So real registrations are hashed and salted properly; only the seeded demo
+personas rely on the shared password.
 
----
+**Lookup.** The identifier is matched against `username` first, then `email`
+(`ORDER BY (username = ?) DESC`). Usernames are unique, emails may collide, so
+username-first keeps logins deterministic.
 
-## 9. How the frontend connects
+**Success (200)** returns the compact session object the frontend stores: `id`
+(= `users.user_id`, the key for every later `/api/analyze` call), `name`,
+`firstName`, `email`, `username`, `initials`.
+
+**Failure (401)** is `"Incorrect password."` or `"No account matches that
+username or email."`, surfaced directly in the form's error banner.
 
 ```mermaid
 sequenceDiagram
@@ -504,151 +504,324 @@ sequenceDiagram
 
     U->>FE: sign in (username/email + password)
     FE->>BE: POST /api/login { identifier, password }
-    BE-->>FE: { id, name, … }  (= users.user_id)
-    Note over FE: user object stored in localStorage
+    BE->>DB: SELECT … WHERE username = ? OR email = ?
+    BE-->>FE: { id, name, … }
+    Note over FE: stored in localStorage (moveoptimizer.session)
     FE->>BE: POST /api/analyze { user_id: id }
-    BE->>DB: load context (users, legs, subscriptions, catalog)
-    BE->>BE: run agent pipeline + persist recommendation
-    BE-->>FE: { summary, scenarios, memos, raw_agent_payloads }
-    FE->>U: render dashboard (stats, recommendation, modes)
-    U->>FE: approve a scenario
+    BE->>DB: load context
+    BE->>BE: run pipeline + persist recommendation
+    BE-->>FE: { summary, category analysis, memos, raw_agent_payloads }
+    FE->>U: render dashboard
+    U->>FE: approve the recommendation
     FE->>BE: POST /api/recommendations/{id}/approve { scenario_id }
-    BE->>DB: UPDATE recommendations SET analysis_status='approved'
 ```
 
-* Login is handled by `POST /api/login` (see §8a). The returned `id` is the
-  `users.user_id` used for every subsequent `/api/analyze` call; the user object
-  is held in `AuthContext` and `localStorage`. The old hardcoded
-  `frontend/src/data/personas.js` has been removed.
-* In dev, the Vite server proxies `/api/*` to the backend (`vite.config.js`), so
-  the browser only ever calls same‑origin `/api/...`.
-* CORS is wide‑open in `main.py` (`allow_origins=["*"]`) for development.
+### Frontend wiring
+
+| Concern | Location |
+| --- | --- |
+| API call (resolves rather than throws on 401) | `frontend/src/api/client.js` → `login()` |
+| Session state and `localStorage` persistence | `frontend/src/context/AuthContext.jsx` |
+| Sign-in form | `frontend/src/pages/Login.jsx` |
+
+The session object is persisted under `moveoptimizer.session`, so a reload
+restores it and `logout()` clears it. There is **no server-side session**: the
+backend is stateless and trusts the `user_id` it is sent.
+
+### Try it
+
+```bash
+# success — pick a user with travel data so the dashboard is non-empty
+curl -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jank_frankfurt","password":"mobility"}'
+
+# wrong password or unknown user -> 401
+curl -i -X POST localhost:8000/api/login \
+     -H 'Content-Type: application/json' \
+     -d '{"identifier":"jank_frankfurt","password":"nope"}'
+```
+
+### Security caveats (demo only)
+
+> [!CAUTION]
+> This login is for the sandbox demo only and must not be exposed publicly.
+
+- **Seed personas share one password**, compared in plaintext. Registered
+  accounts are hashed, so this is a property of the demo data, not of the
+  registration path.
+- The `401` messages distinguish "wrong password" from "unknown user", a minor
+  user-enumeration leak.
+- **No tokens or sessions.** Any client that knows a `user_id` can call
+  `/api/analyze` for it — the backend is stateless and does not authenticate
+  requests after login.
+
+**Upgrading to real OAuth** means adding an authorization-code flow, storing the
+provider's subject in `users.external_auth_id`, exchanging the provider token
+for a backend session, and replacing both password paths with token
+verification. `AuthContext` would then hold the issued token instead of the user
+object.
 
 ---
 
-## 10. Running & configuring
+## 9. The chat advisor and the change flow
 
-```bash
-# from the repo root
-./run.sh                     # = docker compose up --build
+The advisor ([`agent/advisor/agent.py`](src/agent/advisor/agent.py)) is the
+**only** agent in the system — one ReAct loop that owns the whole conversation,
+from the opening briefing through follow-ups. It reasons over a session
+snapshot with seven deterministic tools:
 
-# reset the database (re-runs database/init, including the dummy seed)
-docker compose down -v && docker compose up --build
+| Tool | File | What it does |
+| --- | --- | --- |
+| `lookup_subscriptions` | `tools/catalog.py` | read the live catalog |
+| `list_tariff_docs` / `read_tariff_doc` | `tools/knowledge.py` | agentic RAG over the tariff corpus — see [`data/README.md`](../data/README.md) |
+| `get_demand_outlook` / `get_modal_shift` | `tools/insights.py` | surface the snapshot's precomputed forecast and modal-shift results |
+| `simulate_change` | `tools/simulate.py` | **read-only** what-if |
+| `apply_change` | `tools/apply.py` | the **only** writer in the system |
+
+The tools are all deterministic. The agent is an LLM reasoning layer over
+deterministic capabilities — it decides *which* to call, never what the numbers
+are.
+
+### Cross-turn memory
+
+Conversation state persists in Postgres through a LangGraph `PostgresSaver`
+checkpointer, keyed by `thread_id` = the chat `session_id`. It runs its own small
+connection pool, independent of the psycopg2 path the rest of the backend uses.
+Chat history is separately stored via `agent/session.py` so
+`GET /api/chat/{id}/messages` can replay a conversation without the checkpointer.
+
+### simulate → confirm → apply
+
+Changing a subscription is split by side effect, with confirmation enforced at
+**two independent levels**.
+
+```mermaid
+flowchart LR
+    U["user: 'what if I drop the BahnCard?'"] --> SIM["simulate_change<br/>read-only re-derivation<br/>→ records a *proposed* revision<br/>→ returns proposal_id"]
+    SIM --> ASK["advisor shows the numbers,<br/>asks for confirmation"]
+    ASK --> YES["user says yes<br/>→ apply_change(proposal_id)"]
+    YES --> INT["interrupt(): the graph pauses,<br/>state checkpointed, response carries<br/>pending_confirmation — nothing written"]
+    INT --> CONF{"POST /api/chat/{id}/confirm"}
+    CONF -->|"{confirm: true}"| APP["re-derive + commit_revision<br/>→ new session, dashboard updates"]
+    CONF -->|"{confirm: false}"| CX["resolved, no write"]
 ```
 
-Services: frontend `:5173`, backend `:8000`, Postgres `:5432`.
+- **`simulate_change` is read-only.** It re-derives the verdict deterministically
+  (`engines/reoptimize.py`, reusing the snapshot's already-priced alternatives and
+  the same preference weights) and records a `proposed` revision as scratch. The
+  dashboard is unchanged. It returns a `proposal_id`.
+- **`apply_change` is the sole state-mutating tool**, guarded twice:
+  - *Structurally* — it requires a `proposal_id` minted by a prior
+    `simulate_change`, verifies the proposal's **owner** against the `user_id`
+    injected from the run config, and refuses an already-`applied` id, so a model
+    retry cannot double-commit.
+  - *At runtime* — before any write it calls LangGraph `interrupt()`. The graph
+    suspends with its state checkpointed, and the chat response returns a
+    `pending_confirmation` payload. Only `POST /api/chat/{session_id}/confirm`
+    with `{"confirm": true}` resumes it via `Command(resume=…)` to re-derive and
+    persist through `session.commit_revision`. `{"confirm": false}` resolves the
+    pause without writing.
 
-### Environment variables
+> [!IMPORTANT]
+> A mis-fired `apply_change` **cannot** commit. The confirmation is enforced by
+> the runtime, not by prompt instructions — the model cannot talk its way past
+> `interrupt()`. This is the core safety property of the change flow, and any
+> refactor of `tools/apply.py` needs to preserve both levels.
 
-| Variable | Default | Used by |
+Note the deliberate layering guardrail: `tools/apply.py` does not import
+`AnalysisService`. It persists through `session.commit_revision` instead, so a
+tool cannot reach back into the request lifecycle.
+
+---
+
+## 10. The LLM layer
+
+`agent/llm.py` is the single place that knows how to reach University GPT (an
+OpenAI-compatible endpoint) and whether it is configured:
+
+- `llm_available()` is `True` only when `UNI_GPT_API_KEY` is set.
+- `get_llm()` lazily builds a shared `ChatOpenAI` client.
+
+Degradation without a key:
+
+| Feature | With key | Without key |
+| --- | --- | --- |
+| `/api/analyze` numbers | deterministic | deterministic (identical) |
+| Forecast rationale | LLM reasoner | deterministic baseline |
+| Modal-shift feasibility | LLM judge | deterministic filter only |
+| Dashboard memo | template | template |
+| `/api/chat` | works | `503` (frontend uses a scripted fallback) |
+
+So analyze, personas, profile and approve are **fully functional with no API key**.
+
+### Backend environment variables
+
+| Variable | Default | Read by |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://postgres:postgres@db:5432/app_db` (set in compose) | `database.py` |
-| `DEMO_LOGIN_PASSWORD` | `mobility` | `main.py` — shared password accepted by `POST /api/login` (§8a) |
-| `UNI_GPT_API_KEY` | _(empty)_ | `agent/llm.py` — enables memos/chat/onboarding |
+| `DEMO_LOGIN_PASSWORD` | `mobility` | `main.py` — the shared login password |
+| `UNI_GPT_API_KEY` | _(empty)_ | `agent/llm.py` — enables all LLM features |
 | `UNI_GPT_BASE_URL` | `https://chat.kiconnect.nrw/api/v1` | `agent/llm.py` |
 | `UNI_GPT_MODEL` | `OpenAI GPT OSS 120b KI:Inferenz.nrw` | `agent/llm.py` |
 
-The API key is read from the repo‑root `.env` (mounted via compose `env_file`).
+`LANGFUSE_*` variables are documented in [`eval/README.md`](eval/README.md).
 
-### Quick smoke test
+### Smoke test
 
 ```bash
-curl localhost:8000/                                   # health
-curl localhost:8000/api/personas                       # -> 23 seeded users
-curl -X POST localhost:8000/api/login \
-     -H 'Content-Type: application/json' \
-     -d '{"identifier":"jank_frankfurt","password":"mobility"}'   # -> session user object
+curl localhost:8000/                     # health
+curl localhost:8000/api/personas         # -> the seeded users
 curl -X POST localhost:8000/api/analyze \
      -H 'Content-Type: application/json' \
-     -d '{"user_id":"c3d4e5f6-cccc-dddd-eeee-ffff22223333"}'      # -> full pipeline payload
+     -d '{"user_id":"<a user_id from /api/personas>"}'
 ```
 
 ---
 
 ## 11. Testing
 
-A fast, **deterministic** pytest suite covers the engines (the authoritative numbers) plus an
-import/route smoke test. It touches **no database and no LLM** — the LLM path in `forecast()`
-is forced off with `monkeypatch.setattr("agent.llm.llm_available", lambda: False)` — so it runs
-in well under a second and needs no API key or running Postgres.
+A fast, **deterministic** pytest suite covers the engines — the authoritative
+numbers — plus the endpoint modules and an import/route smoke test. It touches
+**no database and no LLM**: the LLM path is forced off with
+`monkeypatch.setattr("agent.llm.llm_available", lambda: False)`, so the suite
+runs in about a second and needs neither an API key nor a running Postgres.
 
-```
-backend/
-├── pytest.ini            # pythonpath = src (so tests import `agent.*`, `main`, …); testpaths = tests
-├── requirements-dev.txt  # pytest — installed into the image by the dockerfile
-└── tests/
-    ├── conftest.py           # shared pure-dict fixtures shaped like load_context()'s output
-    ├── test_schema_map.py    # group_mode / category_covers_mode / preferences_from_onboarding / coercion
-    ├── test_analysis.py      # analyze_portfolio: contract keys, trip windowing, realized savings, reproducibility
-    ├── test_optimization.py  # optimize: A/B scenarios, savings == baseline − cost, empty-catalog resilience
-    ├── test_memo.py          # template_memos: keys, EN/DE non-empty, savings_potential_estimate_eur regression guard
-    ├── test_forecasting.py   # forecast (deterministic path): shape, recent-month weighting, calendar-not-analyzed note
-    └── test_imports.py       # SMOKE NET: each handler's (lazy) imported symbol exists + key routes are registered
+```text
+tests/
+├── conftest.py                 # pure-dict fixtures shaped like load_context() output
+├── test_schema_map.py          # coverage rules, preference mapping, type coercion
+├── test_mode_factors.py        # transport-mode cost/CO₂/time factors
+├── test_analysis.py            # analyze_portfolio: contract keys, windowing, reproducibility
+├── test_forecasting.py         # forecast, deterministic path
+├── test_modal_shift.py         # mode-switch candidate generation
+├── test_scoring.py             # preference-weighted ranking
+├── test_reoptimize.py          # constraint-driven re-optimisation
+├── test_memo.py                # template memo keys, EN/DE non-empty
+├── test_llm_steps.py           # forecast reasoner + feasibility judge parsing
+├── test_baseline_pipeline.py   # the evaluation baseline
+├── test_register_endpoint.py   # registration + onboarding completion
+├── test_profile_endpoint.py    # profile read/update
+└── test_imports.py             # smoke net — see below
 ```
 
-**Why the smoke test matters.** `test_imports.py` asserts that every symbol the FastAPI
-handlers import — including lazy in-handler imports like `from agent.communicator_agent import
-run_chat` — still exists, and that the key routes are registered on `app`. This catches the
-class of bug where an endpoint 500s only when actually called (exactly the `/api/chat`
-regression that occurred when `run_chat` was overwritten): a plain `import main` would not
+**Why the smoke test matters.** `test_imports.py` asserts that every symbol the
+FastAPI handlers import — including lazy in-handler imports — still exists, and
+that the key routes are registered on `app`. This catches the class of bug where
+an endpoint only 500s when actually called: a plain `import main` would not
 surface a missing lazy import, but this test does.
 
-### Running the tests
-
-The dev deps are baked into the image (`dockerfile` installs `requirements-dev.txt`), so run
-them in the backend container:
-
 ```bash
-docker compose exec backend pytest -q          # all tests
-docker compose exec backend pytest -q tests/test_optimization.py   # one module
-docker compose exec backend pytest --collect-only                  # list what would run
+docker compose exec backend pytest -q                            # all tests
+docker compose exec backend pytest -q tests/test_analysis.py     # one module
+docker compose exec backend pytest --collect-only                # list without running
 ```
 
-To run locally instead (from `backend/`, with the app deps installed):
+To run locally instead, from `backend/`:
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest -q
 ```
 
-`pythonpath = src` in `pytest.ini` is what lets the tests do `from agent.engines import …` and
-`import main` without any sys.path juggling. Importing `main` is DB-safe: `ping_db()` runs only
-inside the FastAPI lifespan, not at import time.
+`pythonpath = src` in `pytest.ini` is what lets tests do `from agent.engines
+import …` and `import main` without sys.path juggling. Importing `main` is
+DB-safe: `ping_db()` runs inside the FastAPI lifespan, not at import time.
 
-**Scope (deliberately).** Engines + import/route smoke only. DB-integration tests for
-`load_context`/persistence (need a Postgres test fixture), FastAPI `TestClient`
-request/response tests, and CI wiring are future work.
+**Scope, deliberately.** Engines, endpoint modules and the import smoke net.
+DB-integration tests for `load_context` and persistence (which need a Postgres
+fixture), FastAPI `TestClient` request/response tests, and CI wiring are future
+work.
 
 ---
 
-## 12. Notes / known limitations
+## 12. Design decisions
 
-* **Connection-per-request.** Each endpoint opens and closes its own psycopg2
-  connection (`get_connection` retries while Postgres warms up). Fine for the demo;
-  a pool would be the next step for production.
-* **Legacy SQLite `?` placeholders.** `database.py` wraps the cursor
-  (`_CompatCursor`) to rewrite `?` → `%s`, so the original SQLite‑style queries
-  keep working against Postgres.
-* **Optimizer is catalog‑driven, flat‑rate only.** Any plan in
-  `subscription_catalogs` is a candidate and is costed via its flat
-  `monthly_cost_eur`/`annual_cost_eur` plus the `category_covers_mode` coverage
-  rules — there are no hardcoded products. **Usage‑based pricing**
-  (`per_km` / `per_minute` / `time_pass` / `hybrid`) is **deferred**: the catalog
-  has no rate columns yet. Adding a rate schema + a per‑leg pricing engine is the
-  natural next step; `OptimizerAgent.simulate()` is the single extension point.
-* **CO₂ savings are conservative** (accepted Phase‑1 simplification, AMB‑02). Flat
-  plans don't shift emissions in the current model, so `co2_savings_kg` is 0 —
-  CO₂ is baseline‑reporting only and does not differentiate scenarios (hence there
-  is no separate "Sustainability" scenario). A mode‑shift model is future work.
-* **Ranking is cost‑and‑coverage only** (accepted Phase‑1 simplification, AMB‑03).
-  Scenarios are ordered by `(total_cost, -covered_count)`. The onboarding preference
-  scores (`cost_priority` / `co2_priority` / `convenience_priority`) are collected and
-  passed into `optimize(preferences=…)` but are **intentionally not consumed by
-  ranking** in Phase 1. A weighted/shadow‑price score is future work (coupled to the
-  CO₂ mode‑shift model above). See `DELIVERABLES/requirements_ambiguity_analysis.md`.
-* **Coverage is an assumption.** `category_covers_mode` encodes which modes each
-  subscription category pays for (e.g. a public‑transport pass does *not* cover
-  long‑distance rail). Tune it in `schema_map.py` if the product rules change.
-* **One demo user.** The login is wired to the single `dummy-user-001`. Adding
-  users means seeding the DB and extending `frontend/src/data/personas.js` (or
-  switching the login to read `GET /api/personas`).
+Why the system is shaped the way it is. These are the decisions worth knowing
+before changing the architecture.
+
+### Sequential pipeline, not parallel agents
+
+The system is often described as "four agents", but topologically it is **three
+sequential steps plus one embedded tool**: `load_context → analyze → forecast →
+communicate`, with optimisation as a deterministic function the analysis engine
+calls. There is nothing to parallelise — the forecaster consumes the analyst's
+`forecaster_summary`, so it cannot start earlier.
+
+The separation earns its keep in testability rather than concurrency: each engine
+has a clear responsibility and its own unit tests, and the tools are reused by
+the advisor.
+
+### Synchronous, not event-driven
+
+The user waits for the analysis rather than being notified when it completes.
+Simpler error handling and immediate feedback were worth more than throughput at
+this scale. The latency budget is **under 30 s end to end**; the read-through
+cache (§6) is what keeps repeat mounts inside it.
+
+### The number guard
+
+**Every euro, gram of CO₂, minute and trip count comes from a deterministic
+engine.** The LLM writes prose, predicts demand and judges free-text
+feasibility — it never produces a figure that reaches the user.
+
+This is the single most important invariant in the codebase. It is what makes
+the output reproducible and auditable, it is what the evaluation harness
+measures (see [`eval/README.md`](eval/README.md)), and it is why the app stays
+useful with no API key at all. Preserve it in any change: if a new LLM step needs
+to influence a number, it should select or constrain a deterministic computation,
+not emit the number itself.
+
+### Graceful degradation over hard dependency
+
+Every LLM step has a deterministic fallback, and every Langfuse hook is a no-op
+without keys. A missing API key degrades quality, never availability — only the
+chat advisor, which is irreducibly conversational, returns `503`.
+
+### Per-category analysis, not ranked scenarios
+
+An earlier design generated two or three whole-portfolio scenarios and ranked
+them with a weighted rubric. That was replaced by a deterministic per-category
+`keep / switch / drop` analysis. The scenario vocabulary survives only in the
+`scenario_id` field of the approve endpoint and the `optimizer_scenarios` column
+name (§7).
+
+Preference scores still frame the comparison through `scoring.py`, but there is
+no single weighted portfolio rank.
+
+---
+
+## 13. Known limitations
+
+- **Connection per request.** Each endpoint opens and closes its own psycopg2
+  connection (`get_connection` retries while Postgres warms up). Fine for a demo;
+  a pool is the obvious next step.
+- **Legacy SQLite placeholders.** `database.py` wraps the cursor
+  (`_CompatCursor`) to rewrite `?` into `%s`, so the original SQLite-style
+  queries keep working against Postgres.
+- **Coverage is an assumption.** `category_covers_mode` encodes which modes each
+  subscription category pays for. Tune it in `schema_map.py` if product rules
+  change.
+- **CO₂ is largely baseline reporting.** Flat plans do not shift emissions in the
+  current model, so subscription changes rarely differentiate on CO₂. The
+  modal-shift engine is the part that does model emission changes; a fuller
+  mode-shift model is future work.
+- **Usage-based pricing is partial.** The v2 catalog adds per-unit rate columns
+  for consumption-based sharing plans, but flat-rate plans remain the main
+  modelled case.
+
+### Deliberately out of scope
+
+Not missing work — decisions taken for the pilot:
+
+| Not implemented | Instead |
+| --- | --- |
+| Live DB Navigator API | seeded synthetic travel history in Postgres |
+| Live contract execution with partners | the apply flow updates local state only |
+| Redis caching, vector database | the session snapshot is the cache; RAG is navigational |
+| Live calendar sync, email signal mining | seeded calendar entries the forecaster reads |
+| Production deployment and hardening | docker-compose for local development |
+
+The synthetic data deliberately mirrors the JSON shapes a real gateway would
+return, so swapping the seeded source for a live one is a `context.py` change
+rather than a rewrite.
