@@ -1,12 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { getEnrichment } from '../api/client'
 
-// How often to ask, and for how long. The two model calls behind an enrichment
-// typically land in a handful of seconds; the ceiling exists so a lost backend worker
-// can't leave the tab polling forever (the backend independently reports a long-pending
-// session as 'failed' — see ENRICHMENT_TIMEOUT_SECONDS).
+// How often to ask, and for how long.
+//
+// The interval backs off: an enrichment that finishes quickly is caught within a couple
+// of seconds, while one waiting on a slow forecast stops costing a request every 2s for
+// several minutes. The ceiling has to stay above the backend's own worst case
+// (ENRICHMENT_TIMEOUT_SECONDS) — giving up first would strand a result that was about to
+// arrive, and the poll is what turns a 'pending' payload into a filled-in forecast.
 const POLL_INTERVAL_MS = 2000
-const MAX_WAIT_MS = 180000
+const MAX_POLL_INTERVAL_MS = 10000
+const POLL_BACKOFF = 1.4
+const MAX_WAIT_MS = 600000
 
 /**
  * Folds the LLM-derived half of an analysis into the analysis object once it lands.
@@ -35,7 +40,13 @@ export default function useEnrichment(analysis, setAnalysis) {
 
     let cancelled = false
     let timer = null
+    let interval = POLL_INTERVAL_MS
     const startedAt = Date.now()
+
+    const scheduleNextPoll = () => {
+      timer = setTimeout(poll, interval)
+      interval = Math.min(interval * POLL_BACKOFF, MAX_POLL_INTERVAL_MS)
+    }
 
     const merge = (enrichment) => {
       setAnalysis((prev) => {
@@ -89,18 +100,18 @@ export default function useEnrichment(analysis, setAnalysis) {
         const enrichment = await getEnrichment(sessionId)
         if (cancelled) return
         if (enrichment.status === 'pending') {
-          timer = setTimeout(poll, POLL_INTERVAL_MS)
+          scheduleNextPoll()
           return
         }
         if (enrichment.status === 'ready') merge(enrichment)
         stop(enrichment.status === 'ready' ? null : enrichment.status)
       } catch {
         // A dropped request is not a failed enrichment — keep trying until MAX_WAIT_MS.
-        if (!cancelled) timer = setTimeout(poll, POLL_INTERVAL_MS)
+        if (!cancelled) scheduleNextPoll()
       }
     }
 
-    timer = setTimeout(poll, POLL_INTERVAL_MS)
+    scheduleNextPoll()
     return () => {
       cancelled = true
       if (timer) clearTimeout(timer)

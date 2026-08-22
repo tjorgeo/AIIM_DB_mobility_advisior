@@ -31,7 +31,14 @@ _enrichment_pool = ThreadPoolExecutor(
 # How long a session may sit at enrichment_status "pending" before readers treat it as
 # lost. A worker that dies mid-pass (process restart, OOM) would otherwise leave the
 # dashboard polling a session that will never complete.
-_ENRICHMENT_TIMEOUT_SECONDS = float(os.getenv("ENRICHMENT_TIMEOUT_SECONDS", "180"))
+#
+# It has to sit *above* the worst case the enrichment can legitimately take, or a slow
+# forecast gets declared dead while it is still running and its result lands after the
+# dashboard already gave up. That worst case is the forecast reasoner's own budget —
+# FORECAST_TIMEOUT_S x (FORECAST_MAX_RETRIES + 1), 300s at the defaults — plus however
+# long the call waited for one of the LLM_MAX_CONCURRENCY slots. Hence the wide margin:
+# this is a liveness backstop, not a deadline anyone is meant to hit.
+_ENRICHMENT_TIMEOUT_SECONDS = float(os.getenv("ENRICHMENT_TIMEOUT_SECONDS", "600"))
 
 # enrichment_status values carried on the session snapshot and the analyze payload.
 ENRICHMENT_PENDING = "pending"

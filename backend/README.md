@@ -757,8 +757,32 @@ So analyze, personas, profile and approve are **fully functional with no API key
 | `LLM_MAX_CONCURRENCY` | `2` | `agent/llm.py` — in-flight model calls before queueing |
 | `LLM_MAX_RETRIES` | `2` | `agent/llm.py` — retries on 429/5xx/timeout |
 | `LLM_TIMEOUT_S` | `30` | `agent/llm.py` — per-call budget |
+| `FORECAST_MAX_OUTPUT_TOKENS` | `20000` | `llm_steps/forecast_reasoner.py` — runaway ceiling; too low truncates the JSON |
+| `FORECAST_TIMEOUT_S` | `150` | `llm_steps/forecast_reasoner.py` — background budget, not the interactive 30s |
+| `FORECAST_MAX_RETRIES` | `1` | `llm_steps/forecast_reasoner.py` |
+| `FEASIBILITY_TIMEOUT_S` | `60` | `llm_steps/feasibility_judge.py` — background budget |
+| `FEASIBILITY_MAX_RETRIES` | `1` | `llm_steps/feasibility_judge.py` |
 | `ENRICHMENT_WORKERS` | `2` | `analysis_service.py` — background enrichment jobs (each uses up to 2 calls) |
-| `ENRICHMENT_TIMEOUT_SECONDS` | `180` | `analysis_service.py` — when a pending session is declared lost |
+| `ENRICHMENT_TIMEOUT_SECONDS` | `600` | `analysis_service.py` — when a pending session is declared lost |
+
+### The timeout chain
+
+Four budgets have to nest, outermost last. An inner one exceeding an outer one is a
+silent failure: a forecast that is still running gets declared lost, and its result
+lands after everything stopped listening — indistinguishable, in the logs, from a model
+that never answered.
+
+| Budget | Worst case | Why |
+| --- | ---: | --- |
+| `feasibility-judge` call | 120 s | bounded output — a minute of silence means stuck |
+| `forecast-reasoner` call | 300 s | reasoning tokens plus ~1.2k of JSON; slow, not stuck |
+| backend declares the session lost | 600 s | liveness backstop, not a deadline anyone should hit |
+| frontend stops polling | 600 s | giving up first strands a result about to arrive |
+
+Both enrichment steps pass their **own** timeout. The 30 s default in `agent/llm.py` is
+an *interactive* budget for chat; inheriting it by not passing one is what cut the
+forecast off mid-generation. `tests/test_analysis_service.py` asserts the nesting rather
+than the numbers, so any one of them can be retuned safely.
 
 `LANGFUSE_*` variables are documented in [`eval/README.md`](eval/README.md).
 

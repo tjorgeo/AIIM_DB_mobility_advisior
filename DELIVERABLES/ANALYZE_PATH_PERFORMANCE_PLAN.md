@@ -381,3 +381,59 @@ continued 429s mean it should be lowered.
 `Prompt 'advisor-chat' with label 'production' not found` is a Langfuse prompt that was
 never seeded; the advisor falls back to the local `.md` file exactly as designed. Run
 `scripts/seed_prompts.py` to clear it. It has nothing to do with the 429s.
+
+
+---
+
+## 8. Follow-up: truncated forecasts
+
+With the 429s fixed, the next failure surfaced underneath them:
+`[forecast] Could not parse LLM response; using deterministic fallback.` The call now
+succeeded, but `extract_json` returned `None`.
+
+### Cause
+
+Lever C added `max_tokens=2000` on the forecast reasoner, justified as "generation time
+is what the user waits on". **Lever A had already made that false** — the forecast moved
+onto a background worker, so nobody waits on those tokens at all. The cap survived the
+reasoning that motivated it.
+
+A cap that truncates is strictly worse than no cap: the reply is cut off mid-JSON, the
+tokens are paid for, and the result is discarded for the deterministic fallback. Two
+things made 2000 too tight:
+
+- the schema needs roughly 1.2k tokens for a two-scenario forecast, and
+- the configured model is a **reasoning** model, whose thinking is billed against the
+  same `max_tokens` budget — so the visible JSON only gets whatever the reasoning leaves.
+
+### Fix
+
+- `FORECAST_MAX_OUTPUT_TOKENS` default 2000 → **6000**, documented as a runaway guard
+  rather than a latency lever. The 30 s request timeout is the real protection.
+- **A diagnostic that names the cause.** The old message was equally true of truncation,
+  a reply with no JSON, and malformed JSON — three problems with three different fixes.
+  It now reports which, with the finish reason and the token count:
+
+  ```
+  TRUNCATED by max_tokens, 2000/6000 output tokens — raise FORECAST_MAX_OUTPUT_TOKENS
+  no JSON in a 47-char reply, finish_reason='stop', 300/6000 output tokens
+  malformed JSON, finish_reason='stop', 88/6000 output tokens, tail='…'
+  ```
+
+7 tests cover the three cases, the fallback path, and the diagnostic's own robustness —
+it runs only when something has already failed, so an exception inside it would misreport
+the problem as a call failure. Suite: **194 passed**.
+
+### Not verified
+
+That 6000 is sufficient. The reasoning overhead of this specific model is unmeasured, and
+no API key was available here. The diagnostic is the thing that makes this self-answering:
+if `TRUNCATED` still appears, the number is still too low and the log now says so.
+
+### The pattern, twice over
+
+Both follow-ups are the same mistake in different clothes: an optimisation kept its
+original justification after the change that invalidated it. Lever A removed the
+backpressure Lever B's concurrency depended on, and Lever A removed the user-wait that
+Lever C's token cap was protecting. Worth re-reading a plan's *earlier* steps after the
+later ones land.

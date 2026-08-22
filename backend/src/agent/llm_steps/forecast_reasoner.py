@@ -115,12 +115,35 @@ def _resolve_lang(lang: str | None) -> tuple[str, str]:
     return suffix, _LANGUAGE_NAMES[suffix]
 
 
-# Ceiling on the reasoner's own output. Generation is what the user actually waits on
-# (this step's output tokens historically outnumbered its input), and the schema above
-# has no unbounded list in it — a reply that blows past this is a runaway, not a
-# thorough forecast, and failing fast into the deterministic seasonal projection beats
-# burning the whole request timeout on it. Override via FORECAST_MAX_OUTPUT_TOKENS.
-_MAX_OUTPUT_TOKENS = int(os.getenv("FORECAST_MAX_OUTPUT_TOKENS", "2000"))
+# This step runs on a background worker (analysis_service), not inside the request the
+# user is waiting on, so both budgets below are sized for "let it finish" rather than
+# "keep the page responsive". Getting that wrong is what produced the last two failures
+# here: a 2000-token cap truncated the JSON mid-object, and the 30s *interactive*
+# timeout — inherited by not passing one — cut the call off before it could answer.
+#
+# max_tokens is a ceiling, not a target: a well-behaved forecast emits ~1.2k tokens of
+# JSON and stops. It only binds on a runaway, and a truncated reply is the worst outcome
+# available — every token paid for, nothing usable, straight to the deterministic
+# fallback. So it is set far above what any real answer needs.
+#
+# The budget also covers more than the JSON: the configured model is a reasoning model,
+# and OpenAI-compatible endpoints bill reasoning tokens against max_tokens, so the
+# visible answer only gets whatever the thinking leaves behind.
+_MAX_OUTPUT_TOKENS = int(os.getenv("FORECAST_MAX_OUTPUT_TOKENS", "20000"))
+
+# What actually bounds a runaway is the clock, not the token ceiling — 20k tokens would
+# take minutes to generate, and the timeout stops that long before the cap does. It has
+# to be generous enough for a slow-but-succeeding forecast (reasoning plus ~1.2k tokens
+# of JSON is comfortably more than 30s of generation) while still bounding how long one
+# stuck call can sit on a concurrency slot, since there are only LLM_MAX_CONCURRENCY of
+# them and a wedged call starves everything else.
+_TIMEOUT_S = int(os.getenv("FORECAST_TIMEOUT_S", "150"))
+
+# One attempt, one retry. Deliberately below the global default: the failure this step
+# actually hits is a timeout, and re-running a call that ran out of clock just spends
+# another full timeout — while holding its slot — to fail the same way. Worth one retry
+# for a genuinely transient error, not two.
+_MAX_RETRIES = int(os.getenv("FORECAST_MAX_RETRIES", "1"))
 
 
 # Prompt variant A: pre-structured CalendarEvent list
@@ -230,7 +253,9 @@ def reason_demand(
     try:
         from agent.observability import llm_config
 
-        response = get_llm(max_tokens=_MAX_OUTPUT_TOKENS).invoke(
+        response = get_llm(
+            max_tokens=_MAX_OUTPUT_TOKENS, timeout=_TIMEOUT_S, max_retries=_MAX_RETRIES,
+        ).invoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -240,10 +265,41 @@ def reason_demand(
         data = extract_json(response.content)
         if data:
             return ForecastOutput(**data).model_dump()
-        print("[forecast] Could not parse LLM response; using deterministic fallback.")
+        print(
+            f"[forecast] Could not parse LLM response ({_why_unparseable(response)}); "
+            "using deterministic fallback."
+        )
     except Exception as exc:
         print(f"[forecast] LLM call failed ({exc}); using deterministic fallback.")
     return None
+
+
+def _why_unparseable(response) -> str:
+    """Say *why* a reply produced no JSON, so the log distinguishes the three cases that
+    need completely different fixes: a reply cut off by ``max_tokens`` (raise the cap),
+    a reply with no JSON in it at all (prompt problem), and malformed JSON (model
+    problem). The bare "could not parse" they replaced was true of all three.
+    """
+    content = getattr(response, "content", "") or ""
+    meta = getattr(response, "response_metadata", None) or {}
+    finish = meta.get("finish_reason") or meta.get("stop_reason")
+
+    usage = getattr(response, "usage_metadata", None) or {}
+    tokens = usage.get("output_tokens")
+    budget = f"{tokens}/{_MAX_OUTPUT_TOKENS} output tokens" if tokens else "token count unavailable"
+
+    if finish == "length":
+        # The usual cause, and the one worth naming explicitly: a truncated reply is a
+        # complete waste — the tokens were paid for and the JSON is unusable.
+        return f"TRUNCATED by max_tokens, {budget} — raise FORECAST_MAX_OUTPUT_TOKENS"
+    if not content.strip():
+        return f"empty reply, finish_reason={finish!r}"
+    if "{" not in content:
+        return f"no JSON in a {len(content)}-char reply, finish_reason={finish!r}, {budget}"
+    return (
+        f"malformed JSON, finish_reason={finish!r}, {budget}, "
+        f"tail={content[-120:]!r}"
+    )
 
 
 def forecast(

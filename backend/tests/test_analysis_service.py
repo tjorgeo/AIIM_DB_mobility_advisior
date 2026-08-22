@@ -6,7 +6,7 @@ they can be exercised by stubbing the session store. The persistence paths
 the stack, not here.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -145,3 +145,77 @@ def test_total_actual_annual_cost_sums_every_analyzed_category(service):
         {"actual_annual_cost_eur": 111.11},
     ]}
     assert service._total_actual_annual_cost(analyst_out) == 699.11
+
+
+# --------------------------------------------------------------------------- #
+# The timeout chain                                                            #
+# --------------------------------------------------------------------------- #
+#
+# Four budgets have to nest: the model call, its retries, the backend's "this session is
+# lost" deadline, and the frontend's "stop polling" deadline. If an inner one exceeds an
+# outer one, a forecast that is still running gets declared dead and its result lands
+# after everyone stopped listening — a silent failure that looks exactly like the model
+# not answering. These assert the nesting rather than the numbers, so retuning any single
+# budget stays safe.
+
+def _worst_case_seconds(timeout_s, max_retries):
+    """A langchain/openai max_retries of N means N+1 total attempts."""
+    return timeout_s * (max_retries + 1)
+
+
+def test_enrichment_deadline_outlasts_the_slowest_model_call():
+    from agent.llm_steps import forecast_reasoner, feasibility_judge
+
+    slowest = max(
+        _worst_case_seconds(forecast_reasoner._TIMEOUT_S, forecast_reasoner._MAX_RETRIES),
+        _worst_case_seconds(feasibility_judge._JUDGE_TIMEOUT_S, feasibility_judge._JUDGE_MAX_RETRIES),
+    )
+    assert analysis_service._ENRICHMENT_TIMEOUT_SECONDS > slowest, (
+        "a session would be declared lost while its forecast is still legitimately running"
+    )
+
+
+def test_the_frontend_waits_at_least_as_long_as_the_backend():
+    """The poll is what turns a 'pending' payload into a filled-in forecast. Giving up
+    before the backend does strands a result that was about to arrive."""
+    import pathlib
+    import re
+
+    hook = (pathlib.Path(__file__).parents[2] / "frontend/src/lib/useEnrichment.js").read_text()
+    max_wait_ms = int(re.search(r"const MAX_WAIT_MS = (\d+)", hook).group(1))
+
+    assert max_wait_ms / 1000 >= analysis_service._ENRICHMENT_TIMEOUT_SECONDS
+
+
+def test_background_steps_do_not_inherit_the_interactive_timeout():
+    """Both enrichment steps run off the request's critical path, so the 30s budget
+    meant for chat is the wrong one — inheriting it is what cut the forecast off
+    mid-generation."""
+    from agent import llm
+    from agent.llm_steps import forecast_reasoner, feasibility_judge
+
+    assert forecast_reasoner._TIMEOUT_S > llm._DEFAULT_TIMEOUT_S
+    assert feasibility_judge._JUDGE_TIMEOUT_S > llm._DEFAULT_TIMEOUT_S
+
+
+def test_the_forecast_actually_passes_its_budget_to_the_client(monkeypatch):
+    """Constants only help if they reach get_llm — the previous bug was a call that
+    defined no timeout and silently took the interactive default."""
+    from agent.llm_steps import forecast_reasoner
+
+    seen = {}
+
+    def capture(**kwargs):
+        seen.update(kwargs)
+        raise RuntimeError("stop here — only the kwargs matter")
+
+    monkeypatch.setattr("agent.llm.llm_available", lambda: True)
+    monkeypatch.setattr("agent.llm.get_llm", lambda **kw: capture(**kw))
+    forecast_reasoner.reason_demand(
+        {"dominant_patterns": [], "monthly_mode_breakdown": {}},
+        forecast_horizon_days=90, resolved_as_of_date=date(2026, 7, 1),
+    )
+
+    assert seen["timeout"] == forecast_reasoner._TIMEOUT_S
+    assert seen["max_retries"] == forecast_reasoner._MAX_RETRIES
+    assert seen["max_tokens"] == forecast_reasoner._MAX_OUTPUT_TOKENS
