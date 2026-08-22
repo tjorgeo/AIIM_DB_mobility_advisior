@@ -156,11 +156,37 @@ def _plan_annual(plan: dict) -> float:
     return float(plan.get("monthly_cost") or 0.0) * 12
 
 
+def daily_usage(legs: list[dict]) -> list[tuple]:
+    """Per-calendar-day aggregates of one category's legs, as
+    ``[(leg_count, total_km, total_minutes, per_leg_minutes), ...]``.
+
+    Computed **once per category** and reused for every candidate plan priced against
+    it. The grouping is plan-independent — only the rates applied to it differ — so
+    doing it inside :func:`_simulate_consumption_annual_cost` meant re-walking the same
+    legs once per catalog plan (profiled at ~34% of ``analyze_portfolio``).
+
+    ``per_leg_minutes`` is kept alongside the summed duration because
+    ``free_minutes_included`` is applied per leg (``max(0, duration - free)``), which
+    doesn't distribute over a sum; every other component is linear and reads off the
+    totals. The day grouping itself is what lets ``daily_cap_eur`` cap a day's total
+    rather than each leg independently.
+    """
+    by_day: dict = defaultdict(lambda: [0, 0.0, 0.0, []])
+    for leg in legs:
+        duration = leg.get("duration") or 0.0
+        day = by_day[leg.get("day")]
+        day[0] += 1
+        day[1] += leg.get("distance") or 0.0
+        day[2] += duration
+        day[3].append(duration)
+    return [(n, km, minutes, per_leg) for n, km, minutes, per_leg in by_day.values()]
+
+
 def _simulate_consumption_annual_cost(
-    plan: dict, legs: list[dict], months_of_data: float
+    plan: dict, usage_by_day: list[tuple], months_of_data: float
 ) -> float | None:
-    """Annualized pay-as-you-go cost of ``plan`` simulated leg-by-leg from each leg's
-    actual distance/duration, for consumption-based plans (per-minute/per-km/
+    """Annualized pay-as-you-go cost of ``plan`` simulated from the user's actual
+    distance/duration, for consumption-based plans (per-minute/per-km/
     per-km-and-time/hybrid) that carry a linear rate in the catalog (``per_km_eur``/
     ``per_hour_eur``/``per_minute_eur``). Returns ``None`` when none of those is set —
     e.g. a tiered plan like Lime Prime (a flat price per ride-duration *band*, not a
@@ -169,8 +195,9 @@ def _simulate_consumption_annual_cost(
     stay "not comparable" rather than being approximated by a formula they don't
     actually follow.
 
-    Legs are grouped by calendar day first so an optional ``daily_cap_eur`` (e.g. Call
-    a Bike Starter's "max 13 EUR/day") caps each day's total before summing, instead of
+    ``usage_by_day`` is :func:`daily_usage`'s output for this category — legs already
+    grouped by calendar day, so an optional ``daily_cap_eur`` (e.g. Call a Bike
+    Starter's "max 13 EUR/day") caps each day's total before summing, instead of
     capping (or not capping) each leg independently.
     """
     per_km = plan.get("per_km_eur")
@@ -187,18 +214,23 @@ def _simulate_consumption_annual_cost(
     daily_cap = plan.get("daily_cap_eur")
     daily_cap = float(daily_cap) if daily_cap not in (None, "") else None
 
-    by_day: dict = defaultdict(float)
-    for leg in legs:
-        distance = leg.get("distance") or 0.0
-        duration = leg.get("duration") or 0.0
-        billed_minutes = max(0.0, duration - free_minutes)
-        cost = unlock + per_km * distance + per_hour * (duration / 60.0) + per_minute * billed_minutes
-        by_day[leg.get("day")] += cost
+    total = 0.0
+    for leg_count, total_km, total_minutes, per_leg_minutes in usage_by_day:
+        # Every term but the free-minutes allowance is linear in the day's totals; only
+        # that one has to look at each leg (see daily_usage), and only when a plan
+        # actually grants free minutes.
+        billed_minutes = (
+            sum(max(0.0, minutes - free_minutes) for minutes in per_leg_minutes)
+            if free_minutes else total_minutes
+        )
+        cost = (
+            unlock * leg_count
+            + per_km * total_km
+            + per_hour * (total_minutes / 60.0)
+            + per_minute * billed_minutes
+        )
+        total += min(cost, daily_cap) if daily_cap is not None else cost
 
-    total = sum(
-        min(cost, daily_cap) if daily_cap is not None else cost
-        for cost in by_day.values()
-    )
     return round(total / months_of_data * 12, 2)
 
 
@@ -234,7 +266,7 @@ def _flat_or_discount_remainder(
 def _estimate_alternative_remainder(
     plan: dict,
     no_subscription_annual_cost: float,
-    category_legs: list[dict],
+    category_usage: list[tuple],
     months_of_data: float,
 ) -> tuple[float, str] | None:
     """The annualized pay-as-you-go remainder ``plan`` would leave the user paying —
@@ -248,8 +280,8 @@ def _estimate_alternative_remainder(
     1. Flat-rate pass — remainder is 0.
     2. Recognized %-discount card — remainder is a fraction of ``no_subscription_annual_cost``.
     3. Linear consumption-based plan (a per-km/per-hour/per-minute rate is on file) —
-       remainder is simulated leg-by-leg from ``category_legs``' actual distance/
-       duration (see ``_simulate_consumption_annual_cost``), *not* derived as a
+       remainder is simulated from ``category_usage``' actual distance/duration
+       (see ``daily_usage`` / ``_simulate_consumption_annual_cost``), *not* derived as a
        fraction of a cost that was priced under a different provider's benchmark rate
        — car-/bike-sharing and e-scooter reference prices are anchored to one specific
        provider's PAYG rate, so a percentage of that number wouldn't mean anything for
@@ -262,7 +294,7 @@ def _estimate_alternative_remainder(
     if result is not None:
         return result
 
-    simulated = _simulate_consumption_annual_cost(plan, category_legs, months_of_data)
+    simulated = _simulate_consumption_annual_cost(plan, category_usage, months_of_data)
     if simulated is not None:
         return simulated, "simulated from the plan's per-km/per-hour/per-minute rate on file"
 
@@ -537,17 +569,21 @@ def analyze_portfolio(
     # ------------------------------------------------------------------ #
     # 1. Data window — capped to the last 12 months                      #
     # ------------------------------------------------------------------ #
-    all_dates = [dt for leg in travel_history if (dt := _parse_dt(leg.get("started_at")))]
+    # Parse each leg's started_at exactly once and carry the result alongside the leg.
+    # The windowing below and the per-leg aggregation in step 3 both need it, and
+    # re-deriving it at each use profiled at ~21% of this function's runtime.
+    # A leg whose timestamp is missing/unparseable keeps a ``None`` here; that is what
+    # drops it from the window when there is a window to speak of, and what leaves it
+    # out of the monthly/seasonality grouping when there isn't.
+    dated_legs = [(_parse_dt(leg.get("started_at")), leg) for leg in travel_history]
+    all_dates = [dt for dt, _ in dated_legs if dt]
 
     if all_dates:
         date_max = max(all_dates)
         window_start = date_max - timedelta(days=365)
-        travel_history = [
-            leg for leg in travel_history
-            if (dt := _parse_dt(leg.get("started_at"))) and dt >= window_start
-        ]
-        dates = [dt for leg in travel_history if (dt := _parse_dt(leg.get("started_at")))]
-        date_min = min(dates)
+        dated_legs = [(dt, leg) for dt, leg in dated_legs if dt and dt >= window_start]
+        travel_history = [leg for _, leg in dated_legs]
+        date_min = min(dt for dt, _ in dated_legs)
         data_window_days = max((date_max - date_min).days, 1)
         analysis_period_start = date_min.date().isoformat()
         analysis_period_end = date_max.date().isoformat()
@@ -612,7 +648,7 @@ def analyze_portfolio(
     # needs each leg's own distance/duration, and calendar day for daily-cap grouping).
     legs_by_raw_mode: dict[str, list[dict]] = defaultdict(list)
 
-    for leg in travel_history:
+    for dt, leg in dated_legs:
         # reference_cost_eur is the pay-as-you-go price for this leg regardless
         # of any subscription held. Falls back to estimated_cost_eur for legs
         # that predate the field or where no subscription applies.
@@ -648,7 +684,6 @@ def analyze_portfolio(
         raw_mode_stats[raw_mode]["co2"] += co2
         raw_mode_stats[raw_mode]["duration"] += duration
 
-        dt = _parse_dt(leg.get("started_at"))
         legs_by_raw_mode[raw_mode].append({
             "distance": dist, "duration": duration, "day": dt.date() if dt else None,
         })
@@ -876,13 +911,14 @@ def analyze_portfolio(
             return None  # nothing to evaluate — no trips in this bucket this window
 
         no_subscription_annual_cost = stats["annual_cost_eur"]
-        # Raw per-leg distance/duration/day for this bucket's modes — the input
+        # Per-day distance/duration aggregates for this bucket's modes — the input
         # _simulate_consumption_annual_cost needs to price a consumption-based
-        # alternative (see _estimate_alternative_remainder below).
-        category_legs = [
+        # alternative (see _estimate_alternative_remainder below). Built once here
+        # rather than inside the simulator, which is called once per candidate plan.
+        category_usage = daily_usage([
             leg for raw_mode, legs in legs_by_raw_mode.items() if mode_filter(raw_mode)
             for leg in legs
-        ]
+        ])
         held_subs = [
             s for s in held_subs_by_category.get(db_category, [])
             if plan_filter(s.get("provider_plan_name"))
@@ -969,7 +1005,7 @@ def analyze_portfolio(
             pricing_catalog, db_category, plan_filter, user_age, held_ids, held_travel_class,
             no_subscription_annual_cost,
             lambda plan: _estimate_alternative_remainder(
-                plan, no_subscription_annual_cost, category_legs, months_of_data
+                plan, no_subscription_annual_cost, category_usage, months_of_data
             ),
             actual_annual_cost,
         )
@@ -1073,7 +1109,20 @@ def analyze_portfolio(
         "dominant_patterns": dominant_patterns,
         "detected_seasonality": detected_seasonality,
         "current_contracts": current_contracts,
-        "monthly_mode_breakdown": monthly_mode_breakdown,
+        # Trips and distance only — deliberately NOT the same object as the top-level
+        # monthly_mode_breakdown above. Both consumers of this field forecast *demand*
+        # and read nothing else: seasonal_projection averages trips/distance_km, and
+        # the forecast-reasoner prompt's seasonality rule asks about volume, never
+        # money or carbon. Carrying co2_kg/intrinsic_cost_eur/effective_cost_eur here
+        # too only inflated the LLM prompt (this field was ~93% of it) and duplicated
+        # bytes the full top-level copy already holds for the UI.
+        "monthly_mode_breakdown": {
+            month: {
+                mode: {"trips": st["trips"], "distance_km": st["distance_km"]}
+                for mode, st in modes.items()
+            }
+            for month, modes in monthly_mode_breakdown.items()
+        },
     }
 
     # total_effective is a raw sum over the actual captured window (data_window_days,

@@ -38,7 +38,7 @@ def main() -> int:
         os.environ["LANGFUSE_HOST"] = os.environ["LANGFUSE_BASE_URL"]
 
     from langfuse import get_client
-    from agent.pipeline import run_analysis
+    from agent.pipeline import run_full_analysis
 
     client = get_client()
     client.create_dataset(
@@ -47,7 +47,10 @@ def main() -> int:
     )
 
     for user_id, name in PERSONAS.items():
-        state = run_analysis(user_id)
+        # run_full_analysis, not run_analysis: the dataset item needs the forecast
+        # and modal-shift output too, which the fast path defers to a background
+        # worker (see agent/pipeline.py).
+        state = run_full_analysis(user_id)
         if state.get("error"):
             print(f"! skipping {name} ({user_id}): {state['error']}", file=sys.stderr)
             continue

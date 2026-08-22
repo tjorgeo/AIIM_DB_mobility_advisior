@@ -241,6 +241,22 @@ report; regenerate them with the commands above plus
 `category-agreement` is given for three independent runs of the baseline arm;
 every other score was identical across all three.
 
+> [!IMPORTANT]
+> **The latency row measures `run_full_analysis`, not what a dashboard user waits
+> for.** The analyze path was since split in two (see the backend README §6): the
+> deterministic engines answer the request in ~5 ms with every figure final, and the
+> two LLM steps finish on a background worker. The figures above remain the right
+> measure for this comparison — total model work per analysis, both arms end to end —
+> but the number a user actually experiences on a fresh analysis is now the
+> deterministic half alone.
+>
+> Two later changes also move the token row: the forecast reasoner now narrates in a
+> single language instead of both, and its `monthly_mode_breakdown` input carries
+> trips and distance only. Both cut `forecast-reasoner` tokens materially, so
+> **re-run `scripts/measure_token_usage.py` before quoting the per-step table**. The
+> two LLM steps also run concurrently now, which shortens `run_full_analysis` without
+> changing the token totals.
+
 Per-step token counts, read back from Langfuse traces:
 
 | LLM step | Runs | Mean input | Mean output | Mean total |
@@ -261,8 +277,9 @@ come from a `--max-concurrency 1` run of each. At the default of 4 the baseline'
 per-item latency inflates badly through contention on the shared university
 endpoint (median 74 s, with a 1,105 s worst case), which measures the endpoint's
 queue rather than the pipeline. The main pipeline's numbers are wall-clock around
-`run_analysis` and matched its Langfuse span latency to within 0.1 s, so
-`load_context` is negligible. Both distributions are right-skewed, the baseline's
+`run_full_analysis` and matched its Langfuse span latency to within 0.1 s, so
+`load_context` and the deterministic engines are both negligible — which is exactly
+the observation the pipeline split acted on. Both distributions are right-skewed, the baseline's
 far more so (mean 160.9 s against a 71.1 s median), because a timed-out call is
 retried up to `BASELINE_LLM_MAX_RETRIES`.
 
@@ -292,10 +309,16 @@ the two can be compared on measured tokens rather than estimates.
 Two caveats:
 
 - **All LLM steps are traced.** `forecast-reasoner` and `feasibility-judge` take
-  their callback config from `observability.llm_config()`, and `run_analysis`
+  their callback config from `observability.llm_config()`, and `run_enrichment`
   opens the enclosing `analyze-pipeline` trace they nest under, so one analysis
   is one trace with one countable total. Before this was wired up both steps ran
   untraced and their usage was simply absent.
+
+  The two steps now run on worker threads. They are dispatched through
+  `contextvars.copy_context()` precisely so this keeps holding: `llm_config` reads
+  the trace attributes off a `ContextVar`, and a bare worker thread would start with
+  an empty context and silently detach each step into its own root trace — splitting
+  the per-run total this table depends on. `tests/test_pipeline_split.py` guards it.
 - **Euro cost is not available.** The university endpoint's model has no price
   configured in Langfuse, so `total_cost` is always `0.0`. Tokens are real; cost
   has to be derived externally from a per-token rate.

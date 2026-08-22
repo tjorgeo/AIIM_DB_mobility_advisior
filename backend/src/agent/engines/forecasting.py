@@ -33,9 +33,14 @@ class DominantPattern(BaseModel):
 class MonthlyModeStat(BaseModel):
     trips: int
     distance_km: float
-    co2_kg: float
-    intrinsic_cost_eur: float
-    effective_cost_eur: float
+    # Demand forecasting reads trips/distance only. The cost/CO2 fields stay accepted
+    # (analyze_portfolio's full top-level monthly_mode_breakdown carries them, and the
+    # /api/forecaster/test payloads may still include them) but are optional, since
+    # the forecaster_summary handed to this engine now omits them — see the comment on
+    # its construction in analysis.py.
+    co2_kg: Optional[float] = None
+    intrinsic_cost_eur: Optional[float] = None
+    effective_cost_eur: Optional[float] = None
 
 
 class AnalystSummary(BaseModel):
@@ -74,11 +79,13 @@ class PredictedDemand(BaseModel):
 
 class Scenario(BaseModel):
     label: str
-    # Bilingual, mirroring the memo (english/german) — description_en/description_de
-    # must be the same content in each language, not two different texts. Consumers
-    # (memo.py, PortfolioDetail.jsx) pick whichever matches the UI language.
-    description_en: str
-    description_de: str
+    # One field per language, mirroring the memo (english/german). The deterministic
+    # projection below fills BOTH (templated text is free); the LLM reasoner fills only
+    # the language it was asked for, because writing every sentence twice was roughly a
+    # third of its output tokens and output tokens are what the user waits on. Read
+    # them through ``localized()`` rather than directly, so either shape works.
+    description_en: str = ""
+    description_de: str = ""
     predicted_demand: List[PredictedDemand]
 
 
@@ -92,8 +99,23 @@ class ForecastOutput(BaseModel):
     forecast_horizon_days: int
     scenarios: List[Scenario]
     uncertainty_flags: UncertaintyFlags
-    rationale_en: str
-    rationale_de: str
+    # See the note on Scenario.description_en above — may carry one language or both.
+    rationale_en: str = ""
+    rationale_de: str = ""
+
+
+def localized(obj: dict, field: str, lang: str) -> str:
+    """Read a ``<field>_<lang>`` pair off a scenario or forecast dict, tolerating an
+    entry that carries only one of the two languages.
+
+    Preference order: the requested language, then the other one, then empty. Falling
+    back to the *other* language rather than always to English matters because the LLM
+    reasoner now narrates in a single language (see ``Scenario.description_en``): a
+    German-only forecast read with ``lang="en"`` should show the German prose, not
+    nothing at all. Persisted rows from before the split carry both and are unaffected.
+    """
+    other = "en" if lang == "de" else "de"
+    return (obj or {}).get(f"{field}_{lang}") or (obj or {}).get(f"{field}_{other}") or ""
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,9 @@ and subscription vocabularies via ``schema_map``. Returns ``{"error": ...}`` whe
 user is missing so callers can surface a clean 404.
 """
 
+import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from dateutil.rrule import rrulestr
@@ -60,6 +63,81 @@ def _next_occurrence(dtstart, rrule_str, exdate_raw, window_start, window_end):
         if occ.date() not in excluded_dates:
             return occ
     return None
+
+
+# The subscription catalog is static reference data — the same rows for every user,
+# changing only when the seed/admin data changes — but load_context ran a full
+# ``SELECT *`` over it on every single analysis. Cached process-wide behind a short
+# TTL so a running container still picks up a catalog edit without a restart.
+_CATALOG_TTL_SECONDS = float(os.getenv("PRICING_CATALOG_TTL_SECONDS", "300"))
+_catalog_cache: tuple[float, list] | None = None
+_catalog_lock = threading.Lock()
+
+
+def _pricing_catalog(cursor) -> list[dict]:
+    """The analysis engine's candidate catalog, straight from subscription_catalogs and
+    keyed by the real PK.
+
+    subscription_type_other/billing_cycle feed its eligibility filter (age-gated
+    BahnCard variants, one-time trial cards); pricing_model tells it which plans are
+    true flat-rate passes it can safely price as "trip costs nothing" (see
+    agent/engines/analysis.py's category_subscription_analysis); markdown_ref lets the
+    memo step cite the exact tariff doc for a recommended plan instead of guessing from
+    its name. unlock_fee_eur/per_km_eur/per_hour_eur/per_minute_eur/
+    free_minutes_included/daily_cap_eur feed the consumption-based alternative simulator
+    for car-/bike-sharing and e-scooter plans that aren't flat-rate passes — NULL
+    (absent) for plans whose tariff doc gives no exploitable linear rate (tiered
+    per-ride pricing, "varies by tier/city" with no representative number).
+
+    Returns a fresh copy of each row per call: the engines are read-only over the
+    catalog, but handing every caller the same mutable dicts would make one stray
+    write leak into every later analysis.
+    """
+    global _catalog_cache
+    now = time.monotonic()
+    cached = _catalog_cache
+    if cached is not None and now - cached[0] < _CATALOG_TTL_SECONDS:
+        return [dict(plan) for plan in cached[1]]
+
+    with _catalog_lock:
+        cached = _catalog_cache
+        if cached is not None and now - cached[0] < _CATALOG_TTL_SECONDS:
+            return [dict(plan) for plan in cached[1]]
+
+        cursor.execute("SELECT * FROM subscription_catalogs")
+        catalog = []
+        for row in cursor.fetchall():
+            item = clean_row(row)
+            catalog.append(
+                {
+                    "id": item.get("subscription_id"),
+                    "name": item.get("provider_plan_name"),
+                    "category": item.get("subscription_category"),
+                    "monthly_cost": item.get("monthly_cost_eur") or 0.0,
+                    "annual_cost": item.get("annual_cost_eur"),
+                    "subscription_type": item.get("subscription_type"),
+                    "subscription_type_other": item.get("subscription_type_other"),
+                    "pricing_model": item.get("pricing_model"),
+                    "billing_cycle": item.get("billing_cycle"),
+                    "travel_class": item.get("travel_class"),
+                    "unlock_fee_eur": item.get("unlock_fee_eur"),
+                    "per_km_eur": item.get("per_km_eur"),
+                    "per_hour_eur": item.get("per_hour_eur"),
+                    "per_minute_eur": item.get("per_minute_eur"),
+                    "free_minutes_included": item.get("free_minutes_included"),
+                    "daily_cap_eur": item.get("daily_cap_eur"),
+                    "markdown_ref": item.get("markdown_ref"),
+                }
+            )
+        _catalog_cache = (time.monotonic(), catalog)
+    return [dict(plan) for plan in catalog]
+
+
+def invalidate_pricing_catalog_cache() -> None:
+    """Drop the cached catalog so the next analysis re-reads it. Call after any write
+    to subscription_catalogs rather than waiting out the TTL."""
+    global _catalog_cache
+    _catalog_cache = None
 
 
 def load_context(user_id: str) -> dict:
@@ -165,42 +243,7 @@ def load_context(user_id: str) -> dict:
         )
     raw_calendar_entries.sort(key=lambda e: e["date"])
 
-    # The analysis engine's candidate catalog comes straight from subscription_catalogs,
-    # keyed by the real PK. subscription_type_other/billing_cycle feed its eligibility
-    # filter (age-gated BahnCard variants, one-time trial cards); pricing_model tells it
-    # which plans are true flat-rate passes it can safely price as "trip costs nothing"
-    # (see agent/engines/analysis.py's category_subscription_analysis); markdown_ref lets
-    # the memo step cite the exact tariff doc for a recommended plan instead of guessing
-    # from its name. unlock_fee_eur/per_km_eur/per_hour_eur/per_minute_eur/
-    # free_minutes_included/daily_cap_eur feed the consumption-based alternative
-    # simulator for car-/bike-sharing and e-scooter plans that aren't flat-rate passes —
-    # NULL (absent) for plans whose tariff doc gives no exploitable linear rate (tiered
-    # per-ride pricing, "varies by tier/city" with no representative number).
-    cursor.execute("SELECT * FROM subscription_catalogs")
-    pricing_catalog = []
-    for row in cursor.fetchall():
-        item = clean_row(row)
-        pricing_catalog.append(
-            {
-                "id": item.get("subscription_id"),
-                "name": item.get("provider_plan_name"),
-                "category": item.get("subscription_category"),
-                "monthly_cost": item.get("monthly_cost_eur") or 0.0,
-                "annual_cost": item.get("annual_cost_eur"),
-                "subscription_type": item.get("subscription_type"),
-                "subscription_type_other": item.get("subscription_type_other"),
-                "pricing_model": item.get("pricing_model"),
-                "billing_cycle": item.get("billing_cycle"),
-                "travel_class": item.get("travel_class"),
-                "unlock_fee_eur": item.get("unlock_fee_eur"),
-                "per_km_eur": item.get("per_km_eur"),
-                "per_hour_eur": item.get("per_hour_eur"),
-                "per_minute_eur": item.get("per_minute_eur"),
-                "free_minutes_included": item.get("free_minutes_included"),
-                "daily_cap_eur": item.get("daily_cap_eur"),
-                "markdown_ref": item.get("markdown_ref"),
-            }
-        )
+    pricing_catalog = _pricing_catalog(cursor)
 
     conn.close()
     return {

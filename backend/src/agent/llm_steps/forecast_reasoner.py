@@ -14,6 +14,7 @@ original ``forecast()`` behaviour for the callers that still want one entry poin
 """
 
 import json
+import os
 from datetime import date, datetime, timezone
 
 from agent.engines.forecasting import ForecastOutput, seasonal_projection
@@ -30,8 +31,7 @@ _JSON_SCHEMA = """\
   "scenarios": [
     {{
       "label": <str>,
-      "description_en": <str>,
-      "description_de": <str>,
+      "description_{lang}": <str>,
       "predicted_demand": [
         {{
           "mode": <str>,
@@ -48,8 +48,7 @@ _JSON_SCHEMA = """\
     "life_event_type": <str | null>,
     "recommend_re_evaluation_in_days": <int | null>
   }},
-  "rationale_en": <str>,
-  "rationale_de": <str>
+  "rationale_{lang}": <str>
 }}"""
 
 _RULES = """\
@@ -92,15 +91,37 @@ Rules:
    monthly_mode_breakdown or the earliest calendar entry — and use it to judge how
    recent monthly_mode_breakdown's months are and how near-term or far-out each
    calendar entry is.
-9. Every "_en"/"_de" field pair (each scenario's description_en/description_de, and
-   the top-level rationale_en/rationale_de) must be a complete, self-contained
-   explanation in exactly ONE language — never mix English and German within a
-   single field, never leave one empty, and never concatenate both languages into
-   one field (e.g. joined by a separator). The "_en" and "_de" fields must convey
-   the same content as natural translations of each other, not different text.
+9. Write all prose in {language} and emit ONLY the "_{lang}" fields shown in the
+   schema (each scenario's description_{lang}, and the top-level rationale_{lang}).
+   Do not emit the other language's fields at all. Each field must be a complete,
+   self-contained explanation in {language} alone — never mix languages within a
+   field.
+10. Only predict modes that appear in dominant_patterns. Do not introduce a mode the
+   customer has no history on. Keep each "basis" to a single short clause.
 
 Respond with STRICT JSON matching the schema below — no markdown fences, no prose outside the JSON.
 """
+
+# The forecaster narrates in exactly one language per call (see rule 9). Anything not
+# listed here falls back to German, the app's default UI language.
+_LANGUAGE_NAMES = {"de": "German", "en": "English"}
+
+
+def _resolve_lang(lang: str | None) -> tuple[str, str]:
+    """``lang`` -> (suffix, language name) for the prompt's "_{lang}" fields."""
+    suffix = (lang or "de").lower()[:2]
+    if suffix not in _LANGUAGE_NAMES:
+        suffix = "de"
+    return suffix, _LANGUAGE_NAMES[suffix]
+
+
+# Ceiling on the reasoner's own output. Generation is what the user actually waits on
+# (this step's output tokens historically outnumbered its input), and the schema above
+# has no unbounded list in it — a reply that blows past this is a runaway, not a
+# thorough forecast, and failing fast into the deterministic seasonal projection beats
+# burning the whole request timeout on it. Override via FORECAST_MAX_OUTPUT_TOKENS.
+_MAX_OUTPUT_TOKENS = int(os.getenv("FORECAST_MAX_OUTPUT_TOKENS", "2000"))
+
 
 # Prompt variant A: pre-structured CalendarEvent list
 _SYSTEM_PROMPT_STRUCTURED = (
@@ -159,10 +180,15 @@ def reason_demand(
     calendar_events: list | None = None,
     ics_text: str | None = None,
     raw_calendar_entries: list[dict] | None = None,
+    lang: str = "de",
 ) -> dict | None:
     """One structured-output LLM call. Returns the parsed ``ForecastOutput`` dict, or
     ``None`` when the LLM is unavailable / the reply cannot be parsed / the call errors
-    (the orchestrator then falls back to the deterministic projection)."""
+    (the orchestrator then falls back to the deterministic projection).
+
+    ``lang`` ("de"/"en") picks the single language the reply narrates in; the other
+    language's fields come back empty and are read through
+    ``engines.forecasting.localized``."""
     try:
         from agent.llm import get_llm
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -177,8 +203,15 @@ def reason_demand(
     else:
         raw_events = None
 
+    lang_suffix, language_name = _resolve_lang(lang)
+    prompt_vars = {
+        "horizon": forecast_horizon_days,
+        "lang": lang_suffix,
+        "language": language_name,
+    }
+
     if raw_events is not None:
-        system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(horizon=forecast_horizon_days)
+        system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(**prompt_vars)
         payload = {
             "as_of_date": resolved_as_of_date.isoformat(),
             "analyst_summary": analyst_summary,
@@ -186,7 +219,7 @@ def reason_demand(
             "forecast_horizon_days": forecast_horizon_days,
         }
     else:
-        system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(horizon=forecast_horizon_days)
+        system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(**prompt_vars)
         payload = {
             "as_of_date": resolved_as_of_date.isoformat(),
             "analyst_summary": analyst_summary,
@@ -197,7 +230,7 @@ def reason_demand(
     try:
         from agent.observability import llm_config
 
-        response = get_llm().invoke(
+        response = get_llm(max_tokens=_MAX_OUTPUT_TOKENS).invoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -221,6 +254,7 @@ def forecast(
     forecast_horizon_days: int = 365,
     as_of_date: str | None = None,
     use_llm: bool = True,
+    lang: str = "de",
 ) -> dict:
     """Produce a demand forecast: the LLM reasoning when available, else the
     deterministic ``seasonal_projection``.
@@ -236,6 +270,11 @@ def forecast(
 
     ``use_llm=False`` forces the deterministic projection and skips the LLM entirely.
     Falls back to the projection when no key is configured or the reply cannot be parsed.
+
+    ``lang`` ("de"/"en") is the language the LLM narrates in — it writes one language
+    per call rather than both. The deterministic projection is templated, so it stays
+    bilingual regardless. Either way, read the prose through
+    ``engines.forecasting.localized``.
     """
     resolved_as_of_date = date.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc).date()
 
@@ -253,6 +292,7 @@ def forecast(
             calendar_events=calendar_events,
             ics_text=ics_text,
             raw_calendar_entries=raw_calendar_entries,
+            lang=lang,
         )
         if out is not None:
             return out

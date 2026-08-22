@@ -83,6 +83,13 @@ class AnalyzeRequest(BaseModel):
     user_id: str
     # Bypass the read-through cache and recompute (e.g. an explicit "Re-analyze").
     force: bool = False
+    # Language the forecaster narrates in. It writes one language per call rather
+    # than both, so this should match the UI language (see forecast_reasoner).
+    lang: str = "de"
+    # Block until the background LLM enrichment has finished too, restoring the old
+    # fully-synchronous behaviour. Costs the caller the full model latency; the
+    # dashboard leaves it False and polls /api/analyze/{session_id}/enrichment.
+    wait: bool = False
 
 class ApproveRequest(BaseModel):
     scenario_id: str
@@ -263,21 +270,48 @@ def get_personas():
 @app.post("/api/analyze")
 def analyze_portfolio(req: AnalyzeRequest):
     """
-    Triggers the 4-Agent orchestration flow for a specific traveler persona.
+    Runs the analysis pipeline for a specific traveler persona.
 
-    Reuses the user's latest recommendation when available (unless ``force``); a fresh
-    run is synchronous and waits for the LLM forecast + Analyst memo (when an LLM is
-    configured), so the response already reflects the final result — no follow-up call
-    needed to see calendar-driven life events or the upgraded memo prose.
+    Reuses the user's latest recommendation when available (unless ``force``). A fresh
+    run returns as soon as the **deterministic** half is done — a few milliseconds —
+    with every euro, gram of CO2, trip count and recommended action already final. The
+    two LLM steps (demand forecast, modal-shift feasibility) finish on a background
+    worker; ``enrichment_status`` on the response says whether they are still
+    ``pending``, and ``GET /api/analyze/{session_id}/enrichment`` serves the result.
+
+    Pass ``wait: true`` to block until everything is in (the evaluation harness does).
     """
     try:
-        return analysis.run_analysis(req.user_id, force=req.force)
+        return analysis.run_analysis(
+            req.user_id, force=req.force, lang=req.lang, wait=req.wait
+        )
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Pipeline Orchestration Error: {str(e)}")
+
+
+@app.get("/api/analyze/{session_id}/enrichment")
+def analyze_enrichment(session_id: str):
+    """The LLM-derived half of one analysis: the demand forecast (with its projected
+    per-category view), the cross-category modal-shift suggestions, and the memo
+    rewritten with its forward-looking caveats.
+
+    The dashboard polls this after rendering the deterministic payload from
+    ``POST /api/analyze``. ``status`` is ``pending`` (keep polling), ``ready``,
+    ``failed`` (the enrichment errored or its worker was lost — the analysis itself is
+    unaffected, so stop polling and render what you have), or ``unknown`` for a session
+    persisted before the split.
+
+    Read-only and LLM-free: it never starts work, it only reports what the background
+    pass has already stored.
+    """
+    result = analysis.get_enrichment(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+    return result
 
 @app.post("/api/recommendations/{rec_id}/approve")
 def approve_recommendation(rec_id: str, req: ApproveRequest):

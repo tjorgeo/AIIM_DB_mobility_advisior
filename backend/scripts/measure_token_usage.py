@@ -1,6 +1,6 @@
 """Measure real token usage per run for both pipelines, from Langfuse traces.
 
-Runs the main pipeline (``agent.pipeline.run_analysis``) over the seed personas, then
+Runs the main pipeline (``agent.pipeline.run_full_analysis``) over the seed personas, then
 reads the resulting ``analyze-pipeline`` traces back out of Langfuse and reports
 measured input/output tokens per persona and per LLM step. Optionally does the same for
 the baseline's ``baseline-recommendation`` traces, so the report's token/cost table can
@@ -8,7 +8,7 @@ quote measured numbers instead of offline character-count estimates.
 
 Both pipelines must actually be traced for this to work: the main pipeline's two LLM
 steps (``forecast-reasoner``, ``feasibility-judge``) get their callback config from
-``agent.observability.llm_config``, and ``run_analysis`` opens the enclosing
+``agent.observability.llm_config``, and ``run_full_analysis`` opens the enclosing
 ``analyze-pipeline`` trace they nest under.
 
 Note on cost: the university endpoint's model has no price configured in Langfuse, so
@@ -67,7 +67,7 @@ def _print_latency(trace_lat: dict, wall: dict) -> None:
     `trace` is the Langfuse `analyze-pipeline` span, which covers the pipeline itself
     (engines plus the one or two LLM steps) and is the figure directly comparable with
     the baseline's `baseline-recommendation` span. `wall` additionally includes
-    `load_context`, i.e. what a caller of `run_analysis` actually waits for.
+    `load_context`, i.e. what a caller of `run_full_analysis` actually waits for.
     """
     names = sorted(set(trace_lat) | set(wall))
     if not names:
@@ -141,7 +141,7 @@ def main() -> int:
     if not args.no_run:
         from datetime import datetime, timezone
 
-        from agent.pipeline import run_analysis
+        from agent.pipeline import run_full_analysis
 
         # Traces older than this belong to a previous run. Without the cut-off, a trace
         # that has not finished ingesting yet silently resolves to the *last* run's
@@ -151,7 +151,10 @@ def main() -> int:
         for user_id, name in ALL_PERSONAS.items():
             print(f"-> {name} ...", file=sys.stderr)
             t0 = time.perf_counter()
-            out = run_analysis(user_id)
+            # run_full_analysis, not run_analysis: this script measures the LLM
+            # steps' tokens and wall clock, so it must run them inline rather than
+            # hand them to the background enrichment worker (see agent/pipeline.py).
+            out = run_full_analysis(user_id)
             elapsed = time.perf_counter() - t0
             if out.get("error"):
                 print(f"! {name}: {out['error']}", file=sys.stderr)

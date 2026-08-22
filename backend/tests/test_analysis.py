@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 
 from agent.engines import analyze_portfolio
-from agent.engines.analysis import _simulate_consumption_annual_cost
+from agent.engines.analysis import _simulate_consumption_annual_cost, daily_usage
 
 _REQUIRED_KEYS = {
     "current_annual_spend_eur",
@@ -539,7 +539,7 @@ def test_simulate_consumption_cost_linear_rate():
     plan = {"per_km_eur": 0.30, "per_hour_eur": 2.00}
     months_of_data = 1.0  # isolates the per-leg formula from annualization scaling
     per_leg = 2.00 * 0.5 + 0.30 * 10.0  # 1.00 + 3.00 = 4.00
-    assert _simulate_consumption_annual_cost(plan, legs, months_of_data) == round(
+    assert _simulate_consumption_annual_cost(plan, daily_usage(legs), months_of_data) == round(
         2 * per_leg / months_of_data * 12, 2
     )
 
@@ -551,7 +551,7 @@ def test_simulate_consumption_cost_returns_none_without_a_linear_rate():
     no_rate_plan = {"per_km_eur": None, "per_hour_eur": None, "per_minute_eur": None}
     assert _simulate_consumption_annual_cost(no_rate_plan, [], 1.0) is None
     some_legs = [{"distance": 5.0, "duration": 5.0, "day": date(2026, 1, 1)}]
-    assert _simulate_consumption_annual_cost({}, some_legs, 1.0) is None
+    assert _simulate_consumption_annual_cost({}, daily_usage(some_legs), 1.0) is None
 
 
 def test_simulate_consumption_cost_deducts_free_minutes_before_billing():
@@ -561,8 +561,8 @@ def test_simulate_consumption_cost_deducts_free_minutes_before_billing():
     plan = {"per_minute_eur": 0.10, "free_minutes_included": 30}
     short_ride = [{"distance": 2.0, "duration": 20.0, "day": date(2026, 1, 1)}]
     long_ride = [{"distance": 2.0, "duration": 50.0, "day": date(2026, 1, 1)}]
-    assert _simulate_consumption_annual_cost(plan, short_ride, 1.0) == 0.0
-    assert _simulate_consumption_annual_cost(plan, long_ride, 1.0) == round(2.00 / 1.0 * 12, 2)
+    assert _simulate_consumption_annual_cost(plan, daily_usage(short_ride), 1.0) == 0.0
+    assert _simulate_consumption_annual_cost(plan, daily_usage(long_ride), 1.0) == round(2.00 / 1.0 * 12, 2)
 
 
 def test_simulate_consumption_cost_applies_daily_cap_per_day_not_per_leg():
@@ -573,13 +573,13 @@ def test_simulate_consumption_cost_applies_daily_cap_per_day_not_per_leg():
     same_day_legs = [
         {"distance": 0.0, "duration": 60.0, "day": date(2026, 1, 1)} for _ in range(3)
     ]  # 1.00 + 0.12*60 = 8.20 each -> 24.60 raw for the day, capped down to 13.00
-    assert _simulate_consumption_annual_cost(plan, same_day_legs, 1.0) == round(13.00 / 1.0 * 12, 2)
+    assert _simulate_consumption_annual_cost(plan, daily_usage(same_day_legs), 1.0) == round(13.00 / 1.0 * 12, 2)
 
     two_days_one_leg_each = [
         {"distance": 0.0, "duration": 10.0, "day": date(2026, 1, 1)},
         {"distance": 0.0, "duration": 10.0, "day": date(2026, 1, 2)},
     ]  # 1.00 + 0.12*10 = 2.20 each, well under the cap on each of their own days
-    assert _simulate_consumption_annual_cost(plan, two_days_one_leg_each, 1.0) == round(
+    assert _simulate_consumption_annual_cost(plan, daily_usage(two_days_one_leg_each), 1.0) == round(
         2 * 2.20 / 1.0 * 12, 2
     )
 

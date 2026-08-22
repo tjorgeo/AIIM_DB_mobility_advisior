@@ -40,6 +40,13 @@ def get_demand_outlook(config: RunnableConfig = None) -> str:
         return json.dumps({"error": "No analysis available for this user."})
     forecast = snapshot.get("forecaster_out")
     if not forecast:
+        # The forecast is computed by a background pass after /api/analyze has already
+        # answered (see analysis_service). Say which it is, so the advisor tells the
+        # customer it is still being prepared rather than that they have no outlook.
+        if snapshot.get("enrichment_status") == "pending":
+            return json.dumps({
+                "error": "The demand outlook is still being computed; ask again in a moment."
+            })
         return json.dumps({"error": "No demand outlook available."})
     return json.dumps(forecast, ensure_ascii=False, default=str)
 
@@ -60,5 +67,11 @@ def get_modal_shift(config: RunnableConfig = None) -> str:
     if not snapshot:
         return json.dumps({"error": "No analysis available for this user."})
     analyst_out = snapshot.get("analyst_out") or {}
-    suggestions = analyst_out.get("modal_shift_suggestions") or []
-    return json.dumps(suggestions, ensure_ascii=False, default=str)
+    suggestions = analyst_out.get("modal_shift_suggestions")
+    if not suggestions and snapshot.get("enrichment_status") == "pending":
+        # Same as get_demand_outlook: absent because the background pass hasn't landed
+        # yet, not because there is nothing to suggest.
+        return json.dumps({
+            "error": "Modal-shift suggestions are still being computed; ask again in a moment."
+        })
+    return json.dumps(suggestions or [], ensure_ascii=False, default=str)

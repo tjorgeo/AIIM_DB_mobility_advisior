@@ -266,11 +266,24 @@ symmetrically.
 
 `POST /api/analyze` is where the data, the engines and the LLM meet.
 `analysis_service.py` owns the request lifecycle — cache lookup, persistence and
-response shaping — and delegates the analysis itself to
-`agent/pipeline.py::run_analysis`.
+response shaping — and delegates the analysis itself to `agent/pipeline.py`.
 
 > [!IMPORTANT]
-> **`/api/analyze` is a read-through cache.** The dashboard auto-runs it on every
+> **The pipeline runs in two halves, and the response does not wait for the second
+> one.** The deterministic half (`pipeline.run_analysis`) produces every euro, gram
+> of CO₂, minute and trip the dashboard shows, and takes a few **milliseconds**. The
+> two LLM steps (`pipeline.run_enrichment`) add only the demand forecast, the
+> modal-shift suggestions and the memo's forward-looking caveats — no figure depends
+> on them — so they finish on a background worker after the response has gone out.
+>
+> The payload carries `enrichment_status`: `pending` → `ready` (or `failed`). The
+> frontend renders the numbers immediately and polls
+> `GET /api/analyze/{session_id}/enrichment` for the rest. Pass `{"wait": true}` to
+> block until everything is in — the evaluation harness and
+> `pipeline.run_full_analysis` do.
+
+> [!IMPORTANT]
+> **`/api/analyze` is also a read-through cache.** The dashboard auto-runs it on every
 > mount, so an unforced call rebuilds the payload from the user's most recent
 > **session snapshot** rather than recomputing. Pass `{"force": true}` to run the
 > pipeline fresh. A missing or partial snapshot falls through to a fresh run
@@ -282,28 +295,47 @@ flowchart TD
     A["POST /api/analyze<br/>{ user_id }"] --> S[analysis_service]
     S --> LC[load_context<br/>users, onboarding, subscriptions,<br/>trip_legs, catalog, calendar]
 
-    subgraph Pipeline["agent/pipeline.py — one Langfuse trace"]
+    subgraph Core["run_analysis — deterministic, ~5 ms, no LLM"]
         LC --> AN[analyze_portfolio<br/>deterministic spend audit +<br/>per-category comparison]
-        AN --> MS[build_modal_shift_suggestions<br/>deterministic candidates +<br/>batched LLM feasibility judge]
-        MS --> FC[forecast<br/>LLM reasoner,<br/>deterministic fallback]
-        FC --> PR[attach_projected_category_analysis<br/>deterministic projection]
-        PR --> MM[template_memos<br/>deterministic memo]
+        AN --> MM[template_memos<br/>deterministic memo]
     end
 
-    MM --> P[persist to 'recommendations']
-    P --> R["JSON payload<br/>(summary + raw_agent_payloads)"]
+    MM --> P[persist 'recommendations' + session<br/>enrichment_status: pending]
+    P --> R["JSON response — every figure final"]
+
+    P -.hand off.-> BG
+
+    subgraph BG["run_enrichment — background worker, one Langfuse trace"]
+        direction TB
+        FORK(( )) --> MS[build_modal_shift_suggestions<br/>deterministic candidates +<br/>batched LLM feasibility judge]
+        FORK --> FC[forecast<br/>LLM reasoner,<br/>deterministic fallback]
+        MS --> JOIN(( ))
+        FC --> JOIN
+        JOIN --> PR[attach_projected_category_analysis<br/>deterministic projection]
+        PR --> MM2[template_memos<br/>re-drafted with forecast caveats]
+    end
+
+    MM2 --> U[update session snapshot<br/>enrichment_status: ready]
+    U --> E["GET /api/analyze/{id}/enrichment"]
 ```
+
+The two LLM steps read disjoint inputs — the judge reads `mode_breakdown` +
+`category_subscription_analysis`, the reasoner reads `forecaster_summary`, and both
+are ready the moment `analyze_portfolio` returns — so they run **concurrently**, not
+back to back. They are dispatched through `contextvars.copy_context()` so the
+enclosing Langfuse trace still nests both, keeping one countable token total per run.
 
 What each stage contributes:
 
-| Stage | Reads | Produces |
-| --- | --- | --- |
-| `load_context` | users, onboarding, subscriptions ⋈ catalog, trip legs, calendar | the full analysis context |
-| `analyze_portfolio` | travel history, subscriptions, catalog, preferences | spend audit, mode breakdown, per-category current/alternative/no-subscription comparison |
-| `build_modal_shift_suggestions` | mode breakdown, category analysis, onboarding constraints | cross-category mode-switch candidates; deterministic pricing plus **one batched LLM call** judging free-text feasibility |
-| `forecast` | the analyst's forecaster summary + upcoming calendar entries | 365-day demand forecast; uses the LLM reasoner when available, otherwise the deterministic baseline |
-| `attach_projected_category_analysis` | forecast + mode breakdown + subscriptions | the same comparison projected onto forecasted demand — reuses `analyze_portfolio`'s pricing, so the forecaster never touches money |
-| `template_memos` | analyst + forecaster output | the deterministic memo the dashboard falls back to |
+| Stage | Half | Reads | Produces |
+| --- | --- | --- | --- |
+| `load_context` | core | users, onboarding, subscriptions ⋈ catalog, trip legs, calendar | the full analysis context |
+| `analyze_portfolio` | core | travel history, subscriptions, catalog, preferences | spend audit, mode breakdown, per-category current/alternative/no-subscription comparison |
+| `template_memos` | core | analyst output | the memo, plus `actions_required` and `total_estimated_savings_eur` — **derived from the per-category verdict alone**, which is why they are final before any model runs |
+| `build_modal_shift_suggestions` | enrich | mode breakdown, category analysis, onboarding constraints | cross-category mode-switch candidates; deterministic pricing plus **one batched LLM call** judging free-text feasibility |
+| `forecast` | enrich | the analyst's forecaster summary + upcoming calendar entries | 365-day demand forecast; uses the LLM reasoner when available, otherwise the deterministic baseline |
+| `attach_projected_category_analysis` | enrich | forecast + mode breakdown + subscriptions | the same comparison projected onto forecasted demand — reuses `analyze_portfolio`'s pricing, so the forecaster never touches money |
+| `template_memos` (again) | enrich | analyst + forecaster output | the memo re-drafted with forward-looking caveats; its numbers are unchanged by construction |
 
 **Numbers are never LLM-generated.** The two LLM steps are deliberately narrow:
 the feasibility judge rules on free-text constraints, and the forecast reasoner
@@ -393,15 +425,38 @@ subscription records, active and historical, each with `subscription_status`,
 | --- | --- |
 | `GET /api/personas` | every user, enriched with onboarding preferences and catalog-joined subscriptions |
 | `POST /api/analyze` | run or serve the cached analysis — see §6 |
+| `GET /api/analyze/{session_id}/enrichment` | the LLM-derived half of one analysis, once the background pass has stored it |
 | `POST /api/recommendations/{rec_id}/approve` | record approval, write a Langfuse score |
 
 ```jsonc
 // POST /api/analyze
-{ "user_id": "ce92d8e0-…", "force": false }
+{
+  "user_id": "ce92d8e0-…",
+  "force": false,   // bypass the read-through cache and recompute
+  "lang": "de",     // language the forecaster narrates in (it writes one, not both)
+  "wait": false     // block until the background LLM enrichment is in, too
+}
 ```
 
 The response envelope is documented in §6. Errors: `404` for an unknown user id,
 `500` on a pipeline exception.
+
+```jsonc
+// GET /api/analyze/{session_id}/enrichment
+{
+  "session_id": "…",
+  "status": "pending",             // pending | ready | failed | unknown
+  "forecaster_out": { … },         // {} until ready
+  "modal_shift_suggestions": [ … ],// [] until ready
+  "memos": { "english": "…", "german": "…" }
+}
+```
+
+Poll while `status` is `pending`; stop on anything else. `failed` means the
+enrichment errored or its worker was lost — the analysis itself is unaffected, so
+render what you already have. `unknown` is a session persisted before the split.
+Read-only and LLM-free: it reports what the background pass stored and never starts
+work itself. `404` when the session id is unknown.
 
 ```jsonc
 // POST /api/recommendations/{rec_id}/approve
@@ -642,6 +697,41 @@ OpenAI-compatible endpoint) and whether it is configured:
 
 - `llm_available()` is `True` only when `UNI_GPT_API_KEY` is set.
 - `get_llm()` lazily builds a shared `ChatOpenAI` client.
+- Every client it returns is **concurrency-capped** — see below.
+
+### The concurrency cap
+
+> [!IMPORTANT]
+> The university endpoint is shared and rejects bursts with
+> `429 too_many_concurrent_requests`. `agent/llm.py` caps how many calls this process
+> has in flight (`LLM_MAX_CONCURRENCY`, default 2); anything beyond that **queues**
+> rather than being rejected. A queued call is slower; a 429'd one loses its LLM output
+> entirely and drops silently to the deterministic fallback.
+
+This used to be handled by accident. When `/api/analyze` blocked for ~30 s and ran its
+two LLM steps one after the other, a user simply could not have more than one call in
+flight — the synchronous request *was* the rate limiter. Splitting the analyze path
+(§6) removed that backpressure and doubled the per-analysis call count, and a few quick
+persona switches were then enough to fire a dozen concurrent requests and lose every
+one of them to the fallback. Hence the explicit cap.
+
+It is applied by a mixin on the client (`ConcurrencyLimited`), not at the call sites.
+That distinction matters: the advisor's calls are issued by LangGraph inside
+`create_react_agent`, not by our own code, so a call-site semaphore would miss them
+entirely. Both `_generate` and `_stream` are covered, and a stream that a disconnecting
+client abandons releases its slot on close.
+
+The default of 2 is exactly what one analysis needs to keep `run_enrichment`'s forecast
+and feasibility steps running in parallel — so the single-user case keeps the full
+Lever B speedup, and only genuine contention queues. Raise it if the endpoint turns out
+to tolerate more; set it to 1 to serialize everything.
+
+`LLM_MAX_RETRIES` (default 2) is the second line of defence. The cap bounds *our*
+concurrency, but the endpoint is university-wide, so someone else's burst can still
+429 us; the OpenAI client retries those and honours `Retry-After`. It does so while
+still holding its slot, which is deliberate — releasing during a backoff would just let
+another call in to be rejected too. The budget is kept low because the same count also
+covers timeouts, and a stuck endpoint costs `timeout x (retries + 1)`.
 
 Degradation without a key:
 
@@ -664,6 +754,11 @@ So analyze, personas, profile and approve are **fully functional with no API key
 | `UNI_GPT_API_KEY` | _(empty)_ | `agent/llm.py` — enables all LLM features |
 | `UNI_GPT_BASE_URL` | `https://chat.kiconnect.nrw/api/v1` | `agent/llm.py` |
 | `UNI_GPT_MODEL` | `OpenAI GPT OSS 120b KI:Inferenz.nrw` | `agent/llm.py` |
+| `LLM_MAX_CONCURRENCY` | `2` | `agent/llm.py` — in-flight model calls before queueing |
+| `LLM_MAX_RETRIES` | `2` | `agent/llm.py` — retries on 429/5xx/timeout |
+| `LLM_TIMEOUT_S` | `30` | `agent/llm.py` — per-call budget |
+| `ENRICHMENT_WORKERS` | `2` | `analysis_service.py` — background enrichment jobs (each uses up to 2 calls) |
+| `ENRICHMENT_TIMEOUT_SECONDS` | `180` | `analysis_service.py` — when a pending session is declared lost |
 
 `LANGFUSE_*` variables are documented in [`eval/README.md`](eval/README.md).
 
@@ -740,24 +835,51 @@ work.
 Why the system is shaped the way it is. These are the decisions worth knowing
 before changing the architecture.
 
-### Sequential pipeline, not parallel agents
+### Split by what a number depends on, not by agent
 
-The system is often described as "four agents", but topologically it is **three
-sequential steps plus one embedded tool**: `load_context → analyze → forecast →
-communicate`, with optimisation as a deterministic function the analysis engine
-calls. There is nothing to parallelise — the forecaster consumes the analyst's
-`forecaster_summary`, so it cannot start earlier.
+The system is often described as "four agents", but topologically it is a
+deterministic core with two narrow model calls hanging off it. The line that matters
+is not analyst/forecaster/communicator — it is **whether a figure depends on the
+step**:
 
-The separation earns its keep in testability rather than concurrency: each engine
-has a clear responsibility and its own unit tests, and the tools are reused by
-the advisor.
+- `load_context → analyze_portfolio → template_memos` produces every euro, gram of
+  CO₂, minute, trip count and recommended action. Pure Python, ~5 ms.
+- The demand forecast and the modal-shift feasibility judge add narrative and
+  forward-looking context. Nothing the dashboard counts comes from them.
 
-### Synchronous, not event-driven
+Drawing the line there is what lets the second group run *after* the response
+(§6). Within it, the two model calls have no data dependency on each other, so they
+run concurrently — the earlier `analyze → forecast` chain looked sequential only
+because the modal-shift step happened to sit between them.
 
-The user waits for the analysis rather than being notified when it completes.
-Simpler error handling and immediate feedback were worth more than throughput at
-this scale. The latency budget is **under 30 s end to end**; the read-through
-cache (§6) is what keeps repeat mounts inside it.
+The engine separation still earns its keep in testability: each has a clear
+responsibility and its own unit tests, and the tools are reused by the advisor.
+
+### Fast first paint, not a synchronous wait
+
+The user gets real numbers immediately and the narrative fills in behind them.
+
+This was originally the opposite — one fully synchronous call, on the reasoning that
+"the response always reflects the final result, no follow-up call needed". Measured,
+that cost a **median 28.3 s** (range 4.9–64.6 s) per fresh analysis, of which the
+deterministic engines were **3.5 ms**: over 99.9% of the wait was two model calls
+that no displayed figure depended on. Deferring them is worth the extra endpoint and
+the `enrichment_status` state on the payload.
+
+What the split does *not* buy is a shorter total: the forecast still takes as long as
+it ever did. It stops being something the user watches a spinner for.
+
+`{"wait": true}` keeps the old behaviour for callers that genuinely need one complete
+payload — the evaluation harness, the seed scripts, anything scripted.
+
+**What it cost, and what paid for it.** The synchronous request was also, unintentionally,
+the rate limiter on a shared model endpoint: one blocking call per user, two LLM steps
+run in sequence. Removing it surfaced immediately as `429 too_many_concurrent_requests`
+across the whole app — the analysis fell back to its deterministic forecast and the chat
+briefing to its template memo, so nothing broke, but the LLM output was being thrown away.
+Backpressure that had been free now has to be explicit, which is the concurrency cap in
+§10. Worth remembering as a general shape: making a slow path asynchronous does not
+reduce the load, it only stops the load from being self-limiting.
 
 ### The number guard
 
