@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import Logo from '../components/Logo'
-import { analyze, getEnrichment } from '../api/client'
+import { analyze } from '../api/client'
 import { euro, number, subscriptionEmoji } from '../lib/format'
 import ChatWidget from '../components/chat/ChatWidget'
 import { useTheme } from '../context/ThemeContext.jsx'
