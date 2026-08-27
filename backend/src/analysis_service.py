@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # beyond it just park on the semaphore. Two is enough to keep the cap saturated while
 # leaving a queue for bursts of persona switches; the rest of a burst waits its turn
 # instead of arriving as a dozen simultaneous requests and being rejected.
-_ENRICHMENT_WORKERS = int(os.getenv("ENRICHMENT_WORKERS", "2"))
+_ENRICHMENT_WORKERS = max(1, int(os.getenv("ENRICHMENT_WORKERS", "2")))
 _enrichment_pool = ThreadPoolExecutor(
     max_workers=_ENRICHMENT_WORKERS, thread_name_prefix="enrichment"
 )
