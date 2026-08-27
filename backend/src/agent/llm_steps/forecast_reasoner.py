@@ -14,6 +14,7 @@ original ``forecast()`` behaviour for the callers that still want one entry poin
 """
 
 import json
+import os
 from datetime import date, datetime, timezone
 
 from agent.engines.forecasting import ForecastOutput, seasonal_projection
@@ -30,8 +31,7 @@ _JSON_SCHEMA = """\
   "scenarios": [
     {{
       "label": <str>,
-      "description_en": <str>,
-      "description_de": <str>,
+      "description_{lang}": <str>,
       "predicted_demand": [
         {{
           "mode": <str>,
@@ -48,8 +48,7 @@ _JSON_SCHEMA = """\
     "life_event_type": <str | null>,
     "recommend_re_evaluation_in_days": <int | null>
   }},
-  "rationale_en": <str>,
-  "rationale_de": <str>
+  "rationale_{lang}": <str>
 }}"""
 
 _RULES = """\
@@ -92,15 +91,60 @@ Rules:
    monthly_mode_breakdown or the earliest calendar entry — and use it to judge how
    recent monthly_mode_breakdown's months are and how near-term or far-out each
    calendar entry is.
-9. Every "_en"/"_de" field pair (each scenario's description_en/description_de, and
-   the top-level rationale_en/rationale_de) must be a complete, self-contained
-   explanation in exactly ONE language — never mix English and German within a
-   single field, never leave one empty, and never concatenate both languages into
-   one field (e.g. joined by a separator). The "_en" and "_de" fields must convey
-   the same content as natural translations of each other, not different text.
+9. Write all prose in {language} and emit ONLY the "_{lang}" fields shown in the
+   schema (each scenario's description_{lang}, and the top-level rationale_{lang}).
+   Do not emit the other language's fields at all. Each field must be a complete,
+   self-contained explanation in {language} alone — never mix languages within a
+   field.
+10. Only predict modes that appear in dominant_patterns. Do not introduce a mode the
+   customer has no history on. Keep each "basis" to a single short clause.
 
 Respond with STRICT JSON matching the schema below — no markdown fences, no prose outside the JSON.
 """
+
+# The forecaster narrates in exactly one language per call (see rule 9). Anything not
+# listed here falls back to German, the app's default UI language.
+_LANGUAGE_NAMES = {"de": "German", "en": "English"}
+
+
+def _resolve_lang(lang: str | None) -> tuple[str, str]:
+    """``lang`` -> (suffix, language name) for the prompt's "_{lang}" fields."""
+    suffix = (lang or "de").lower()[:2]
+    if suffix not in _LANGUAGE_NAMES:
+        suffix = "de"
+    return suffix, _LANGUAGE_NAMES[suffix]
+
+
+# This step runs on a background worker (analysis_service), not inside the request the
+# user is waiting on, so both budgets below are sized for "let it finish" rather than
+# "keep the page responsive". Getting that wrong is what produced the last two failures
+# here: a 2000-token cap truncated the JSON mid-object, and the 30s *interactive*
+# timeout — inherited by not passing one — cut the call off before it could answer.
+#
+# max_tokens is a ceiling, not a target: a well-behaved forecast emits ~1.2k tokens of
+# JSON and stops. It only binds on a runaway, and a truncated reply is the worst outcome
+# available — every token paid for, nothing usable, straight to the deterministic
+# fallback. So it is set far above what any real answer needs.
+#
+# The budget also covers more than the JSON: the configured model is a reasoning model,
+# and OpenAI-compatible endpoints bill reasoning tokens against max_tokens, so the
+# visible answer only gets whatever the thinking leaves behind.
+_MAX_OUTPUT_TOKENS = int(os.getenv("FORECAST_MAX_OUTPUT_TOKENS", "20000"))
+
+# What actually bounds a runaway is the clock, not the token ceiling — 20k tokens would
+# take minutes to generate, and the timeout stops that long before the cap does. It has
+# to be generous enough for a slow-but-succeeding forecast (reasoning plus ~1.2k tokens
+# of JSON is comfortably more than 30s of generation) while still bounding how long one
+# stuck call can sit on a concurrency slot, since there are only LLM_MAX_CONCURRENCY of
+# them and a wedged call starves everything else.
+_TIMEOUT_S = int(os.getenv("FORECAST_TIMEOUT_S", "150"))
+
+# One attempt, one retry. Deliberately below the global default: the failure this step
+# actually hits is a timeout, and re-running a call that ran out of clock just spends
+# another full timeout — while holding its slot — to fail the same way. Worth one retry
+# for a genuinely transient error, not two.
+_MAX_RETRIES = int(os.getenv("FORECAST_MAX_RETRIES", "1"))
+
 
 # Prompt variant A: pre-structured CalendarEvent list
 _SYSTEM_PROMPT_STRUCTURED = (
@@ -159,10 +203,15 @@ def reason_demand(
     calendar_events: list | None = None,
     ics_text: str | None = None,
     raw_calendar_entries: list[dict] | None = None,
+    lang: str = "de",
 ) -> dict | None:
     """One structured-output LLM call. Returns the parsed ``ForecastOutput`` dict, or
     ``None`` when the LLM is unavailable / the reply cannot be parsed / the call errors
-    (the orchestrator then falls back to the deterministic projection)."""
+    (the orchestrator then falls back to the deterministic projection).
+
+    ``lang`` ("de"/"en") picks the single language the reply narrates in; the other
+    language's fields come back empty and are read through
+    ``engines.forecasting.localized``."""
     try:
         from agent.llm import get_llm
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -177,8 +226,15 @@ def reason_demand(
     else:
         raw_events = None
 
+    lang_suffix, language_name = _resolve_lang(lang)
+    prompt_vars = {
+        "horizon": forecast_horizon_days,
+        "lang": lang_suffix,
+        "language": language_name,
+    }
+
     if raw_events is not None:
-        system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(horizon=forecast_horizon_days)
+        system_prompt = _SYSTEM_PROMPT_RAW_ICS.format(**prompt_vars)
         payload = {
             "as_of_date": resolved_as_of_date.isoformat(),
             "analyst_summary": analyst_summary,
@@ -186,7 +242,7 @@ def reason_demand(
             "forecast_horizon_days": forecast_horizon_days,
         }
     else:
-        system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(horizon=forecast_horizon_days)
+        system_prompt = _SYSTEM_PROMPT_STRUCTURED.format(**prompt_vars)
         payload = {
             "as_of_date": resolved_as_of_date.isoformat(),
             "analyst_summary": analyst_summary,
@@ -197,7 +253,9 @@ def reason_demand(
     try:
         from agent.observability import llm_config
 
-        response = get_llm().invoke(
+        response = get_llm(
+            max_tokens=_MAX_OUTPUT_TOKENS, timeout=_TIMEOUT_S, max_retries=_MAX_RETRIES,
+        ).invoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
@@ -207,10 +265,41 @@ def reason_demand(
         data = extract_json(response.content)
         if data:
             return ForecastOutput(**data).model_dump()
-        print("[forecast] Could not parse LLM response; using deterministic fallback.")
+        print(
+            f"[forecast] Could not parse LLM response ({_why_unparseable(response)}); "
+            "using deterministic fallback."
+        )
     except Exception as exc:
         print(f"[forecast] LLM call failed ({exc}); using deterministic fallback.")
     return None
+
+
+def _why_unparseable(response) -> str:
+    """Say *why* a reply produced no JSON, so the log distinguishes the three cases that
+    need completely different fixes: a reply cut off by ``max_tokens`` (raise the cap),
+    a reply with no JSON in it at all (prompt problem), and malformed JSON (model
+    problem). The bare "could not parse" they replaced was true of all three.
+    """
+    content = getattr(response, "content", "") or ""
+    meta = getattr(response, "response_metadata", None) or {}
+    finish = meta.get("finish_reason") or meta.get("stop_reason")
+
+    usage = getattr(response, "usage_metadata", None) or {}
+    tokens = usage.get("output_tokens")
+    budget = f"{tokens}/{_MAX_OUTPUT_TOKENS} output tokens" if tokens else "token count unavailable"
+
+    if finish == "length":
+        # The usual cause, and the one worth naming explicitly: a truncated reply is a
+        # complete waste — the tokens were paid for and the JSON is unusable.
+        return f"TRUNCATED by max_tokens, {budget} — raise FORECAST_MAX_OUTPUT_TOKENS"
+    if not content.strip():
+        return f"empty reply, finish_reason={finish!r}"
+    if "{" not in content:
+        return f"no JSON in a {len(content)}-char reply, finish_reason={finish!r}, {budget}"
+    return (
+        f"malformed JSON, finish_reason={finish!r}, {budget}, "
+        f"tail={content[-120:]!r}"
+    )
 
 
 def forecast(
@@ -221,6 +310,7 @@ def forecast(
     forecast_horizon_days: int = 365,
     as_of_date: str | None = None,
     use_llm: bool = True,
+    lang: str = "de",
 ) -> dict:
     """Produce a demand forecast: the LLM reasoning when available, else the
     deterministic ``seasonal_projection``.
@@ -236,6 +326,11 @@ def forecast(
 
     ``use_llm=False`` forces the deterministic projection and skips the LLM entirely.
     Falls back to the projection when no key is configured or the reply cannot be parsed.
+
+    ``lang`` ("de"/"en") is the language the LLM narrates in — it writes one language
+    per call rather than both. The deterministic projection is templated, so it stays
+    bilingual regardless. Either way, read the prose through
+    ``engines.forecasting.localized``.
     """
     resolved_as_of_date = date.fromisoformat(as_of_date) if as_of_date else datetime.now(timezone.utc).date()
 
@@ -253,6 +348,7 @@ def forecast(
             calendar_events=calendar_events,
             ics_text=ics_text,
             raw_calendar_entries=raw_calendar_entries,
+            lang=lang,
         )
         if out is not None:
             return out

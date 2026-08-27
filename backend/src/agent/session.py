@@ -53,6 +53,26 @@ def create_session(session_id: str, user_id: str, snapshot: dict) -> str:
     return session_id
 
 
+def update_session_snapshot(session_id: str, snapshot: dict) -> bool:
+    """Replace a session's snapshot wholesale. Returns ``False`` when the id is unknown.
+
+    Written by the background enrichment pass (see
+    ``analysis_service.AnalysisService``), which re-persists the snapshot once the
+    forecast and modal-shift suggestions land, so the read-through cache serves the
+    complete analysis on the next dashboard mount rather than the partial one.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE analysis_sessions SET snapshot = ? WHERE session_id = ?",
+        (json.dumps(snapshot, default=str), session_id),
+    )
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return updated > 0
+
+
 def get_session(session_id: str) -> dict | None:
     conn = get_connection()
     cursor = conn.cursor()

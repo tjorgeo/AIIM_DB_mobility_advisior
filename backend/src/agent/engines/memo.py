@@ -25,6 +25,8 @@ advice. Same rule applies — it's presented as a heads-up for later, never blen
 into ``actions_required``/``total_estimated_savings_eur``.
 """
 
+from agent.engines.forecasting import localized
+
 _CATEGORY_LABEL_EN = {
     "public_transport": "Public transport",
     "long_distance_rail": "Long-distance rail",
@@ -598,11 +600,13 @@ def _forecast_outlook_section(forecaster_out: dict | None, categories: list[dict
         )
         return f"{header}\n\n{body}"
 
-    # Bilingual field (description_en/description_de) since forecasting.py's LLM/
-    # fallback output is bilingual, same as this memo — never render the wrong
-    # language's text. Falls back to description_en for older persisted rows from
-    # before the split.
-    description = event_scenario.get(f"description_{lang}") or event_scenario.get("description_en") or ""
+    # Per-language field (description_en/description_de) — never render the wrong
+    # language's text. localized() prefers the requested language and falls back to
+    # whichever one is actually present: the deterministic projection fills both, but
+    # the LLM reasoner narrates in a single language per call (see
+    # forecasting.Scenario.description_en), so "the other one" is the real fallback,
+    # not always English.
+    description = localized(event_scenario, "description", lang)
     intro = (
         f"Your calendar shows an upcoming **{life_event_noun_en}** — here's what that "
         f"could mean: {description}"

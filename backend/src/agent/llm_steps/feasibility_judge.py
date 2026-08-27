@@ -15,6 +15,7 @@ has no dependency on this module's pydantic types.
 """
 
 import json
+import os
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -63,6 +64,16 @@ the JSON:
 }
 """
 
+
+
+# Like the forecast reasoner, this step runs on a background enrichment worker, not
+# inside the request the user waits on — so the 30s *interactive* default in agent.llm
+# is the wrong budget. Smaller than the forecast's, because the output here is a bounded
+# list of judgments rather than a full narrated forecast; a call that has not answered in
+# a minute is stuck, not thinking. One retry for the same reason as there: re-running a
+# call that ran out of clock mostly just spends another timeout holding a slot.
+_JUDGE_TIMEOUT_S = int(os.getenv("FEASIBILITY_TIMEOUT_S", "60"))
+_JUDGE_MAX_RETRIES = int(os.getenv("FEASIBILITY_MAX_RETRIES", "1"))
 
 def _fallback_judgment(candidate_id: str, reason: str) -> dict:
     """Feasible/low judgment used whenever the LLM can't be consulted — surfaced as
@@ -119,7 +130,9 @@ def judge(candidates: list[dict], onboarding: dict) -> dict[str, dict]:
     try:
         from agent.observability import llm_config
 
-        response = get_llm().invoke(
+        response = get_llm(
+            timeout=_JUDGE_TIMEOUT_S, max_retries=_JUDGE_MAX_RETRIES,
+        ).invoke(
             [
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),

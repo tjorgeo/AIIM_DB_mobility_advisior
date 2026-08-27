@@ -111,13 +111,38 @@ export async function updateProfile(userId, profile) {
 
 // force=true bypasses the backend read-through cache and recomputes the analysis
 // (e.g. after the user changes something and wants a fresh recommendation).
-export async function analyze(userId, { force = false } = {}) {
+//
+// A fresh run resolves in milliseconds with every figure already final — cost, CO2,
+// savings, recommended actions. The demand forecast and the modal-shift suggestions
+// are computed by two model calls the backend finishes in the background; the response
+// carries `enrichment_status: 'pending'` while that is in flight. Follow up with
+// getEnrichment() rather than blocking the dashboard on it.
+//
+// `lang` picks the language the forecaster narrates in (it writes one, not both).
+export async function analyze(userId, { force = false, lang = 'de' } = {}) {
   const res = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, force }),
+    body: JSON.stringify({ user_id: userId, force, lang }),
   })
   return parseJson(res, 'Analysis')
+}
+
+// The LLM-derived half of an analysis: the demand forecast, the modal-shift
+// suggestions, and the memo rewritten with its forward-looking caveats. Poll while
+// `status` is 'pending'; stop on 'ready', 'failed' or 'unknown'. Read-only server-side
+// — it reports what the background pass has stored and never starts work itself.
+export async function getEnrichment(sessionId, { timeoutMs = 10000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`/api/analyze/${encodeURIComponent(sessionId)}/enrichment`, {
+      signal: controller.signal,
+    })
+    return await parseJson(res, 'Enrichment')
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function approve(sessionId, scenarioId) {

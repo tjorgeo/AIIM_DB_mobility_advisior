@@ -6,6 +6,15 @@ current spend, per-category subscription recommendations, travel insights, and a
 chat advisor that can explain and apply changes.
 
 > [!NOTE]
+> **The dashboard renders in two waves.** `POST /api/analyze` answers in
+> milliseconds with every figure already final — spend, CO₂, savings, the
+> recommended actions. The demand forecast and the modal-shift suggestions come from
+> two model calls the backend finishes in the background, so the payload arrives with
+> `enrichment_status: 'pending'` and `lib/useEnrichment.js` polls
+> `GET /api/analyze/{id}/enrichment` and merges the rest in when it lands. Nothing it
+> merges is a number, so the figures on screen never change under the user.
+
+> [!NOTE]
 > Setup and Docker commands are in the [root README](../README.md). The API this
 > talks to — routes, request and response shapes — is documented in
 > [`backend/README.md`](../backend/README.md).
@@ -114,6 +123,7 @@ frontend/
     ├── lib/
     │   ├── format.js           # currency and number formatting
     │   ├── travelModes.js      # mode labels and icons
+    │   ├── useEnrichment.js    # polls for the analysis's LLM half, merges it in
     │   └── mobilityAccounts.js # provider metadata
     └── styles/
         ├── tokens.css          # design tokens (DB UX-aligned)
@@ -164,6 +174,7 @@ proxies them, so CORS never applies in development.
 | `completeOnboarding()` | `POST /api/onboarding/{id}/complete` |
 | `getProfile()` / `updateProfile()` | `GET` / `PUT /api/profile/{id}` |
 | `analyze()` | `POST /api/analyze` |
+| `getEnrichment()` | `GET /api/analyze/{id}/enrichment` |
 | `approve()` | `POST /api/recommendations/{id}/approve` |
 | `chat()` / `streamChat()` | `POST /api/chat/{id}` and `/stream` |
 | `confirmApply()` | `POST /api/chat/{id}/confirm` |

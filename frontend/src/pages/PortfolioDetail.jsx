@@ -796,9 +796,14 @@ export default function PortfolioDetail({ analysis, lang, colors, isDark, onBack
                         </p>
                       )}
                       {(() => {
-                        // Bilingual field (rationale_en/rationale_de) — falls back to
-                        // rationale_en for older persisted rows from before the split.
-                        const rationale = (isDE ? forecaster.rationale_de : forecaster.rationale_en) || forecaster.rationale_en
+                        // Per-language field (rationale_en/rationale_de). Prefer the UI
+                        // language, then fall back to whichever one is present: the
+                        // deterministic projection fills both, but the forecast reasoner
+                        // narrates in a single language per call (see the backend's
+                        // forecasting.localized), so the fallback is "the other one",
+                        // not always English.
+                        const rationale = (isDE ? forecaster.rationale_de : forecaster.rationale_en)
+                          || (isDE ? forecaster.rationale_en : forecaster.rationale_de)
                         return rationale && (
                           <p style={{ fontSize: '0.8rem', color: colors.textMuted, marginTop: '0.5rem', lineHeight: '1.5' }}>{rationale}</p>
                         )

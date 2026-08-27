@@ -16,6 +16,8 @@ import CostBreakdown from './CostBreakdown.jsx'
 import PortfolioDetail from './PortfolioDetail.jsx'
 import ProfileEdit from './ProfileEdit.jsx'
 import { modeLabel } from '../lib/travelModes'
+import SkeletonDashboard from '../components/SkeletonDashboard.jsx'
+import useEnrichment from '../lib/useEnrichment'
 
 export default function Dashboard() {
   const { logout, currentUser, setSession } = useAuth()
@@ -263,12 +265,21 @@ export default function Dashboard() {
     let cancelled = false
     if (!currentUser?.id) { setLoadingData(false); return }
     setLoadingData(true)
-    analyze(currentUser.id)
+    analyze(currentUser.id, { lang: lang.toLowerCase() })
       .then((res) => { if (!cancelled) setAnalysis(res) })
       .catch(() => { /* leer lassen -> Fallback-Anzeige */ })
       .finally(() => { if (!cancelled) setLoadingData(false) })
     return () => { cancelled = true }
+    // lang is deliberately not a dependency: re-running the whole analysis on a
+    // language toggle would be wasteful, and every figure is language-independent.
+    // It only picks the language the forecaster narrates its prose in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id])
+
+  // The forecast and modal-shift suggestions arrive after the response above — the
+  // backend runs those two model calls in the background so the numbers can render
+  // immediately (see api/client.js's analyze). This folds them in when they land.
+  useEnrichment(analysis, setAnalysis)
 
   // Umgeht den Backend-Cache (siehe orchestrator.py) und erzwingt eine frische
   // Neuberechnung — z.B. nachdem sich die Optimierungslogik geändert hat.
@@ -276,7 +287,7 @@ export default function Dashboard() {
   const handleForceRefresh = () => {
     if (!currentUser?.id || refreshing) return
     setRefreshing(true)
-    analyze(currentUser.id, { force: true })
+    analyze(currentUser.id, { force: true, lang: lang.toLowerCase() })
       .then((res) => setAnalysis(res))
       .catch(() => { /* still leave the previous analysis visible */ })
       .finally(() => setRefreshing(false))
@@ -289,7 +300,7 @@ export default function Dashboard() {
     setView('overview')
     setAnalysis(null)
     setLoadingData(true)
-    analyze(currentUser.id, { force: true })
+    analyze(currentUser.id, { force: true, lang: lang.toLowerCase() })
       .then((res) => setAnalysis(res))
       .catch(() => { /* profile is saved even if the follow-up analysis fails */ })
       .finally(() => setLoadingData(false))
@@ -308,9 +319,18 @@ export default function Dashboard() {
   // joined on subscription_id (the catalog id, shared with current_subscriptions).
   const coverageBySubId = new Map((analyst?.subscription_coverage || []).map((c) => [c.subscription_id, c]))
 
+  // Each figure is gated on its OWN field rather than on one shared loading flag, so a
+  // card fills the moment its number exists instead of the whole row waiting for the
+  // slowest part of the payload. '…' means "still loading", '—' means "loaded, but this
+  // user has no value here" — collapsing the two into one placeholder made an empty
+  // result look like a hang.
   const busy = (v) => (loadingData ? '…' : v)
-  const annualSpendStr = analyst ? euro(analyst.current_annual_spend_eur, { lang: langKey }) : busy('—')
-  const co2Str = analyst ? `${number(analyst.total_co2_kg, langKey)} kg` : busy('—')
+  const annualSpendStr = analyst?.current_annual_spend_eur != null
+    ? euro(analyst.current_annual_spend_eur, { lang: langKey })
+    : busy('—')
+  const co2Str = analyst?.total_co2_kg != null
+    ? `${number(analyst.total_co2_kg, langKey)} kg`
+    : busy('—')
   const recSavings = summary?.total_estimated_savings_eur || 0
   // Recommended annual cost = what you pay today minus the estimated savings if you
   // follow every suggested action (category_subscription_analysis contract).
@@ -321,7 +341,9 @@ export default function Dashboard() {
   // (total_actual_annual_cost_eur), not analyst.current_annual_spend_eur, which also
   // includes uncategorized spend (car ownership, taxis, ...) outside the 5
   // subscribable categories the portfolio recommendation covers.
-  const totalCurrentStr = summary ? euro(summary.total_actual_annual_cost_eur || 0, { lang: langKey }) : busy('—')
+  const totalCurrentStr = summary?.total_actual_annual_cost_eur != null
+    ? euro(summary.total_actual_annual_cost_eur, { lang: langKey })
+    : busy('—')
   // One "+/−" line per suggested subscription change from the communicator agent.
   const recChanges = (communicator?.actions_required || []).flatMap((a) => {
     const lines = []
@@ -333,8 +355,13 @@ export default function Dashboard() {
   // Hero headline must reflect the actual result, not a fixed "you're optimized"
   // claim — that's true only once we know there's nothing left to save.
   const hasSavings = recSavings > 0 && recChanges.length > 0
-  const heroTitle = loadingData ? t.analyzing : hasSavings ? t.savingsTitle : t.optimized
-  const heroSub = loadingData
+  // Gate on the verdict actually being here, not on loadingData: the savings figure and
+  // the actions behind it are final in the first response, so the hero should state the
+  // result as soon as `summary` exists rather than sitting on "analyzing…" while the
+  // background forecast finishes.
+  const awaitingVerdict = !summary
+  const heroTitle = awaitingVerdict ? t.analyzing : hasSavings ? t.savingsTitle : t.optimized
+  const heroSub = awaitingVerdict
     ? t.analyzingSub
     : hasSavings
       ? (lang === 'DE'
@@ -678,7 +705,13 @@ export default function Dashboard() {
           ========================================================= */}
       <div className="page-split">
       <main className="page-split__main">
-        <div className="dashboard-hero-grid">
+        {/* Cold start only — no analysis in hand yet. A shaped skeleton reads as
+            "loading" far better than a grid of '…' placeholders. Once the payload
+            lands the real cards render immediately: every figure in them is final
+            even while the background forecast is still running (enrichment_status),
+            so this never waits on the model. */}
+        {!analysis && loadingData && <SkeletonDashboard />}
+        <div className="dashboard-hero-grid" hidden={!analysis && loadingData}>
 
         {/* 1. HERO CARD: OPTIMIZED STATUS */}
         <div className="col-hero" style={{
@@ -766,7 +799,7 @@ export default function Dashboard() {
 
         </div>
 
-        <div className="dashboard-content-grid">
+        <div className="dashboard-content-grid" hidden={!analysis && loadingData}>
 
         {/* 4. CURRENT SUBSCRIPTIONS — left */}
         <div className="col-current-subs" style={{
