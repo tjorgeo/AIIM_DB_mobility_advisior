@@ -2,7 +2,15 @@
 \appendix
 ```
 
+::: {.content-hidden when-meta="standalone-bcg"}
 # BCG Report
+:::
+
+::: {.content-visible when-meta="standalone-bcg"}
+```{=latex}
+\setcounter{chapter}{1}
+```
+:::
 
 <!--
 Add the BCG-specific appendix content here. This file is included at the end of
@@ -39,7 +47,12 @@ auditable and the savings defensible.
 
 ### Technical view
 
-```
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.96\textwidth}
+\fontsize{8.5pt}{10.2pt}\selectfont
+\begin{verbatim}
    Browser: React 18 SPA (Vite)
         |  REST / SSE
         v
@@ -60,6 +73,11 @@ auditable and the savings defensible.
                           v
         University GPT endpoint (kiconnect.nrw, openai/gpt-oss-120b)
         Langfuse (tracing, prompt versions, scores, experiments)
+\end{verbatim}
+\end{minipage}
+\caption{Technical architecture of the mobility advisor}
+\label{fig-bcg-technical-architecture}
+\end{figure}
 ```
 
 The two paths differ in who decides the next step. The analyze path is a plain

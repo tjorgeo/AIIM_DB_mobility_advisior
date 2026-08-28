@@ -1,5 +1,6 @@
 ---
-title: "BCG Report"
+title: "Report: Mobility Advisor for users with hybrid travel patterns"
+standalone-bcg: true
 ---
 
 <!--
