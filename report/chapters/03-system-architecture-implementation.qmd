@@ -108,4 +108,42 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-Four further ADRs on persistence, scoring normalization, the LLM endpoint, and calendar-aware forecasting are documented in @sec-further-adrs of the BCG report.
+| Field | Decision record |
+|---|---|
+| **ADR-04** | **PostgreSQL as the only persistence layer** |
+| **Context** | The system needs a domain store, for example for users, trips and the subscription catalog, a place to cache the latest analysis so the dashboard does not always re-run the pipeline, a way to look up tariff documents for the memo, and now also a session store for the chat agent's conversation state. |
+| **Options considered** | (a) Postgres plus Redis for caching and a vector store (Weaviate) for tariff-document retrieval; (b) Postgres only, treating "cache" as reuse of the latest `recommendations` row and "retrieval" as a direct lookup by `markdown_ref` instead of embeddings. |
+| **Decision** | (b). Postgres is the sole store, including as the LangGraph checkpointer for chat state. |
+| **Trade-offs accepted** | There is no sub-request caching layer beyond re-serving the last stored row, and tariff lookup is exact rather than semantic, so it cannot answer a paraphrased question about a tariff it is not directly linked to. Both are acceptable at the current catalog size and avoid two additional pieces of infrastructure to operate and test. |
+
+: {tbl-colwidths="[24,76]"}
+
+| Field | Decision record |
+|---|---|
+| **ADR-05** | **One shared scoring primitive, normalized per decision** |
+| **Context** | Recommendations trade off cost, CO~2~, and flexibility in two different places, in the within-category keep/switch/cancel choice and in the cross-category modal-shift ranking. The three axes have no shared natural unit. |
+| **Options considered** | (a) build a separate scorer per decision type, each independently tuned; (b) normalize all axes against a fixed global reference scale defined in advance; (c) one shared scoring primitive used by both decisions, with min-max normalization computed fresh from the actual candidate set being compared each time. |
+| **Decision** | (c). `engines/scoring.py` provides a single scoring function used by both `analysis.py`'s within-category decision and `modal_shift.py`'s cross-category ranking. Normalization is min-max across whichever candidates are actually being compared in that call. |
+| **Trade-offs accepted** | A candidate's score is relative to whoever else it is being compared against, not a portable absolute number, i.e. the same subscription can score differently across two different comparisons. In exchange, the system avoids constant manual re-tuning of a fixed scale across units that do not share one, and an axis with no real variance in a given comparison degrades to a neutral value instead of producing an unstable ordering from rounding noise. |
+
+: {tbl-colwidths="[24,76]"}
+
+| Field | Decision record |
+|---|---|
+| **ADR-06** | **A single shared LLM endpoint, with the app fully usable if it is unavailable** |
+| **Context** | The system needs a language-model backend for two bounded jobs, which are demand reasoning in the forecaster and prose generation in the memo/chat. However, it should not become unusable if that backend is ever unreachable or unconfigured. |
+| **Options considered** | (a) hard-depend on the LLM, so the app cannot run at all without a working key; (b) route every LLM call through a single access point (`agent/llm.py`) with an explicit fallback for each feature. Memos revert to deterministic templates, chat/onboarding return a clear error. Furthermore, a hard timeout and retry cap ensures that a stalled call surfaces as an error rather than hanging indefinitely. |
+| **Decision** | (b). |
+| **Trade-offs accepted** | The product is coupled to one endpoint's availability and quota rather than a market of interchangeable providers, and a stalled call is capped at returning an error within roughly 30 seconds rather than retried indefinitely. This is offset by the system staying operable, with no LLM available at all, since every numeric result already comes from the deterministic engines regardless (ADR-02). |
+
+: {tbl-colwidths="[24,76]"}
+
+| Field | Decision record |
+|---|---|
+| **ADR-07** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
+| **Context** | Forecasting how many trips a customer will make in the next 90 days benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
+| **Options considered** | (a) forecast demand with a statistical/seasonal model over trip history only, ignoring calendar entries; (b) let the LLM take over demand forecasting entirely, replacing the statistical model; (c) keep the deterministic seasonal model as the baseline signal, and layer an LLM step on top that reads upcoming calendar entries and adjusts the trip-count forecast, falling back to the pure statistical forecast if the LLM step is unavailable. |
+| **Decision** | (c). The calendar-reasoning step interprets calendar text into a demand adjustment. The deterministic seasonal engine is both its input signal and its fallback. |
+| **Trade-offs accepted** | The forecast's calendar-awareness only exists when the LLM is available, and quietly reverts to the less specific baseline otherwise. This is acceptable because the forecast never determines cost itself, it only feeds trip counts into the same deterministic pricing engine used elsewhere, so a degraded forecast still produces a numerically trustworthy result, just a less forward-looking one. |
+
+: {tbl-colwidths="[24,76]"}
