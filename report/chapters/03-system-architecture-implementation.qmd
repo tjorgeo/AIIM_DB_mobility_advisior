@@ -31,23 +31,42 @@ changes nothing else.
 
 ## Agentic Behavior
 
-*Suggestions:*
+The Advisor is the system's single conversational surface and its only autonomous agent, owning both the opening briefing and every follow-up. 
+The `forecast_reasoner` and `feasibility_judge` also use a language model, but they are targeted single-call LLM steps with predefined inputs 
+and outputs and neither selects tools or controls its own sequence. The Advisor, by contrast, is implemented as a LangGraph ReAct agent. 
+For every customer turn, the model can either answer directly or issue a structured call to one of seven deterministic tools. Its autonomy is 
+deliberately bounded. It can choose among these registered tools, but cannot create new actions or execute arbitrary code. LangGraph executes 
+the selected tool, appends its result to the agent state, and invokes the model again. The model can then answer, call another tool, or continue
+the cycle until it has enough evidence, subject to a finite graph-step limit. This repeated model--tool--observation cycle is the system's observable 
+multi-step reasoning. The next action depends on the result of the previous one rather than on a sequence fixed in application code.
 
-- *How does the system go beyond a single prompt–response? (multi-step
-  reasoning, tool use, clarification, iteration, retrieval)*
-- *Where and how does the agent ask clarifying questions or refine its outputs?*
+For example, when a customer asks, "Compare my nextbike and swapfiets subscription," the snapshot first gives the Advisor the customer's current portfolio 
+and previously calculated recommendation. Because this is a comparison of providers and tariff conditions, the Advisor is instructed not to answer 
+from model memory. It makes a tool call and calls `list_tariff_docs` to identify the available nextbike and Swapfiets sources, reads the relevant documents with `read_tariff_doc`, 
+and only then composes the comparison from the retrieved conditions. It may additionally use `lookup_subscriptions` when structured catalogue prices 
+or product coverage are required. The Advisor uses tool-based retrieval from a curated tariff knowledge base. It first lists available or keyword-matched documents and then 
+opens the relevant Markdown files before composing its answer. This is a lightweight form of retrieval-augmented generation without embeddings or vector search and the complete corpus is not included in every prompt. 
+The same tool layer also provides structured retrieval from PostgreSQL, although the core customer analysis is normally injected as a precomputed session snapshot rather than queried autonomously on every turn.
 
-Describe the agentic behavior here.
+Iteration also continues across separate user turns. A PostgreSQL-backed LangGraph `PostgresSaver`, keyed by `thread_id` equal to the chat `session_id`, 
+persists the agent's message state, intermediate tool calls and observations, and any interrupted execution across HTTP requests. The plain chat transcript 
+is stored separately for display and feedback. Consequently, a follow-up such as "Which of the two better matches my need for flexibility?" can build 
+on the earlier nextbike--Swapfiets comparison without repeating all of its context. Outputs can be refined both within a turn, when retrieved evidence changes
+the answer the model is able to give, and across turns, when the customer adds preferences or constraints. For a what-if request, `simulate_change` goes further
+than revising the prose. It deterministically re-derives the recommendation under the new constraints and returns a proposal with updated figures. If the proposal
+is applied, `commit_revision` writes a new recommendation and session snapshot instead of overwriting the earlier analysis, and tools that read the 
+customer's latest session can use the revised portfolio thereafter.
+
+Clarification is deliberately less formal than confirmation. The Advisor can respond with an ordinary clarifying question when a request is ambiguous, 
+for example when the customer asks to "change my subscription" without naming a category or product. However, there is no dedicated clarification node or 
+mandatory clarification policy, so this behavior remains model-driven rather than structurally guaranteed. State-changing requests use a stronger, 
+enforced interaction. The Advisor must first call the read-only `simulate_change`, present the recalculated result, and ask whether the customer wants 
+to proceed. After an explicit conversational acceptance, `apply_change` reaches a LangGraph `interrupt()` before any write. The graph is checkpointed and the 
+interface asks for a separate confirmation. Only a positive `Command(resume=...)` continues the tool and commits a new session, while rejection leaves 
+the saved portfolio unchanged. Thus the agent may iteratively retrieve, explain, and refine proposals on its own, but the final authority over a portfolio 
+change remains with the customer.
 
 ## Error Handling & Robustness {#sec-error-handling}
-
-*Suggestions:*
-
-- *How is the system triggered, and does it deliver consistent results across
-  test runs?*
-- *How are errors, failures, or ambiguous inputs handled? Which fallback
-  strategies exist?*
-- *What happens if a tool call fails or an external service is unavailable?*
 
 Both the conversation and the agent's own working context are stored in the database, as two separate records with different jobs. 
 The transcript is the human-readable exchange, which the interface re-renders after a reload, and it carries the reference ids used 
@@ -89,4 +108,4 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-Four further ADRs on persistence, scoring normalization, the LLM endpoint, and calendar-aware forecasting are documented in @sec-further-adrs.
+Four further ADRs on persistence, scoring normalization, the LLM endpoint, and calendar-aware forecasting are documented in @sec-further-adrs of the BCG report.

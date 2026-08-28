@@ -17,7 +17,3 @@ syntax, for example [@example2026]. The bibliography is generated below.
 
 ::: {#refs}
 :::
-
-## Appendix
-
-<!-- Add concise supplementary material here without duplicating the report. -->

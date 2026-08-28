@@ -1,0 +1,19 @@
+% In-page title block matching Report_Template_Managerial.docx.
+\makeatletter
+\renewcommand*{\maketitle}{%
+  \begingroup
+    \setlength{\parindent}{0pt}%
+    \setlength{\parskip}{0pt}%
+    \renewcommand{\arraystretch}{1}%
+    \centering
+    {\normalfont\bfseries\fontsize{20pt}{24pt}\selectfont\@title\par}%
+    \vspace{10pt}%
+    {\normalfont\fontsize{11pt}{13.8pt}\selectfont\@subtitle\par}%
+    \vspace{4pt}%
+    {\normalfont\mdseries\fontsize{12pt}{13.8pt}\selectfont%
+      \begin{tabular}[t]{@{}c@{}}
+        \@author
+      \end{tabular}\par}%
+  \endgroup
+}
+\makeatother

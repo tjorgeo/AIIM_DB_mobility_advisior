@@ -1,0 +1,34 @@
+% Global spacing derived from Report_Template_Managerial.docx.
+% Word values are stored in twentieths of a point; the values below are their
+% direct point equivalents.
+\usepackage{enumitem}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\raggedbottom
+
+% List paragraphs: 24 pt left indent, 12 pt hanging indent and 2 pt after each
+% item. Suppress the extra list glue that LaTeX otherwise adds.
+\setlist{
+  leftmargin=24pt,
+  labelwidth=6pt,
+  labelsep=6pt,
+  topsep=0pt,
+  partopsep=0pt,
+  parsep=0pt,
+  itemsep=2pt
+}
+\renewcommand{\tightlist}{%
+  \setlength{\itemsep}{2pt}%
+  \setlength{\parskip}{0pt}%
+}
+
+% Table cells in the template use 5 pt horizontal padding and about 20% extra
+% row height. Longtable's default 12 pt space is reduced to one paragraph gap.
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\AtBeginDocument{%
+  \fontsize{11pt}{13.8pt}\selectfont
+  \setlength{\LTpre}{6pt}%
+  \setlength{\LTpost}{6pt}%
+}

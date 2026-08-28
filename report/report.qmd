@@ -23,7 +23,8 @@ files under chapters/ rather than directly in this file.
 
 {{< include chapters/08-references-appendix.qmd >}}
 
+```{=latex}
+\clearpage
+```
+
 {{< include appendices/bcg-appendix.qmd >}}
-
-{{< include appendices/further-adrs.qmd >}}
-

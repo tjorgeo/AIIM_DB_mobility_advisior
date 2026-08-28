@@ -6,14 +6,15 @@ project:
     - bcg-appendix-report.qmd
 
 title: "Report: AIIM-Managerial Assignment"
-subtitle: "[Team Name]"
-date: last-modified
+subtitle: "Submitted by"
 author:
-  - name: "[Team member 1: Last name, First name, Student ID]"
-  - name: "[Team member 2: Last name, First name, Student ID]"
-  - name: "[Team member 3: Last name, First name, Student ID]"
-  - name: "[Team member 4: Last name, First name, Student ID]"
-  - name: "[Team member 5: Last name, First name, Student ID]"
+  - name: >-
+      \textbf{moveOptimizer}\tabularnewline[3pt]
+      Franziska Eichmann, 7444012\tabularnewline[3pt]
+      Tjorge Orlitz, 7443662\tabularnewline[3pt]
+      Maike Katterbach, 7444323\tabularnewline[3pt]
+      Lennart Jekel, 7444132\tabularnewline[3pt]
+      Emre Selim Kosar, 7431316
 
 bibliography: references.bib
 
@@ -21,7 +22,13 @@ format:
   pdf:
     pdf-engine: xelatex
     documentclass: scrreprt
+    classoption: notitlepage
     papersize: a4
+    geometry:
+      - top=1in
+      - right=1in
+      - bottom=1in
+      - left=1in
     fontsize: 11pt
     mainfont: "Times New Roman"
     sansfont: "Times New Roman"
@@ -29,6 +36,8 @@ format:
     number-sections: true
     highlight-style: github
     include-in-header:
+      - tex/template-layout.tex
+      - tex/compact-title.tex
       - tex/continuous-chapters.tex
 
 execute:

@@ -10,15 +10,23 @@
 % subsection scheme are unchanged.
 \RedeclareSectionCommand[
   style=section,
-  font=\Large\bfseries,
-  beforeskip=-1.8\baselineskip plus -.3\baselineskip minus -.2\baselineskip,
-  afterskip=.8\baselineskip plus .1\baselineskip
+  font=\fontsize{14pt}{16.8pt}\selectfont\bfseries,
+  beforeskip=-12pt,
+  afterskip=6pt
 ]{chapter}
 
 % The chapter heading no longer owns a whole page, so the section heading beneath
 % it needs to sit visibly lower in the hierarchy.
 \RedeclareSectionCommand[
-  font=\large\bfseries,
-  beforeskip=-1.2\baselineskip plus -.2\baselineskip minus -.2\baselineskip,
-  afterskip=.5\baselineskip plus .1\baselineskip
+  font=\fontsize{12pt}{14.4pt}\selectfont\bfseries,
+  beforeskip=-9pt,
+  afterskip=4pt
 ]{section}
+
+% The template has no dedicated third-level style. Its short bold labels use
+% the body size with compact paragraph spacing.
+\RedeclareSectionCommand[
+  font=\fontsize{11pt}{13.8pt}\selectfont\bfseries,
+  beforeskip=-6pt,
+  afterskip=3pt
+]{subsection}
