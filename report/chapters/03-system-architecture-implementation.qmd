@@ -78,9 +78,8 @@ further described in section six.
 
 ## Architecture Decision Records (ADRs)
 
-| Field | Decision record |
-|---|---|
 | **ADR-01** | **Sequential pipeline for analysis, LangGraph agent for chat** |
+|---|---|
 | **Context** | The system needs a fast, auditable one-shot analysis when a customer opens the dashboard, and a separate interactive advisor that can hold a multi-turn conversation and act on follow-up requests ("keep my car", "cancel the BahnCard"). A single orchestration mechanism has to serve both. |
 | **Options considered** | (a) run everything as one LangGraph state graph; (b) run everything as a plain sequential Python pipeline; (c) split by need, i.e. a plain pipeline for the one-shot analysis, a LangGraph ReAct agent with a Postgres-backed checkpointer for the conversational advisor. |
 | **Decision** | (c). `load_context → analyze → forecast → communicate` stays a deterministic function chain with no graph runtime. The `/api/chat` advisor is a LangGraph `create_react_agent` whose state is checkpointed in Postgres, so a conversation survives across separate HTTP requests. |
@@ -88,9 +87,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-02** | **Deterministic number guard: the LLM never computes a figure** |
+|---|---|
 | **Context** | Subscription costs, CO~2~ estimates, and trip counts are the basis of the recommendation. A plausible-sounding but fabricated number is worse than none, because a customer cannot tell it apart from a correct one. |
 | **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure. All figures come from deterministic engines, and the LLM only narrates them. |
 | **Decision** | (c). `analysis.py` and the optimization/pricing engines compute every euro, CO~2~ and time figure. The briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute, i.e. the forecaster's projected trip counts per scenario, is priced by the same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
@@ -98,9 +96,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-03** | **`interrupt()`-based confirmation gate for irreversible actions** |
+|---|---|
 | **Context** | Once the chat advisor can call a tool that writes to the database for cancelling or switching a subscription, a misparsed request or a wrongly-triggered tool call could execute a change the customer never asked for. |
 | **Options considered** | (a) trust the LLM's tool call directly; (b) check a boolean "confirmed" flag in application code before writing; (c) pause the agent at the point of the write with a runtime-enforced `interrupt()`, and resume only once the user has explicitly confirmed. |
 | **Decision** | (c). The `apply_change` tool calls LangGraph's `interrupt()` to pause the graph before any write. Execution resumes only via an explicit `Command(resume=...)` carrying the user's decision. |
@@ -108,9 +105,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-04** | **PostgreSQL as the only persistence layer** |
+|---|---|
 | **Context** | The system needs a domain store, for example for users, trips and the subscription catalog, a place to cache the latest analysis so the dashboard does not always re-run the pipeline, a way to look up tariff documents for the memo, and now also a session store for the chat agent's conversation state. |
 | **Options considered** | (a) Postgres plus Redis for caching and a vector store (Weaviate) for tariff-document retrieval; (b) Postgres only, treating "cache" as reuse of the latest `recommendations` row and "retrieval" as a direct lookup by `markdown_ref` instead of embeddings. |
 | **Decision** | (b). Postgres is the sole store, including as the LangGraph checkpointer for chat state. |
@@ -118,9 +114,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-05** | **One shared scoring primitive, normalized per decision** |
+|---|---|
 | **Context** | Recommendations trade off cost, CO~2~, and flexibility in two different places, in the within-category keep/switch/cancel choice and in the cross-category modal-shift ranking. The three axes have no shared natural unit. |
 | **Options considered** | (a) build a separate scorer per decision type, each independently tuned; (b) normalize all axes against a fixed global reference scale defined in advance; (c) one shared scoring primitive used by both decisions, with min-max normalization computed fresh from the actual candidate set being compared each time. |
 | **Decision** | (c). `engines/scoring.py` provides a single scoring function used by both `analysis.py`'s within-category decision and `modal_shift.py`'s cross-category ranking. Normalization is min-max across whichever candidates are actually being compared in that call. |
@@ -128,9 +123,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-06** | **A single shared LLM endpoint, with the app fully usable if it is unavailable** |
+|---|---|
 | **Context** | The system needs a language-model backend for two bounded jobs, which are demand reasoning in the forecaster and prose generation in the memo/chat. However, it should not become unusable if that backend is ever unreachable or unconfigured. |
 | **Options considered** | (a) hard-depend on the LLM, so the app cannot run at all without a working key; (b) route every LLM call through a single access point (`agent/llm.py`) with an explicit fallback for each feature. Memos revert to deterministic templates, chat/onboarding return a clear error. Furthermore, a hard timeout and retry cap ensures that a stalled call surfaces as an error rather than hanging indefinitely. |
 | **Decision** | (b). |
@@ -138,9 +132,8 @@ further described in section six.
 
 : {tbl-colwidths="[24,76]"}
 
-| Field | Decision record |
-|---|---|
 | **ADR-07** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
+|---|---|
 | **Context** | Forecasting how many trips a customer will make in the next 90 days benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
 | **Options considered** | (a) forecast demand with a statistical/seasonal model over trip history only, ignoring calendar entries; (b) let the LLM take over demand forecasting entirely, replacing the statistical model; (c) keep the deterministic seasonal model as the baseline signal, and layer an LLM step on top that reads upcoming calendar entries and adjusts the trip-count forecast, falling back to the pure statistical forecast if the LLM step is unavailable. |
 | **Decision** | (c). The calendar-reasoning step interprets calendar text into a demand adjustment. The deterministic seasonal engine is both its input signal and its fallback. |
