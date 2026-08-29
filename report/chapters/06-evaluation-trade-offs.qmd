@@ -1,38 +1,11 @@
 # Evaluation & Trade-offs
 
-Our evaluation ran against ten synthetic personas, each
-exercising a distinct decision path through the analysis engine over a fixed
-twelve-month window covering several different cases including the ordinary decisions 
-(keeping a plan, acquiring one, cancelling one) plus some stress testing and edge cases. 
-The comparison uses a Langfuse dataset whose items hold the raw `load_context` payload as 
-input and the engine's normalised recommendations as expected output. The `baseline` is a
-single LLM call with the customer's raw data in the prompt and the `main` arm is our agentic
-pipeline. Both run against the same five scores. Since `main` returns the engine's own output,
-which also acts as the ground truth, its scores follow by construction, and the experiment measures
-how a single LLM call performs against that reference. Three evaluators are deterministic
-guardrails on a recommendation's shape (`plan-in-catalog`, `action-in-vocabulary`,
-`savings-non-negative`), one measures agreement with the engine's decision (`category-agreement`), 
-and the last is an LLM judge on numerical soundness (`recommendation-soundness`).
-The baseline's structural results are flawless: it never invented a tariff, never left the action vocabulary, 
-and never claimed a negative saving, scoring 1.00 on all three guardrails. Its decisions are roughly two-thirds
-right, with three runs scoring `category-agreement` between 0.61 and 0.69, so on about a
-third of categories it reached a different verdict from the engine.
-The soundness judge passed zero of ten items in both runs, passing an item only when
-every figure in it is correct. Julia Berger's case shows the pattern: the baseline
-picked both correct actions, but then priced the upgrade at €1,449.37 where the engine computed
-€1,619.92. The advice was correct and the item still failed, on the number.
+The recommendation experiment compared a naive single-LLM-call baseline with a stored deterministic reference across ten synthetic personas. Nine personas provide travel data covering the fixed twelve-month evaluation window, while one deliberately represents a newly onboarded customer with only a few days of history. Each Langfuse dataset item contains the raw `load_context` payload as input and the analysis engine's normalised per-category recommendations as expected output. The baseline derives its recommendations from the raw data in one model call. The reference arm returns the deterministic recommendations stored when the dataset was seeded. The experiment therefore evaluates subscription decisions, not the Advisor's conversational behaviour, tool selection, forecast quality, or modal-shift suggestions.
 
-## Token usage and cost drivers
+Both arms were scored with three deterministic validity checks named *plan-in-catalog*, *action-in-vocabulary*, and *savings-non-negative*, a deterministic comparison with the reference called *category-agreement*, and an LLM judge for numerical soundness named *recommendation-soundness*. Only the reference arm's perfect *category-agreement* follows by construction. In the three documented baseline runs, all three validity checks scored 1.00, while mean per-persona category agreement varied between 0.61 and 0.69. This indicates agreement with the deterministic reference in roughly two-thirds of the evaluated decisions, not independently verified correctness. The soundness judge passed none of the ten baseline items in each recorded run, while the reference scored 1.00. In Julia Berger's case, for example, the baseline selected both reference actions but estimated the annual saving from the BahnCard upgrade at €1,449.37 instead of the engine's €1,619.92.
 
-Token counts are measured from Langfuse traces. An analysis run averages 7,845 tokens against 
-the baseline's 46,619, a 5.9x difference that widens to 9.3x on input, the part that scales with 
-the customer's data volume. The baseline spends 69% of its tokens re-reading raw trip legs, ours 
-spends 56% on output. As leg-level history in the prompt is the dominant cost driver,
-baseline cost rises with how much a customer travels, so the heaviest travellers, the ones with most to gain, 
-are the most expensive to serve. Our analysis path stays close to flat in trip count.
-With our pipeline we trade efficiency against adaptability. Every new numeric
-capability must be written as engine code rather than added to a prompt, which is
-slower to build and impossible to extend at conversation time. Latency and token cost
-fall in return. Run sequentially over the ten personas, an analysis takes a median of
-28 seconds against the baseline's 71, and the baseline's tail is far heavier, with a
-slowest persona of 878 seconds against our 65.
+## Historical Token Usage and Latency
+
+A separate Langfuse measurement compared the synchronous `run_full_analysis` path with the baseline. This path includes the deterministic analysis and the two bounded LLM steps, but not the ReAct Advisor. In the recorded measurement, the main analysis used an average of 7,845 tokens compared with 46,619 for the baseline, a 5.9-fold difference. The difference reached 9.3-fold for input tokens because the baseline receives the complete leg-level history, while the main analysis passes aggregated information to its LLM steps. Input accounted for 69% of the baseline's tokens and was dominated by the raw trip history, whereas output accounted for 56% of the main analysis's tokens.
+
+With one persona processed at a time, the synchronous analysis had a median end-to-end latency of 28.3 seconds compared with 71.1 seconds for the baseline. The recorded maximum was 64.6 seconds for the main analysis and 878.5 seconds for the baseline. These values measure total synchronous model work rather than the current dashboard response time, since the dashboard now returns the deterministic result before the slower enrichment runs in the background. Later reductions to the forecast prompt and concurrent execution of the two LLM steps were not measured again, so the figures are historical results rather than current performance guarantees. The underlying trade-off remains that deterministic calculations reduce model usage and improve reproducibility, but every new numerical capability must be implemented in code rather than added through a prompt.

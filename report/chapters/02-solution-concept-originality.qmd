@@ -1,7 +1,18 @@
 # Solution Concept & Originality
 
-Advising on mobility subscriptions needs the recommendation to be numerically right and its reasoning understandable to someone who won't audit a spreadsheet. We split those demands across dedicated components: deterministic pricing and scoring engines, a single LangGraph agent backed by a university-hosted GPT endpoint for the conversation, a FastAPI/PostgreSQL service layer underneath, and Langfuse tracing every model call. Chapter 3 covers how these fit together; we avoided a fully agentic pipeline so a number's reliability never depends on how a conversation happens to go.
+Advising on mobility subscriptions requires recommendations to be numerically reliable and understandable without requiring the customer to inspect the underlying 
+calculations. We divide these responsibilities across a hybrid architecture. Deterministic pricing and scoring engines calculate all financial and environmental 
+figures. Two narrowly scoped LLM steps interpret calendar information and assess whether switching transport modes is feasible, while a single LangGraph Advisor 
+handles the conversation, tariff retrieval, and what-if requests. FastAPI connects these capabilities to the frontend, PostgreSQL stores domain data, analysis snapshots, 
+and agent state, and optional Langfuse tracing supports observation and evaluation of the model calls. Chapter 3 describes how these components interact.
 
-We are not aware of a consumer product that already does this: pull a customer's multi-provider travel history together, price it against the market, and execute the resulting change itself rather than leaving that to the customer. That gap is also why the idea is harder than it sounds: once a system can act on real contracts, a guessed number or an unsupervised execution stops being a wrong chat answer and becomes a costly mistake. The value on offer is exactly that: a portfolio review and, if wanted, the change carried out, without the customer doing either piece of work.
+Our contribution lies in combining multi-provider travel history, a structured subscription catalogue, calendar information, and customer priorities in one 
+mobility portfolio analysis. The system compares plans within each transport category and may also recommend a shift between modes based on cost, CO~2~, and 
+flexibility. The Advisor can explain the results using a curated tariff knowledge base and simulate a proposed change before asking the customer to confirm it. 
+In the current prototype, a confirmed revision is saved within the application rather than executed as a real contract change with an external provider.
 
-The brief's advanced tier suggested a four-agent split, i.e. one LLM agent each for analysis, forecasting, optimisation and communication. That is the standard tutorial move of decomposing a workflow into tasks and giving each its own agent. We asked instead whether a language model was the right tool for each task at all. For pricing, eligibility and scoring the answer was no, so three of the four roles became deterministic engines, and only the fourth survived as an agent, alongside two narrowly scoped LLM steps inside the pipeline. That restraint also makes the system measurable: the deterministic engines' output serves as ground truth for the naive single-LLM-call baseline evaluated in Chapter 6, a comparison a four-agent design built entirely from language-model reasoning could not offer.
+The brief's advanced tier suggested separate LLM agents for analysis, forecasting, optimisation, and communication. Instead of assigning every task to an agent, 
+we considered where language-model reasoning added value. Analysis and optimisation became primarily deterministic components, forecasting was reduced to a 
+bounded LLM step with a deterministic fallback, and only communication remained an autonomous agent. This avoids making numerical reliability depend on 
+an open-ended conversation while retaining flexibility where customers need it. The deterministic output also provides a stable reference for the 
+single-LLM-call baseline evaluated in Chapter 6.

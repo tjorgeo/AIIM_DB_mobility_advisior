@@ -1,19 +1,11 @@
 # References & Appendix
 
-*List your sources and link the remaining deliverables (code and video are
-submitted separately).*
-
 ## Deliverables
 
-- **Code:** [GitHub repository](https://github.com/REPLACE-ME)
+- **Code:** [GitHub repository](https://github.com/tjorgeo/AIIM_DB_mobility_advisior)
 - **Video:** [Showcase video](https://example.com/REPLACE-ME)
 
 ## References
-
-<!--
-Add sources to references.bib and cite them in the chapter text with Quarto
-syntax, for example [@example2026]. The bibliography is generated below.
--->
 
 ::: {#refs}
 :::

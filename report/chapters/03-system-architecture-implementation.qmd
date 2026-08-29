@@ -2,34 +2,29 @@
 
 ## Architecture Overview
 
-The architecture consists of a deterministic and a generative part. The deterministic calculation engine is the first step in
-processing the user's data into insightful aggregates (profile, the priorities and free-text constraints given at onboarding,
-held subscriptions, trip history, upcoming calendar entries). All financial numbers and CO~2~ estimates are computed here and stored as
-a snapshot of that customer's state. The snapshot is then used as input for the frontend dashboard and for the two small step
-LLM-calls. The first reads the customer's calendar entries for upcoming life events and returns demand scenarios expressed in trip
-counts. The other judges whether switching to a different mode of transport is realistic and useful for that customer,
-based on the free text of the onboarding. Neither is ever asked to calculate money or emissions: the forecast's projected trip counts 
-go back into the deterministic engine that prices the customer's plan today, so every figure attached to a scenario is calculated. 
-It then scores each subscription category against its alternatives, prices possible switches between transport modes, forecasts 
-demand, and writes the result to the session snapshot. The dashboard, the Advisor, and every later change all read from that one 
-snapshot and only an explicit refresh triggers a new run.
+The architecture consists of a deterministic and a generative part. The deterministic calculation engine is the first step in processing the user's data into
+insightful aggregates (profile, the priorities and free-text constraints given at onboarding, held subscriptions, trip history, upcoming calendar entries). All financial numbers and CO~2~
+estimates are computed here and stored as a snapshot of that customer's state. The snapshot is then used as input for the frontend dashboard
+and for the two small step LLM-calls. The first reads the customer's calendar entries for upcoming life events and returns demand scenarios expressed in
+trip counts. The other judges whether switching to a different mode of transport is realistic and useful for that customer, based on the free text
+of the onboarding. Neither is ever asked to calculate money or emissions: the forecast's projected trip counts go back into the deterministic engine that prices
+the customer's plan today, so every figure attached to a scenario is calculated. It then scores each subscription category against its alternatives, prices possible switches
+between transport modes, forecasts demand, and writes the result to the session snapshot. The dashboard, the Advisor, and every later change all read from that
+one snapshot and only an explicit refresh triggers a new run.
 
-The advisory agent carries every exchange with the customer after that, beginning with the opening briefing, generated from the 
-sessions snapshot. For that the advisor reads the stored snapshot on its first turn. Every follow-up request, from questions about 
-tariff details to cancelling a BahnCard, is handled by that same continuously reasoning and tool-using ReAct Advisor agent, working 
-through seven tools that include lookups for the tariff-document knowledge base, portfolio insights, and the preview and apply steps 
-for plan changes. The conversation is the only place in the live system where an agent is free to choose its own next step and reach 
-for a tool to get there. When the Advisor proposes a change, such as cancelling a subscription or switching a tariff, it first runs a 
-preview that re-derives the effect deterministically and records it as a scratch proposal. The saved plan is untouched at that point and
-the dashboard still shows the current state while the Advisor presents the revised numbers and asks the customer to confirm. The change 
-is only committed after a separate confirmation request. The portfolio is then updated in the database. Applying does not overwrite the 
-earlier snapshot but writes a new one, so the analysis history stays intact.
-The backend calls exactly one service outside its own database: The university-hosted language-model endpoint, reached through one shared 
-access point in the code. The 62-document tariff knowledge base is built using the Open knowledge Format (OKF), which is a lean and simple 
-way of storing knowledge in textual format [@google2024okf]. The optional observability instrumentation is the only other outbound call, and without an API key configured it becomes a no-op that 
-changes nothing else.
-
-The roles described above are brought together in @fig-agent-architecture. It shows how onboarding and stored customer data feed the deterministic analysis, while the Advisor connects bounded LLM steps and tools to the conversational interface under Langfuse observability.
+As shown in @fig-agent-architecture, the Advisor connects the deterministic analysis, bounded LLM steps, and tools to the conversational interface. It carries every exchange with
+the customer after the initial analysis, beginning with the opening briefing generated from the session snapshot. For that, the Advisor reads the stored snapshot on
+its first turn. Every follow-up request, from questions about tariff details to cancelling a BahnCard, is handled by that same continuously reasoning and tool-using
+ReAct Advisor agent, working through seven tools that include lookups for the tariff-document knowledge base, portfolio insights, and the preview and apply steps for
+plan changes. The conversation is the only place in the live system where an agent is free to choose its own next step and reach
+for a tool to get there. When the Advisor proposes a change, such as cancelling a subscription or switching a tariff, it first runs a
+preview that re-derives the effect deterministically and records it as a scratch proposal. The saved plan is untouched at that point, and the dashboard still
+shows the current state while the Advisor presents the revised numbers and asks the customer to confirm. The change is only committed after a separate
+confirmation request. The portfolio is then updated in the database. Applying does not overwrite the earlier snapshot but writes a new one, so the
+analysis history stays intact.
+The backend calls exactly one service outside its own database: The university-hosted language-model endpoint, reached through one shared access point in the code. The 62-document
+tariff knowledge base is built using the Open knowledge Format (OKF), which is a lean and simple way of storing knowledge in textual format [@google2024okf].
+The optional observability instrumentation is the only other outbound call, and without an API key configured it becomes a no-op that changes nothing else.
 
 ![High-level architecture of the mobility Advisor.](assets/agent-architecture.png){#fig-agent-architecture width=100%}
 
@@ -75,12 +70,17 @@ change remains with the customer.
 Both the conversation and the agent's own working context are stored in the database, as two separate records with different jobs. 
 The transcript is the human-readable exchange, which the interface re-renders after a reload, and it carries the reference ids used 
 in feedback scoring. The working context is the agent's full run of tool calls and intermediate steps and lets the Advisor stay coherent 
-across separate requests, and it is the same state the confirmation gate suspends and resumes.
-
-To test for consistent behaviour, we implemented an observability system,
+across separate requests, and it is the same state the confirmation gate suspends and resumes. To test for consistent behaviour, we implemented an observability system,
 further described in Chapter 6.
 
 ## Architecture Decision Records (ADRs)
+
+```{=latex}
+\begingroup
+\renewcommand{\arraystretch}{1.1}
+\setlength{\LTpre}{2pt}
+\setlength{\LTpost}{2pt}
+```
 
 | **ADR-01** | **Sequential pipeline for analysis, LangGraph agent for chat** |
 |---|---|
@@ -89,7 +89,7 @@ further described in Chapter 6.
 | **Decision** | (c). `load_context → analyze → forecast → communicate` stays a deterministic function chain with no graph runtime. The `/api/chat` advisor is a LangGraph `create_react_agent` whose state is checkpointed in Postgres, so a conversation survives across separate HTTP requests. |
 | **Trade-offs accepted** | Two orchestration mechanisms instead of one, so consistency between them is a convention (both call the same underlying engines) rather than a runtime guarantee. This is offset by simplicity where it matters. The analysis path stays a plain, unit-testable function chain instead of a graph. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-02** | **Deterministic number guard: the LLM never computes a figure** |
 |---|---|
@@ -98,7 +98,7 @@ further described in Chapter 6.
 | **Decision** | (c). `analysis.py` and the optimisation/pricing engines compute every euro, CO~2~ and time figure. The briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute, i.e. the forecaster's projected trip counts per scenario, is priced by the same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
 | **Trade-offs accepted** | The model cannot adapt numerically to a phrasing it was not explicitly given data for, and every new numeric capability requires new deterministic code rather than a prompt change. This restraint is what makes the pipeline's output reproducible and testable in the first place. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-03** | **`interrupt()`-based confirmation gate for irreversible actions** |
 |---|---|
@@ -107,7 +107,7 @@ further described in Chapter 6.
 | **Decision** | (c). The `apply_change` tool calls LangGraph's `interrupt()` to pause the graph before any write. Execution resumes only via an explicit `Command(resume=...)` carrying the user's decision. |
 | **Trade-offs accepted** | The chat endpoint now depends on the Postgres checkpointer being available to pause and resume state across requests, which a stateless boolean-flag check would not require. In return, the guarantee holds regardless of how the model behaves, rather than depending on the model reliably asking first. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-04** | **PostgreSQL as the only persistence layer** |
 |---|---|
@@ -116,7 +116,7 @@ further described in Chapter 6.
 | **Decision** | (b). Postgres is the sole store, including as the LangGraph checkpointer for chat state. |
 | **Trade-offs accepted** | There is no sub-request caching layer beyond re-serving the last stored row, and tariff lookup is exact rather than semantic, so it cannot answer a paraphrased question about a tariff it is not directly linked to. Both are acceptable at the current catalogue size and avoid two additional pieces of infrastructure to operate and test. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-05** | **One shared scoring primitive, normalised per decision** |
 |---|---|
@@ -125,7 +125,7 @@ further described in Chapter 6.
 | **Decision** | (c). `engines/scoring.py` provides a single scoring function used by both `analysis.py`'s within-category decision and `modal_shift.py`'s cross-category ranking. Normalisation is min-max across whichever candidates are actually being compared in that call. |
 | **Trade-offs accepted** | A candidate's score is relative to whoever else it is being compared against, not a portable absolute number, i.e. the same subscription can score differently across two different comparisons. In exchange, the system avoids constant manual re-tuning of a fixed scale across units that do not share one, and an axis with no real variance in a given comparison degrades to a neutral value instead of producing an unstable ordering from rounding noise. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-06** | **A single shared LLM endpoint, with the app fully usable if it is unavailable** |
 |---|---|
@@ -134,13 +134,17 @@ further described in Chapter 6.
 | **Decision** | (b). |
 | **Trade-offs accepted** | The product is coupled to one endpoint's availability and quota rather than a market of interchangeable providers, and a stalled call is capped at returning an error within roughly 30 seconds rather than retried indefinitely. This is offset by the system staying operable, with no LLM available at all, since every numeric result already comes from the deterministic engines regardless (ADR-02). |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
 | **ADR-07** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
 |---|---|
-| **Context** | Forecasting how many trips a customer will make in the next 90 days benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
+| **Context** | Forecasting how many trips a customer will make in the next twelve months benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
 | **Options considered** | (a) forecast demand with a statistical/seasonal model over trip history only, ignoring calendar entries; (b) let the LLM take over demand forecasting entirely, replacing the statistical model; (c) keep the deterministic seasonal model as the baseline signal, and layer an LLM step on top that reads upcoming calendar entries and adjusts the trip-count forecast, falling back to the pure statistical forecast if the LLM step is unavailable. |
 | **Decision** | (c). The calendar-reasoning step interprets calendar text into a demand adjustment. The deterministic seasonal engine is both its input signal and its fallback. |
 | **Trade-offs accepted** | The forecast's calendar-awareness only exists when the LLM is available, and quietly reverts to the less specific baseline otherwise. This is acceptable because the forecast never determines cost itself, it only feeds trip counts into the same deterministic pricing engine used elsewhere, so a degraded forecast still produces a numerically trustworthy result, just a less forward-looking one. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
+
+```{=latex}
+\endgroup
+```

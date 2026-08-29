@@ -1,43 +1,32 @@
 # Scalability & Extensibility
 
-The solution is modular in structure and selectively parametrised in behaviour. Modularity concerns which responsibilities can be changed
-independently, whereas parametrisation changes the behaviour of an existing component without changing its code. The backend separates database 
-context loading, deterministic engines, targeted LLM steps, Advisor tools, prompts, session persistence, and observability. These boundaries are
-functional rather than cosmetic. The modal-shift engine, for example, receives the feasibility judge as an optional callable and can therefore run with 
-the LLM implementation, a test double, or its deterministic fallback without importing a model client. The same scoring primitive is reused by the
-initial analysis, modal-shift ranking, and chat-driven re-optimisation, so a scoring correction propagates through all three paths instead of being 
-reimplemented per workflow.
+Our solution is modular in structure and selectively parametrised in behaviour. Modularity allows responsibilities to change independently, whereas
+parametrisation changes a component's behaviour without changing its code. The backend separates context loading, deterministic engines, targeted LLM
+steps, Advisor tools, prompts, session persistence, and observability. For example, the modal-shift engine accepts the feasibility judge as an optional
+callable and can use the LLM implementation, a test double, or its deterministic fallback. One scoring primitive is reused by the initial analysis,
+modal-shift ranking, and chat-driven re-optimisation, so corrections propagate across all three paths.
 
-Behaviour within those modules is parametrised at several levels. The three onboarding priorities become normalised cost, CO~2~, and time
-weights. The forecast horizon and output language are function inputs. What-if requests pass `keep`, `drop`, `prefer_plans`, and `exclude_plans`
-constraints into the same re-optimisation engine. Operational settings such as the model endpoint, database-pool size, worker count, LLM concurrency, 
-timeouts, and retries are environment variables rather than constants at their call sites. This makes the solution adaptable, but not fully configuration-driven. 
-The Advisor's seven-tool registry is explicit. Adding a capability requires a new deterministic tool, registration in the Advisor, a prompt instruction, and tests. 
-Likewise, a new provider whose tariff fits an existing category and pricing model can normally be added as a catalogue row and an OKF Markdown document, while a 
-new mobility category, scoring dimension, or pricing model crosses coverage maps, reference factors, engines, prompts, and frontend presentation and therefore still 
-requires code changes.
+Behaviour is parametrised through the onboarding weights for cost, CO~2~, and time, function inputs such as the forecast horizon and output language, and
+the constraints passed from what-if requests into the re-optimisation engine. Operational settings such as the model endpoint, pool and worker sizes,
+LLM concurrency, timeouts, and retries are environment variables. The solution is therefore adaptable but not fully configuration-driven. Adding an
+Advisor capability still requires a deterministic tool, its registration, a prompt instruction, and tests. A provider that fits an existing category
+and pricing model can usually be added through a catalogue row and an Open Knowledge Format Markdown document. New categories, scoring dimensions, or pricing models still
+require coordinated code changes across backend and frontend components.
 
-The current design contains several measures that support moderate growth. Per-user database queries are indexed, PostgreSQL connections are pooled, 
-and the mostly static pricing catalogue is cached. A stored session snapshot acts as a read-through cache, so reopening the dashboard does not automatically 
-repeat the analysis or its model calls. On a fresh analysis, the deterministic result is returned before the slower enrichment begins. Forecast reasoning and 
-modal-shift feasibility then run concurrently on background workers. A process-wide LLM concurrency limit queues excess calls instead of overwhelming the 
-shared university endpoint. These choices improve latency and protect the pilot under bursts, but the limit is a reliability control rather than additional 
-throughput.
+Several measures support moderate growth. Per-user queries are indexed, PostgreSQL connections are pooled, and the mostly static pricing catalogue is cached.
+A stored session snapshot prevents the dashboard from repeating analysis and model calls unnecessarily. On a fresh run, the deterministic result is returned
+before forecast reasoning and modal-shift feasibility run concurrently in the background. A process-wide concurrency limit queues excess LLM calls instead
+of overwhelming the shared university endpoint. This protects the pilot under bursts but does not add throughput.
 
-Larger production volumes would expose boundaries that are insignificant for the ten-persona prototype. `load_context` currently retrieves a user's complete 
-leg-level history and aggregates it in Python. A longer history should be filtered and pre-aggregated in SQL or materialized views. Tariff retrieval scans the
-Markdown tree and reads complete documents, which is appropriate for the present corpus but would need a persistent metadata or full-text index, document chunking, 
-and selective context at much larger scale. Long conversations also accumulate messages and tool observations in the checkpointer, so production use would require 
-retention rules, context windows, or conversation summaries. Finally, background enrichment, catalogue caches, and the LLM semaphore live inside one backend process. 
-Horizontal scaling would therefore require a durable external job queue, centrally coordinated rate limits, and multiple stateless API instances behind a load balancer 
-rather than merely increasing the local thread count. The free university-hosted LLM endpoint is suitable for the prototype but does not provide the capacity or service 
-guarantees needed for production scale. A larger deployment would require either an agreed production quota, a commercial OpenAI-compatible provider, or a self-hosted 
-model. Since model access is centralised in `agent/llm.py` and the model identifier and base URL are configurable, such a change would leave the deterministic engines 
-and Advisor tools intact, but the replacement would still need to be re-evaluated for structured-output reliability, tool selection, latency, privacy, and cost.
+At production scale, `load_context` should filter and pre-aggregate long trip histories in SQL or materialized views instead of processing every leg in Python.
+The growing tariff corpus would need indexed metadata or full-text search, document chunking, and selective context. Long conversations would also require
+retention rules or summaries. Because background jobs, caches, and the LLM semaphore currently live inside one backend process, horizontal scaling would require
+an external job queue, coordinated rate limits, and stateless API instances behind a load balancer. The free university-hosted LLM endpoint is suitable for the
+prototype but lacks production capacity and service guarantees. A larger deployment would need a production quota, commercial OpenAI-compatible provider, or
+self-hosted model. Centralised model access and configurable connection settings limit the necessary code changes, although any replacement must be re-evaluated
+for structured output, tool selection, latency, privacy, and cost.
 
-Maintainability benefits from the same separation of concerns. `agent/llm.py` centralises model access and retry policy, `session.py` owns snapshots, transcripts, 
-and revisions, prompts have a local versioned fallback, and deterministic engines can be tested without a database or model endpoint. The explicit simulate--confirm--apply
-boundary also isolates the only state-changing capability. Two limitations remain. Most internal contracts are nested dictionaries, so typed models would make schema changes 
-across pipeline, tools, snapshots, and frontend safer. Some legacy names and compatibility structures also survive, including the unused root-level `analyst_agent.py` and an 
-`optimizer_scenarios` database column whose payload has since changed. Removing those artefacts and replacing first-run SQL initialisation with managed schema migrations 
-would make the otherwise clear module boundaries easier to maintain as the system grows.
+Maintainability benefits from the same separation. `agent/llm.py` centralises model access and retries, `session.py` owns snapshots, transcripts, and revisions,
+and deterministic engines can be tested without a database or model endpoint. The simulate--confirm--apply boundary isolates the only state-changing capability.
+Typed models would make schema changes safer than the current nested dictionaries. Removing remaining compatibility structures such as the repurposed
+`optimizer_scenarios` column and replacing first-run SQL initialisation with managed migrations would further improve maintainability.

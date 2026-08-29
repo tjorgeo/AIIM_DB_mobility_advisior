@@ -10,9 +10,7 @@ recent twelve months of available history, the stored catalogue of available pla
 The customer then receives an analysis of their current mobility portfolio. For every category of transport they use, the system calculates what they 
 spent during the twelve-month period and compares their current subscription with eligible alternatives. Prices and savings come from the deterministic
 analysis engine, keeping the figures reproducible (see ADR-02). The dashboard presents annual mobility spending, the CO~2~ footprint, mode distribution, 
-current subscriptions, potential savings, and the recommended portfolio.
-
-After reviewing the initial results, the customer can explore recommendations that also look forward over the next twelve months. The system combines seasonal 
+current subscriptions, potential savings, and the recommended portfolio. After reviewing the initial results, the customer can explore recommendations that also look forward over the next twelve months. The system combines seasonal 
 travel patterns with shared calendar entries to estimate how travel might change. Where it fits the customer's priorities and mobility constraints, 
 it may recommend switching transport modes, for example from an e-scooter to a bicycle or from a car to public transport. These suggestions weigh cost, 
 CO~2~ emissions, and flexibility according to the customer's selected priorities. The language model assesses future demand and the feasibility of a modal 
