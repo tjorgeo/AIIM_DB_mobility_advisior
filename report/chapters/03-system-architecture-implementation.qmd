@@ -29,6 +29,10 @@ access point in the code. The 62-document tariff knowledge base is built using t
 way of storing knowledge in textual format [@google2024okf]. The optional observability instrumentation is the only other outbound call, and without an API key configured it becomes a no-op that 
 changes nothing else.
 
+The roles described above are brought together in @fig-agent-architecture. It shows how onboarding and stored customer data feed the deterministic analysis, while the Advisor connects bounded LLM steps and tools to the conversational interface under Langfuse observability.
+
+![High-level architecture of the mobility Advisor.](assets/agent-architecture.png){#fig-agent-architecture width=100%}
+
 ## Agentic Behavior
 
 The Advisor is the system's single conversational surface and its only autonomous agent, owning both the opening briefing and every follow-up. 
