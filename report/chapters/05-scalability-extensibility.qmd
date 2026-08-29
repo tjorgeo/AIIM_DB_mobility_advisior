@@ -6,7 +6,7 @@ steps, Advisor tools, prompts, session persistence, and observability. For examp
 callable and can use the LLM implementation, a test double, or its deterministic fallback. One scoring primitive is reused by the initial analysis,
 modal-shift ranking, and chat-driven re-optimisation, so corrections propagate across all three paths.
 
-Behaviour is parametrised through the onboarding weights for cost, CO~2~, and time, function inputs such as the forecast horizon and output language, and
+Behaviour is parametrised through the onboarding weights for cost, CO~2~, and flexibility. The scoring engine maps flexibility to estimated travel time, the only quantified proxy currently available. Further parameters include the forecast horizon, output language, and
 the constraints passed from what-if requests into the re-optimisation engine. Operational settings such as the model endpoint, pool and worker sizes,
 LLM concurrency, timeouts, and retries are environment variables. The solution is therefore adaptable but not fully configuration-driven. Adding an
 Advisor capability still requires a deterministic tool, its registration, a prompt instruction, and tests. A provider that fits an existing category
@@ -27,6 +27,6 @@ self-hosted model. Centralised model access and configurable connection settings
 for structured output, tool selection, latency, privacy, and cost.
 
 Maintainability benefits from the same separation. `agent/llm.py` centralises model access and retries, `session.py` owns snapshots, transcripts, and revisions,
-and deterministic engines can be tested without a database or model endpoint. The simulate--confirm--apply boundary isolates the only state-changing capability.
+and deterministic engines can be tested without a database or model endpoint. The simulate--confirm--apply boundary isolates the Advisor tool layer's only state-changing capability.
 Typed models would make schema changes safer than the current nested dictionaries. Removing remaining compatibility structures such as the repurposed
 `optimizer_scenarios` column and replacing first-run SQL initialisation with managed migrations would further improve maintainability.

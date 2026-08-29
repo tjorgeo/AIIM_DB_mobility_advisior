@@ -3,7 +3,6 @@
 ## Deliverables
 
 - **Code:** [GitHub repository](https://github.com/tjorgeo/AIIM_DB_mobility_advisior)
-- **Video:** [Showcase video](https://example.com/REPLACE-ME)
 
 ## References
 

@@ -8,8 +8,8 @@ and agent state, and optional Langfuse tracing supports observation and evaluati
 
 Our contribution lies in combining multi-provider travel history, a structured subscription catalogue, calendar information, and customer priorities in one 
 mobility portfolio analysis. The system compares plans within each transport category and may also recommend a shift between modes based on cost, CO~2~, and 
-flexibility. The Advisor can explain the results using a curated tariff knowledge base and simulate a proposed change before asking the customer to confirm it. 
-In the current prototype, a confirmed revision is saved within the application rather than executed as a real contract change with an external provider.
+flexibility, which the current scoring represents through estimated travel time. The Advisor can explain the results using a curated tariff knowledge base and simulate a proposed change before asking the customer to confirm it. 
+In the current prototype, a confirmed revision is saved as a new internal recommendation snapshot. It does not alter the underlying subscription record or execute a real contract change with an external provider.
 
 The brief's advanced tier suggested separate LLM agents for analysis, forecasting, optimisation, and communication. Instead of assigning every task to an agent, 
 we considered where language-model reasoning added value. Analysis and optimisation became primarily deterministic components, forecasting was reduced to a 
