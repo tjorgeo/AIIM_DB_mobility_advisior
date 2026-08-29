@@ -1,20 +1,26 @@
 # Workflow Documentation
 
-When a customer opens the dashboard, the system pulls together everything it knows about them, i.e. which subscriptions they currently hold, their past trips, the full catalogue of available plans, and, if they have shared it, their calendar.
-For every category of transport the customer actually uses it works out what they spent over the last year and compares their current subscription against the cheapest realistic alternative.
-A recommendation based just on the past can miss a change that is about to happen, so the system also looks forward roughly three months. It combines seasonal travel patterns with anything already on the customer's calendar to estimate how their travel might shift.
-The customer's advisor, a conversational assistant built into the dashboard, opens with a short written summary of what it found, for example which subscriptions still make sense, which do not, and roughly how much could be saved.
-From there, the customer can ask the advisor anything, for example why a particular plan is cheaper, what would change if they travelled more next year, or what a specific subscription's cancellation terms are. The advisor can look up the live product catalogue and the underlying tariff documents to answer.
-If the customer considers a change like "what if I switch to X", "what if I keep the car but drop the transit pass", the advisor can simulate it and show the new numbers without touching anything real yet.
-Only once the customer explicitly agrees does the advisor carry out the change. Nothing is subscribed, cancelled, or switched without that confirmation.
+The architecture shown in @fig-agent-architecture in the previous chapter provides the technical overview of the system. In the following 
+we describe how the workflow appears to the customer, while pointing out the main processing steps where helpful. For a new customer, the journey 
+begins with onboarding, where they provide personal information and answer questions about their mobility situation and preferences. They can review and 
+update these answers at any time by editing their profile, which triggers a fresh analysis. The profile also shows active and inactive subscriptions for 
+context, but they cannot be changed there. When the customer opens the dashboard, the system combines their current subscriptions, trips from the most 
+recent twelve months of available history, the stored catalogue of available plans, and, if shared, their calendar.
 
-Customers can also reopen the answers from their original onboarding through **Edit profile**.
-The profile view writes personal data, mobility access, preferences, priority weights, work and
-household context, weekly patterns, and simulated mobility-account connections back to PostgreSQL.
-Active and inactive subscriptions are shown there for context, but the profile view cannot add,
-remove, cancel, or reactivate them. Saving the editable profile data triggers a fresh analysis so
-the new answers affect the dashboard immediately.
+The customer then receives an analysis of their current mobility portfolio. For every category of transport they use, the system calculates what they 
+spent during the twelve-month period and compares their current subscription with eligible alternatives. Prices and savings come from the deterministic
+analysis engine, keeping the figures reproducible (see ADR-02). The dashboard presents annual mobility spending, the CO~2~ footprint, mode distribution, 
+current subscriptions, potential savings, and the recommended portfolio.
 
-The architectural separation shown in @fig-agent-architecture in the previous chapter also shapes the workflow. Steps 1–3 run as a fixed sequence, which makes the resulting numbers reproducible. Steps 4–7 happen inside an open-ended conversation, where the advisor picks from a handful of defined actions, like look something up, simulate a change, or apply one, based on what the customer asks. The fixed sequence is the analysis pipeline and the conversational half is the Advisor.
+After reviewing the initial results, the customer can explore recommendations that also look forward over the next twelve months. The system combines seasonal 
+travel patterns with shared calendar entries to estimate how travel might change. Where it fits the customer's priorities and mobility constraints, 
+it may recommend switching transport modes, for example from an e-scooter to a bicycle or from a car to public transport. These suggestions weigh cost, 
+CO~2~ emissions, and flexibility according to the customer's selected priorities. The language model assesses future demand and the feasibility of a modal 
+shift, while the deterministic engine calculates the resulting costs. The Advisor chat built into the dashboard opens with a short summary of the findings. 
+The customer can ask why a plan is cheaper or about its cancellation terms, and the Advisor can consult the stored product catalogue and underlying tariff 
+documents. It can also simulate scenarios such as "what if I switch to nextbike" without changing the stored portfolio.
 
-Because a wrong answer is worse than a slow one, price is always the deterministic engine's job. The model may forecast how much a customer will travel, but that predicted trip count is priced by the same fixed calculation as everything else, so cost is never invented on the fly (ADR-02). And the advisor may simulate freely, but can only act after the customer's explicit confirmation in Step 7 (ADR-03).
+Finally, if the customer decides to make a change, the Advisor presents a preview of how the proposed switch or cancellation would affect the portfolio and 
+its costs. The customer can reject it, continue exploring alternatives, or proceed to a separate explicit confirmation. Only after this confirmation is the 
+revised portfolio saved within the application (see ADR-03). The current prototype does not place or cancel a real subscription with an external mobility 
+provider.

@@ -1,4 +1,4 @@
-# DB MoveOptimizer / AIIM Mobility Advisor
+# MoveOptimizer / AIIM Mobility Advisor
 
 An AI mobility-subscription advisor. It reads a customer's stored travel history
 from PostgreSQL, works out what their journeys actually cost, and recommends
@@ -12,14 +12,14 @@ Compose: a React frontend, a FastAPI backend, and a PostgreSQL database.
 **This file covers getting the stack running.** For anything deeper, follow the
 chain:
 
-| Document | Covers |
-| --- | --- |
-| **README.md** (this file) | running the stack, repo layout, Docker troubleshooting |
-| [`frontend/README.md`](frontend/README.md) | UI architecture, view state, the chat widget, dev server |
-| [`backend/README.md`](backend/README.md) | architecture, data model, the analysis pipeline, HTTP API, testing |
-| [`data/README.md`](data/README.md) | the tariff knowledge base and CO₂ reference figures |
+| Document                                           | Covers                                                                                  |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **README.md** (this file)                          | running the stack, repo layout, Docker troubleshooting                                  |
+| [`frontend/README.md`](frontend/README.md)         | UI architecture, view state, the chat widget, dev server                                |
+| [`backend/README.md`](backend/README.md)           | architecture, data model, the analysis pipeline, HTTP API, testing                      |
+| [`data/README.md`](data/README.md)                 | the tariff knowledge base and CO₂ reference figures                                     |
 | [`backend/eval/README.md`](backend/eval/README.md) | Langfuse tracing, LLM judges, the baseline-vs-agent experiment and its measured results |
-| [`report/README.md`](report/README.md) | building the managerial report PDFs from those results |
+| [`report/README.md`](report/README.md)             | building the managerial report PDFs from those results                                  |
 
 One further reference sits outside that chain:
 [`database/seed/PERSONAS.md`](database/seed/PERSONAS.md) documents the ten seed
@@ -94,11 +94,11 @@ docker compose up --build
 
 ### 3. Open
 
-| Service | URL |
-| --- | --- |
-| Frontend | http://localhost:5173 |
-| Backend | http://localhost:8000 |
-| PostgreSQL | localhost:5432 |
+| Service    | URL                   |
+| ---------- | --------------------- |
+| Frontend   | http://localhost:5173 |
+| Backend    | http://localhost:8000 |
+| PostgreSQL | localhost:5432        |
 
 Sign in with any seeded user's username or email and the shared demo password
 `mobility` — for example `janalbrecht37` / `mobility`. The seeded personas are
