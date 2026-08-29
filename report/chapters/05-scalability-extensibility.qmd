@@ -1,16 +1,16 @@
 # Scalability & Extensibility
 
-The solution is modular in structure and selectively parametrized in behaviour. Modularity concerns which responsibilities can be changed 
-independently, whereas parametrization changes the behaviour of an existing component without changing its code. The backend separates database 
+The solution is modular in structure and selectively parametrised in behaviour. Modularity concerns which responsibilities can be changed
+independently, whereas parametrisation changes the behaviour of an existing component without changing its code. The backend separates database 
 context loading, deterministic engines, targeted LLM steps, Advisor tools, prompts, session persistence, and observability. These boundaries are
 functional rather than cosmetic. The modal-shift engine, for example, receives the feasibility judge as an optional callable and can therefore run with 
 the LLM implementation, a test double, or its deterministic fallback without importing a model client. The same scoring primitive is reused by the
-initial analysis, modal-shift ranking, and chat-driven re-optimization, so a scoring correction propagates through all three paths instead of being 
+initial analysis, modal-shift ranking, and chat-driven re-optimisation, so a scoring correction propagates through all three paths instead of being 
 reimplemented per workflow.
 
-Behaviour within those modules is parametrized at several levels. The three onboarding priorities become normalized cost, CO~2~, and time 
-weights. The forecast horizon and output language are function inputs. What-if requests pass `keep`, `drop`, `prefer_plans`, and `exclude_plans` 
-constraints into the same re-optimization engine. Operational settings such as the model endpoint, database-pool size, worker count, LLM concurrency, 
+Behaviour within those modules is parametrised at several levels. The three onboarding priorities become normalised cost, CO~2~, and time
+weights. The forecast horizon and output language are function inputs. What-if requests pass `keep`, `drop`, `prefer_plans`, and `exclude_plans`
+constraints into the same re-optimisation engine. Operational settings such as the model endpoint, database-pool size, worker count, LLM concurrency, 
 timeouts, and retries are environment variables rather than constants at their call sites. This makes the solution adaptable, but not fully configuration-driven. 
 The Advisor's seven-tool registry is explicit. Adding a capability requires a new deterministic tool, registration in the Advisor, a prompt instruction, and tests. 
 Likewise, a new provider whose tariff fits an existing category and pricing model can normally be added as a catalogue row and an OKF Markdown document, while a 
@@ -32,12 +32,12 @@ retention rules, context windows, or conversation summaries. Finally, background
 Horizontal scaling would therefore require a durable external job queue, centrally coordinated rate limits, and multiple stateless API instances behind a load balancer 
 rather than merely increasing the local thread count. The free university-hosted LLM endpoint is suitable for the prototype but does not provide the capacity or service 
 guarantees needed for production scale. A larger deployment would require either an agreed production quota, a commercial OpenAI-compatible provider, or a self-hosted 
-model. Since model access is centralized in `agent/llm.py` and the model identifier and base URL are configurable, such a change would leave the deterministic engines 
+model. Since model access is centralised in `agent/llm.py` and the model identifier and base URL are configurable, such a change would leave the deterministic engines 
 and Advisor tools intact, but the replacement would still need to be re-evaluated for structured-output reliability, tool selection, latency, privacy, and cost.
 
-Maintainability benefits from the same separation of concerns. `agent/llm.py` centralizes model access and retry policy, `session.py` owns snapshots, transcripts, 
+Maintainability benefits from the same separation of concerns. `agent/llm.py` centralises model access and retry policy, `session.py` owns snapshots, transcripts, 
 and revisions, prompts have a local versioned fallback, and deterministic engines can be tested without a database or model endpoint. The explicit simulate--confirm--apply
 boundary also isolates the only state-changing capability. Two limitations remain. Most internal contracts are nested dictionaries, so typed models would make schema changes 
 across pipeline, tools, snapshots, and frontend safer. Some legacy names and compatibility structures also survive, including the unused root-level `analyst_agent.py` and an 
-`optimizer_scenarios` database column whose payload has since changed. Removing those artefacts and replacing first-run SQL initialization with managed schema migrations 
+`optimizer_scenarios` database column whose payload has since changed. Removing those artefacts and replacing first-run SQL initialisation with managed schema migrations 
 would make the otherwise clear module boundaries easier to maintain as the system grows.

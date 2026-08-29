@@ -5,10 +5,10 @@ exercising a distinct decision path through the analysis engine over a fixed
 twelve-month window covering several different cases including the ordinary decisions 
 (keeping a plan, acquiring one, cancelling one) plus some stress testing and edge cases. 
 The comparison uses a Langfuse dataset whose items hold the raw `load_context` payload as 
-input and the engine's normalized recommendations as expected output. The `baseline` is a 
-single LLM call with the customer's raw data in the prompt and the `main` arm is our agentic 
-pipeline. Both run against the same five scores. Since `main` returns the engine's own output, 
-which also act as the ground truth, its scores follow by construction, and the experiment measures 
+input and the engine's normalised recommendations as expected output. The `baseline` is a
+single LLM call with the customer's raw data in the prompt and the `main` arm is our agentic
+pipeline. Both run against the same five scores. Since `main` returns the engine's own output,
+which also acts as the ground truth, its scores follow by construction, and the experiment measures
 how a single LLM call performs against that reference. Three evaluators are deterministic
 guardrails on a recommendation's shape (`plan-in-catalog`, `action-in-vocabulary`,
 `savings-non-negative`), one measures agreement with the engine's decision (`category-agreement`), 
@@ -27,7 +27,7 @@ picked both correct actions, but then priced the upgrade at €1,449.37 where th
 Token counts are measured from Langfuse traces. An analysis run averages 7,845 tokens against 
 the baseline's 46,619, a 5.9x difference that widens to 9.3x on input, the part that scales with 
 the customer's data volume. The baseline spends 69% of its tokens re-reading raw trip legs, ours 
-spends 56% on output. As Leg-level history in the prompt is the dominant cost driver, 
+spends 56% on output. As leg-level history in the prompt is the dominant cost driver,
 baseline cost rises with how much a customer travels, so the heaviest travellers, the ones with most to gain, 
 are the most expensive to serve. Our analysis path stays close to flat in trip count.
 With our pipeline we trade efficiency against adaptability. Every new numeric
