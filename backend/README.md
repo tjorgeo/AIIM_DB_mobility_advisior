@@ -86,7 +86,7 @@ useful framing for reasoning about the system:
 | Observability | Langfuse, optional (`src/agent/observability.py`) |
 | Database driver | `psycopg2` (`src/database.py`) |
 | Database | PostgreSQL 16 (Compose service `db`, database `app_db`) |
-| Runtime | Python 3.12 (`backend/dockerfile`) |
+| Runtime | Python 3.12 (`backend/Dockerfile`) |
 
 Dependencies are in [`requirements.txt`](requirements.txt); test-only
 dependencies in [`requirements-dev.txt`](requirements-dev.txt), which the
@@ -98,7 +98,7 @@ Dockerfile also installs into the image.
 
 ```text
 backend/
-├── dockerfile            # python:3.12-slim, runs `python src/main.py`
+├── Dockerfile            # python:3.12-slim, runs `python src/main.py`
 ├── pytest.ini            # pythonpath = src ; testpaths = tests
 ├── tests/                # deterministic unit + smoke tests (no DB, no LLM) — see §9
 ├── scripts/              # one-off seed and experiment scripts — see eval/README.md

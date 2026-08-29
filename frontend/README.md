@@ -89,7 +89,7 @@ flowchart TD
 
 ```text
 frontend/
-├── dockerfile              # node:22-bookworm-slim, runs the Vite dev server
+├── Dockerfile              # node:22-bookworm-slim, runs the Vite dev server
 ├── vite.config.js          # /api proxy to the backend
 └── src/
     ├── main.jsx                # entry: ThemeProvider → AuthProvider → App

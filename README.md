@@ -1,9 +1,10 @@
 # DB MoveOptimizer / AIIM Mobility Advisor
 
-An AI mobility-subscription advisor. It reads a customer's real travel history
-out of PostgreSQL, works out what their journeys actually cost, and recommends
+An AI mobility-subscription advisor. It reads a customer's stored travel history
+from PostgreSQL, works out what their journeys actually cost, and recommends
 which mobility subscriptions to keep, drop or take up — then explains the
-reasoning in a chat advisor.
+reasoning in a chat advisor. The current prototype ships with ten synthetic seed
+personas so the complete workflow can be demonstrated locally.
 
 The repository is a monorepo of three services that run together under Docker
 Compose: a React frontend, a FastAPI backend, and a PostgreSQL database.
@@ -30,15 +31,25 @@ personas and the decision path each one exercises.
 
 ### Prerequisites
 
-Docker with Docker Compose:
+The complete stack requires:
+
+- a running Docker daemon, for example Docker Desktop or Docker Engine;
+- Docker Compose v2, invoked as `docker compose`;
+- a Unix-like shell to use `run.sh`. On Windows, run Docker Compose directly
+  instead.
+
+Check the installation before starting:
 
 ```bash
 docker --version
 docker compose version
+docker info
 ```
 
-Nothing else is needed locally — no Python, no Node. Everything builds inside
-the containers.
+No local Python, Node.js, PostgreSQL, Quarto, or LLM API key is required to run
+the core application. Python and Node dependencies are installed inside the
+containers. The Docker daemon must already be running because `run.sh` does not
+start Docker Desktop or wait for the daemon to become ready.
 
 ### 1. Clone and configure
 
@@ -50,8 +61,10 @@ cp .env.example .env
 
 > [!IMPORTANT]
 > `.env` holds local configuration and secrets and is git-ignored — never commit
-> it. The app runs without any API key, using deterministic fallbacks; add
-> `UNI_GPT_API_KEY` to enable the LLM features. See
+> it. Core analysis, deterministic forecasting, and the Advisor's opening
+> briefing work without an API key. Add `UNI_GPT_API_KEY` to enable
+> calendar-informed forecasting, feasibility assessment, and interactive Advisor
+> follow-up messages. See
 > [Environment variables](#environment-variables) below.
 
 ### 2. Start
@@ -67,11 +80,17 @@ chmod +x run.sh
 ./run.sh
 ```
 
-`run.sh` is the recommended wrapper around Docker Compose. Beyond
-`docker compose up --build`, it waits for the Docker daemon to be ready, builds
-with fixed local image tags, and retries requests that Docker Desktop drops
-mid-flight. Plain `docker compose up --build` works too, but without those
-safeguards.
+`run.sh` is a small wrapper around Docker Compose. It checks that Docker and the
+Compose v2 command are installed, prints the local service URLs, runs
+`docker compose up --build`, and stops the services with
+`docker compose down --remove-orphans` when the script exits. The fixed local
+image tags are defined in `docker-compose.yml`.
+
+The equivalent direct command is:
+
+```bash
+docker compose up --build
+```
 
 ### 3. Open
 
@@ -82,7 +101,7 @@ safeguards.
 | PostgreSQL | localhost:5432 |
 
 Sign in with any seeded user's username or email and the shared demo password
-`mobility` — for example `jank_frankfurt` / `mobility`. The seeded personas are
+`mobility` — for example `janalbrecht37` / `mobility`. The seeded personas are
 described in [`database/seed/PERSONAS.md`](database/seed/PERSONAS.md); the login
 mechanism is documented in [`backend/README.md`](backend/README.md).
 
@@ -131,8 +150,9 @@ the backend via `env_file`.
 # Database — set automatically for the backend container by docker-compose
 DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
 
-# University GPT — enables the LLM features (memos, chat advisor).
-# Without a key the backend stays functional using deterministic fallbacks.
+# University GPT — enables calendar reasoning, feasibility assessment,
+# and interactive Advisor follow-up messages.
+# Without a key, core analysis and the deterministic opening briefing still work.
 UNI_GPT_API_KEY=your_api_key_here
 UNI_GPT_BASE_URL=https://chat.kiconnect.nrw/api/v1
 UNI_GPT_MODEL=OpenAI GPT OSS 120b KI:Inferenz.nrw
@@ -147,12 +167,17 @@ The full variable table, including defaults and which module reads each one, is
 in [`backend/README.md`](backend/README.md). Langfuse setup is in
 [`backend/eval/README.md`](backend/eval/README.md).
 
-Two things worth knowing:
+Three things worth knowing:
 
 - **Inside the Docker network the database host is `db`, not `localhost`.**
   `localhost` in a container refers to the container itself.
-- **Frontend variables must be prefixed `VITE_`** to be visible to browser code,
-  where they are read as `import.meta.env.VITE_API_BASE_URL`.
+- **The frontend currently calls relative `/api` URLs.** Vite proxies those
+  requests to the backend using the server-side `BACKEND_URL` variable. The
+  `VITE_API_BASE_URL` value in `docker-compose.yml` is currently not read by the
+  frontend source.
+- **Without `UNI_GPT_API_KEY`, interactive chat is unavailable.** The analysis,
+  deterministic forecast, and opening briefing continue to work, but Advisor
+  follow-up and confirmation endpoints return HTTP 503.
 
 ---
 
@@ -205,9 +230,9 @@ This comes from Docker Compose, not the app. Compose expected a JSON response
 from the Docker daemon and the connection closed early — typically during a
 Docker Desktop update or restart.
 
-`./run.sh` already checks the daemon first and retries this specific transient
-failure. If Docker Desktop stays unresponsive, restart it, wait for "Engine
-running", and run `./run.sh` again. The PostgreSQL volume is not affected.
+`run.sh` does not retry this failure. Check `docker info`; if Docker Desktop is
+unresponsive, restart it, wait for "Engine running", and run `./run.sh` again.
+The PostgreSQL volume is not affected.
 
 ### `services.depends_on must be a mapping`
 
