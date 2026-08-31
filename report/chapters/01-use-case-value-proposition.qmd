@@ -1,18 +1,23 @@
 # Use Case & Value Proposition
 
 Managing personal mobility today means navigating a market that has grown far beyond a simple choice between a transit pass and a car lease.
-Across rail, regional bus services, car-sharing, bike-sharing, and scooter-sharing alone, users face numerous providers, each offering different subscription tiers or discount conditions.
-Users can therefore struggle to obtain a comprehensive overview of their actual spending, number of trips, modes of transport, and the suitability of their subscriptions.
-Reconstructing this information manually is difficult because it requires users to compare each of their subscriptions with the alternatives available on the market and is therefore not feasible for most people.
+Across rail, regional bus services, car-sharing, bike-sharing, and scooter-sharing alone, users face numerous providers, each offering different subscription tiers or discount conditions. Users can
+therefore struggle to obtain a comprehensive overview of their actual spending, number of trips, modes of transport, and the suitability of their subscriptions. Reconstructing
+this information manually is difficult because it requires users to compare each of their subscriptions with the alternatives available on the market and is
+therefore not feasible for most people. 
 
-Our solution gives users what they would otherwise have to look up manually.
-It starts with an overview of their travel history across every mode, including trips taken, costs incurred, distribution across providers, and CO~2~ emissions, so they can understand their travel patterns before adjusting their subscriptions accordingly.
-On that basis, the solution generates a personalised recommendation for the optimal subscription portfolio, aligned with each user's priorities, such as cost savings, CO~2~ reduction, or flexibility.
-Crucially, the optimisation is not purely backward-looking. It also factors in scheduled changes already recorded in the calendar, such as an upcoming relocation or a new commuting pattern, so the recommendation reflects where the user is heading.
-Furthermore, users can access the terms and conditions of any subscription directly rather than searching through provider websites. Once users decide to act, the envisioned platform would execute the confirmed change, 
-such as cancelling an existing subscription or taking out a new one, rather than leaving them to complete the process elsewhere. The current prototype implements the preceding simulation and confirmation flow and stores accepted revisions as new internal recommendation snapshots, 
-but it does not alter the underlying subscription records or execute contract changes with external mobility providers.
+Our solution gives users what they would otherwise have to look up manually. It starts with an overview of their travel history across every
+mode, including trips taken, costs incurred, distribution across providers, and CO~2~ emissions, so they can understand their travel patterns before adjusting their subscriptions accordingly.
+On that basis, the solution generates a personalised recommendation for a better-aligned subscription portfolio, based on each user's priorities, such as cost savings, CO~2~
+reduction, or flexibility. Crucially, the optimisation is not purely backward-looking. It also factors in scheduled changes already recorded in the calendar, such as an
+upcoming relocation or a new commuting pattern, so the recommendation reflects where the user is heading. Furthermore, users can access the terms and conditions
+of any catalogued subscription directly rather than searching through provider websites. Once users decide to act, the envisioned platform would execute the confirmed change,
+such as cancelling an existing subscription or taking out a new one, rather than leaving them to complete the process elsewhere. The current prototype
+implements the preceding simulation and confirmation flow and stores accepted revisions as new internal recommendation snapshots, but it does not alter the underlying subscription
+records or execute contract changes with external mobility providers.
 
-The potential user base is broad. Anyone who uses multiple modes of transport can benefit, regardless of how frequently they travel or how complex their routine appears.
-A student commuting within their university city and occasionally taking long-distance trains home faces a genuinely different optimisation problem from that of a professional who regularly travels across the country for work, yet both are navigating a market too fragmented to assess without dedicated solutions.
-The current prototype focuses on individual users, though the same logic applies wherever mobility costs are managed collectively, such as employer-funded travel budgets, making a B2B extension a possible next step.
+The potential user base is broad. Anyone who uses multiple modes of transport can benefit, regardless of how frequently they travel or how complex
+their routine appears. A student commuting within their university city and occasionally taking long-distance trains home faces a genuinely different optimisation problem from that
+of a professional who regularly travels across the country for work, yet both are navigating a market too fragmented to assess without dedicated solutions.
+The current prototype focuses on individual users, though the same logic applies wherever mobility costs are managed collectively, such as employer-funded travel budgets, making
+a B2B extension a possible next step.

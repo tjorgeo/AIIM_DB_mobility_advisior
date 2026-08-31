@@ -2,71 +2,74 @@
 
 ## Architecture Overview
 
-The architecture consists of a deterministic and a generative part. The deterministic calculation engine is the first step in processing the user's data into
-insightful aggregates (profile, the priorities and free-text constraints given at onboarding, held subscriptions, trip history, upcoming calendar entries). All financial numbers and CO~2~
-estimates are computed here and stored as a snapshot of that customer's state. The snapshot is then used as input for the frontend dashboard
-and for the two narrowly scoped LLM calls. The first reads the customer's calendar entries for upcoming life events and returns demand scenarios expressed in
-trip counts. The other judges whether switching to a different mode of transport is realistic and useful for that customer, based on the free text
-of the onboarding. Neither is ever asked to calculate money or emissions: the forecast's projected trip counts go back into the deterministic engine that prices
-the customer's plan today, so every figure attached to a scenario is calculated. It then scores each subscription category against its alternatives, prices possible switches
-between transport modes, forecasts demand, and writes the result to the session snapshot. The dashboard, the Advisor, and every later change all read from that
-one snapshot and only an explicit refresh triggers a new run.
+The architecture consists of a deterministic and a generative part. First, `load_context` provides the customer's profile, onboarding priorities and constraints, held subscriptions, trip history,
+upcoming calendar entries, and the tariff catalogue. The deterministic calculation engine aggregates this context, compares each subscription category with its alternatives, and calculates all
+initial financial and CO~2~ figures. A template briefing and the resulting analysis are then persisted as a session snapshot and returned to the dashboard.
+The two narrowly scoped LLM steps subsequently enrich this initial result concurrently in the background. The first reads the customer's calendar entries for upcoming
+life events and returns demand scenarios expressed in trip counts. The other judges whether switching to a different mode of transport is realistic and
+useful based on the customer's structured constraints and free-text onboarding responses. Neither is asked to calculate money or emissions. The forecast's projected trip counts
+return to the deterministic engine, which prices each scenario, while modal-shift alternatives are also calculated deterministically. The enriched result then updates the same session
+snapshot. The dashboard, the Advisor, and every later change read from that snapshot, and only an explicit refresh triggers a new full analysis.
 
 As shown in @fig-agent-architecture, the Advisor connects the deterministic analysis, bounded LLM steps, and tools to the conversational interface. It carries every exchange with
-the customer after the initial analysis, beginning with the opening briefing generated from the session snapshot. For that, the Advisor reads the stored snapshot on
-its first turn. Every follow-up request, from questions about tariff details to cancelling a BahnCard, is handled by the same ReAct Advisor, which can reason
-iteratively and use tools. Its seven tools include lookups for the tariff-document knowledge base, portfolio insights, and the preview and apply steps for plan
-changes. The conversation is the only place in the live system where an agent is free to choose its own next step and reach
-for a tool to get there. When the Advisor proposes a change, such as cancelling a subscription or switching a tariff, it first runs a
-preview that re-derives the effect deterministically and records it as a scratch proposal. The saved recommendation is untouched at that point, and the dashboard still
-shows the state while the Advisor presents the revised numbers and asks the customer to confirm. The accepted revision is persisted only after a separate
-confirmation request. `apply_change` writes a new recommendation and session snapshot to the database while leaving the underlying `user_subscriptions` records unchanged. The earlier snapshot
-is preserved, so the analysis history stays intact. The university-hosted language-model endpoint is the backend's only required external service and is reached through one
-shared access point in the code. The 62-document tariff knowledge base uses the Open Knowledge Format (OKF), a lean and simple way of storing knowledge
-in textual format [@google2024okf]. Langfuse is an optional second outbound service for observability and becomes a no-op when its API keys are not configured.
+the customer after the initial analysis, beginning with the opening briefing generated from the session snapshot. For that, the Advisor reads the stored snapshot
+on its first turn. Every follow-up request, from questions about tariff details to cancelling a BahnCard, is handled by the same ReAct Advisor, which
+can reason iteratively and use tools. Its seven tools include lookups for the tariff-document knowledge base, portfolio insights, and the preview and apply steps
+for plan changes. The conversation is the only place in the live system where an agent is free to choose its own next step
+and reach for a tool to get there. When the Advisor proposes a change, such as cancelling a subscription or switching a tariff, it
+first runs a preview that re-derives the effect deterministically and records it as a scratch proposal. The saved recommendation is untouched at that point,
+and the dashboard still shows the state while the Advisor presents the revised numbers and asks the customer to confirm. The accepted revision is
+persisted only after a separate confirmation request. `apply_change` writes a new recommendation and session snapshot to the database while leaving the underlying `user_subscriptions` records
+unchanged. The earlier snapshot is preserved, so the analysis history stays intact. The university-hosted language-model endpoint provides the backend's generative functionality and is reached
+through one shared access point in the code. Without it, the deterministic analysis, dashboard, and template briefing remain available, while generative enrichment and conversational
+follow-ups are limited. The 62-document tariff knowledge base uses the Open Knowledge Format (OKF), a lean and simple way of storing knowledge in textual
+format [@google2024okf]. Langfuse is an optional second outbound service for observability and becomes a no-op when its API keys are not configured.
 
 ![High-level architecture of the mobility Advisor.](assets/agent-architecture.png){#fig-agent-architecture width=100%}
 
 ## Agentic Behavior
 
-The Advisor is the system's single conversational surface and its only autonomous agent, owning both the opening briefing and every follow-up. 
-The `forecast_reasoner` and `feasibility_judge` also use a language model, but they are targeted single-call LLM steps with predefined inputs 
-and outputs and neither selects tools or controls its own sequence. The Advisor, by contrast, is implemented as a LangGraph ReAct agent. 
-For every customer turn, the model can either answer directly or issue a structured call to one of seven deterministic tools. Its autonomy is 
-deliberately bounded. It can choose among these registered tools, but cannot create new actions or execute arbitrary code. LangGraph executes 
-the selected tool, appends its result to the agent state, and invokes the model again. The model can then answer, call another tool, or continue
-the cycle until it has enough evidence, subject to a finite graph-step limit. This repeated model--tool--observation cycle is the system's observable 
-multi-step reasoning. The next action depends on the result of the previous one rather than on a sequence fixed in application code.
+The Advisor is the system's single conversational surface and its only autonomous agent, owning both the opening briefing and every follow-up. The `forecast_reasoner` and
+`feasibility_judge` also use a language model, but they are targeted single-call LLM steps with predefined inputs and outputs and neither selects tools nor controls
+its own sequence. The Advisor, by contrast, is implemented as a LangGraph ReAct agent. For every customer turn, the model can either answer directly
+or issue a structured call to one of seven deterministic tools. Its autonomy is deliberately bounded, because it can only choose among these registered
+tools and cannot create new actions or execute arbitrary code. LangGraph executes the selected tool, appends its result to the agent state, and invokes
+the model again. The model can then answer, call another tool, or continue the cycle until it has enough evidence, subject to a finite
+graph-step limit. This repeated model--tool--observation cycle is the system's observable multi-step reasoning. The next action depends on the result of the previous one rather
+than on a sequence fixed in application code.
 
-For example, when a customer asks, "Compare my nextbike and swapfiets subscription," the snapshot first gives the Advisor the customer's current portfolio 
-and previously calculated recommendation. Because this is a comparison of providers and tariff conditions, the Advisor is instructed not to answer 
-from model memory. It calls `list_tariff_docs` to identify the available nextbike and Swapfiets sources, reads the relevant documents with `read_tariff_doc`, 
-and only then composes the comparison from the retrieved conditions. It may additionally use `lookup_subscriptions` when structured catalogue prices 
-or product coverage are required. The Advisor uses tool-based retrieval from a curated tariff knowledge base. It first lists available or keyword-matched documents and then 
-opens the relevant Markdown files before composing its answer. This is a lightweight form of retrieval-augmented generation without embeddings or vector search and the complete corpus is not included in every prompt. 
-The same tool layer also provides structured retrieval from PostgreSQL, although the core customer analysis is normally injected as a precomputed session snapshot rather than queried autonomously on every turn.
+For example, when a customer asks, "Compare my nextbike and Swapfiets subscriptions," the snapshot first gives the Advisor the customer's current portfolio and previously
+calculated recommendation. Because this is a comparison of providers and tariff conditions, the Advisor is instructed not to answer from model memory. It calls
+`list_tariff_docs` to identify the available nextbike and Swapfiets sources, reads the relevant documents with `read_tariff_doc`, and only then composes the comparison from the retrieved
+conditions. It may additionally use `lookup_subscriptions` when structured catalogue prices or product coverage are required. This tool-based retrieval from the curated tariff knowledge base
+is a lightweight form of retrieval-augmented generation without embeddings or vector search, and the complete corpus is not included in every prompt. The same
+tool layer also provides structured retrieval from PostgreSQL, although the core customer analysis is normally injected as a precomputed session snapshot rather than queried
+autonomously on every turn.
 
-Iteration also continues across separate user turns. A PostgreSQL-backed LangGraph `PostgresSaver`, keyed by `thread_id` equal to the chat `session_id`, 
-persists the agent's message state, intermediate tool calls and observations, and any interrupted execution across HTTP requests. The plain chat transcript 
-is stored separately for display and feedback. Consequently, a follow-up such as "Which of the two better matches my need for flexibility?" can build 
-on the earlier nextbike--Swapfiets comparison without repeating all of its context. Outputs can be refined both within a turn, when retrieved evidence changes
-the answer the model is able to give, and across turns, when the customer adds preferences or constraints. For a what-if request, `simulate_change` goes further
-than revising the prose. It deterministically re-derives the recommendation under the new constraints and returns a proposal with updated figures. If the proposal
-is applied, `commit_revision` writes a new recommendation and session snapshot instead of overwriting the earlier analysis, and tools that read the 
-customer's latest session can use the revised recommendation thereafter.
+The Advisor can carry this iterative process across multiple user turns because a PostgreSQL-backed LangGraph `PostgresSaver`, keyed by `thread_id` equal to the chat `session_id`,
+persists the agent's message state, intermediate tool calls and observations, and any interrupted execution across HTTP requests. The plain chat transcript is stored separately
+for display and feedback. Consequently, a follow-up such as "Which of the two better matches my need for flexibility?" can build on the earlier
+nextbike--Swapfiets comparison without repeating all of its context. Outputs can be refined both within a turn, when retrieved evidence changes the answer the model
+is able to give, and across turns, when the customer adds preferences or constraints. For a what-if request, `simulate_change` goes further than revising the
+prose. It deterministically re-derives the recommendation under the new constraints and returns a proposal with updated figures. If the proposal is applied, `commit_revision` writes
+a new recommendation and session snapshot instead of overwriting the earlier analysis, and tools that read the customer's latest session can use the revised
+recommendation thereafter.
 
-Clarification is deliberately less formal than confirmation. The Advisor can respond with an ordinary clarifying question when a request is ambiguous, 
-for example when the customer asks to "change my subscription" without naming a category or product. However, there is no dedicated clarification node or 
-mandatory clarification policy, so this behaviour remains model-driven rather than structurally guaranteed. State-changing requests use a stronger, 
-enforced interaction. The Advisor must first call the read-only `simulate_change`, present the recalculated result, and ask whether the customer wants 
-to proceed. After an explicit conversational acceptance, `apply_change` reaches a LangGraph `interrupt()` before any write. The graph is checkpointed and the 
-interface asks for a separate confirmation. Only a positive `Command(resume=...)` continues the tool and commits a new session, while rejection leaves 
-the saved recommendation unchanged. Thus the agent may iteratively retrieve, explain, and refine proposals on its own, but the final authority over an internally 
-stored recommendation change remains with the customer.
+The system treats missing information and approval as two different interaction needs. When a request is ambiguous, the Advisor can respond with an ordinary
+clarifying question, for example when the customer asks to "change my subscription" without naming a category or product. However, there is no dedicated clarification
+node or mandatory clarification policy, so this behaviour remains model-driven rather than structurally guaranteed. State-changing requests use a stronger, enforced interaction. The Advisor must
+first call the read-only `simulate_change`, present the recalculated result, and ask whether the customer wants to proceed. After an explicit conversational acceptance, `apply_change` reaches
+a LangGraph `interrupt()` before any write. The graph is checkpointed and the interface asks for a separate confirmation. Only a positive `Command(resume=...)` continues the
+tool and commits a new session, while rejection leaves the saved recommendation unchanged. Thus the agent may iteratively retrieve, explain, and refine proposals on
+its own, but the final authority over an internally stored recommendation change remains with the customer.
 
 ## Error Handling & Robustness {#sec-error-handling}
 
-The conversation and the agent's working context are stored separately in PostgreSQL. The human-readable transcript is restored after a reload and carries the reference IDs used for feedback, while the LangGraph checkpoint contains messages, tool calls, and interrupted execution. It lets the Advisor remain coherent and allows the confirmation gate to resume across HTTP requests. LLM-backed forecasting and feasibility judging use deterministic fallbacks, and model calls have configurable timeouts and retry limits. A failed background enrichment leaves the deterministic dashboard result available and is reported through its status. Optional Langfuse tracing records the runs and scores used in the evaluation in Chapter 6.
+The conversation and the agent's working context are stored separately in PostgreSQL. The human-readable transcript is restored after a reload and carries the reference
+IDs used for feedback, while the LangGraph checkpoint contains messages, tool calls, and interrupted execution. It lets the Advisor remain coherent and allows the
+confirmation gate to resume across HTTP requests. LLM-backed forecasting and feasibility judging use deterministic fallbacks, and model calls have configurable timeouts and retry limits.
+A failed background enrichment leaves the deterministic dashboard result available and is reported through its status. Optional Langfuse tracing records the runs and scores
+used in the evaluation in Chapter 6.
 
 ## Architecture Decision Records (ADRs)
 
@@ -113,16 +116,7 @@ The conversation and the agent's working context are stored separately in Postgr
 
 : {tbl-colwidths="[12,88]"}
 
-| **ADR-05** | **One shared scoring primitive, normalised per decision** |
-|---|---|
-| **Context** | Recommendations trade off cost, CO~2~, and flexibility in the within-category keep/switch/cancel choice and the cross-category modal-shift ranking. The current prototype operationalises the user-facing flexibility preference through estimated travel time, the only quantified proxy available. The three axes have no shared natural unit. |
-| **Options considered** | (a) build a separate scorer per decision type, each independently tuned; (b) normalise all axes against a fixed global reference scale defined in advance; (c) one shared scoring primitive used by both decisions, with min-max normalisation computed fresh from the actual candidate set being compared each time. |
-| **Decision** | (c). `engines/scoring.py` provides a single cost, CO~2~, and time scoring function used by both `analysis.py`'s within-category decision and `modal_shift.py`'s cross-category ranking. The onboarding flexibility score supplies the time weight. Normalisation is min-max across the candidates compared in that call. |
-| **Trade-offs accepted** | A candidate's score is relative to whoever else it is being compared against, not a portable absolute number, i.e. the same subscription can score differently across two different comparisons. In exchange, the system avoids constant manual re-tuning of a fixed scale across units that do not share one, and an axis with no real variance in a given comparison degrades to a neutral value instead of producing an unstable ordering from rounding noise. |
-
-: {tbl-colwidths="[12,88]"}
-
-| **ADR-06** | **A single shared LLM endpoint with an available deterministic core** |
+| **ADR-05** | **A single shared LLM endpoint with an available deterministic core** |
 |---|---|
 | **Context** | The system uses one language-model backend for forecast reasoning, modal-shift feasibility, and the Advisor conversation. The numerical analysis and dashboard should remain available when that endpoint is unreachable or unconfigured. |
 | **Options considered** | (a) hard-depend on the LLM, so the application cannot run without a working key; (b) route every model call through `agent/llm.py` and define feature-specific degradation. Forecasting falls back to the seasonal projection, feasibility to low-confidence deterministic judgments, and the opening briefing to a template, while follow-up chat returns a clear error. Calls use configurable timeout and retry limits. |
@@ -131,7 +125,7 @@ The conversation and the agent's working context are stored separately in Postgr
 
 : {tbl-colwidths="[12,88]"}
 
-| **ADR-07** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
+| **ADR-06** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
 |---|---|
 | **Context** | Forecasting how many trips a customer will make in the next twelve months benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
 | **Options considered** | (a) forecast demand with a statistical/seasonal model over trip history only, ignoring calendar entries; (b) let the LLM take over demand forecasting entirely, replacing the statistical model; (c) keep the deterministic seasonal model as the baseline signal, and layer an LLM step on top that reads upcoming calendar entries and adjusts the trip-count forecast, falling back to the pure statistical forecast if the LLM step is unavailable. |

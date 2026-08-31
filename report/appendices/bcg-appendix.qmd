@@ -20,14 +20,13 @@ BCG-appendix report.
 
 ## Context Record
 
-This section fixes what the case brief handed the team during clarification, before
-any architecture existed, as distinct from what the team decided afterwards and
-documented as the ADRs in @sec-further-adrs. It is a record of the starting
-conditions, not a summary of the decisions built on top of them.
+This section fixes what the case brief handed the team during clarification, before any architecture existed, as distinct from what the team decided afterwards
+and documented as the ADRs in @sec-further-adrs. It is a record of the starting conditions, not a summary of the decisions built on top
+of them.
 
 | Given | What it fixed |
 |---|---|
-| **Persona and vision** | A fixed persona and a fixed vision statement, i.e. continuously optimizing a traveller's mobility portfolio, arrived with the brief rather than being defined by the team. Four verbs came with it: analyze actual behaviour, recommend right-sized contracts, forecast demand forward rather than backward, and act only with approval. |
+| **Persona and vision** | A fixed persona and a fixed vision statement, i.e. continuously optimising a traveller's mobility portfolio, arrived with the brief rather than being defined by the team. Four verbs came with it: analyse actual behaviour, recommend right-sized contracts, forecast demand forward rather than backward, and act only with approval. |
 | **Data to build against** | Onboarding status quo, multi-modal travel history, a calendar of planned trips and events, a mobility contracts catalogue, per-mode CO~2~ factors, and opt-in life-event signals, specified before any component existed. |
 | **Oversight requirement** | Any contract change may execute only with the user's approval at each critical step. This single requirement, not a trade-off the team weighed itself, is the origin of the confirmation gate later formalised as ADR-03. |
 | **Implementation tiers** | Three tiers were offered, basic, intermediate, advanced. The advanced tier named a four-role multi-agent split, i.e. Analyst, Forecaster, Optimizer, Communicator, and the team's early drafts were built toward that suggested shape rather than an independently chosen one. |
@@ -35,32 +34,27 @@ conditions, not a summary of the decisions built on top of them.
 
 : {tbl-colwidths="[20,80]"}
 
-Two questions were genuinely open at the outset rather than settled by the brief.
-First, how many of the four suggested agent roles should actually be built as
-autonomous, tool-using LLM agents rather than as ordinary code. Second, whether the
-system could be evaluated against real customer behaviour at all or only against synthetic personas.
+Two questions were genuinely open at the outset rather than settled by the brief. First, how many of the four suggested agent roles should
+actually be built as autonomous, tool-using LLM agents rather than as ordinary code. Second, whether the system could be evaluated against real customer behaviour
+at all or only against synthetic personas.
 
 ## Architecture Blueprint
 
 ### Stakeholder view
 
-The product answers one question for a customer: given how you actually travelled over
-the past year, is the set of mobility subscriptions you are paying for the right one?
+The product answers one question for a customer: given how you actually travelled over the past year, is the set of mobility subscriptions you
+are paying for the right one?
 
-It works in four steps. At onboarding the customer states what matters to them on three
-sliders, cost, CO~2~ and flexibility, and connects their mobility accounts. The system
-then reconstructs twelve months of travel from that data, showing every trip, what it
-cost and what it emitted, so the customer sees their own behaviour before being asked
-to change it. Against that history it prices each subscription they hold, plus every
-comparable plan on the market, and issues one verdict per travel category: keep, switch,
-cancel, or take one up. Upcoming calendar entries such as a house move or a new office
-are folded in, so the advice reflects where the customer is heading. Finally, an
-advisory chat answers follow-up questions about tariff terms and can execute a change
-directly, though never without the customer confirming the specific change first.
+It works in four steps. At onboarding the customer states what matters to them on three sliders, cost, CO~2~ and flexibility, and connects their
+mobility accounts. The system then reconstructs twelve months of travel from that data, showing every trip, what it cost and what it emitted, so
+the customer sees their own behaviour before being asked to change it. Against that history it prices each subscription they hold, plus every comparable
+plan on the market, and issues one verdict per travel category: keep, switch, cancel, or take one up. Upcoming calendar entries such as a
+house move or a new office are folded in, so the advice reflects where the customer is heading. Finally, an Advisor chat answers follow-up
+questions about tariff terms and can save a confirmed change as an internal recommendation revision. It does not alter the underlying subscription or execute
+a contract change with an external provider.
 
-The commercial claim rests on one property. Every euro and CO~2~ figure the customer
-sees is calculated, never written by a language model, which is what makes the advice
-auditable and the savings defensible.
+The commercial claim rests on one property. Every euro and CO~2~ figure the customer sees is calculated, never written by a language model, which
+is what makes the advice auditable and the savings defensible.
 
 ### Technical view
 
@@ -77,61 +71,58 @@ auditable and the savings defensible.
         |                                      domain data, session
         |                                      snapshots, agent state
         |
-        +-- analyze path (synchronous, one shot):
-        |      load_context -> analyze -> forecast -> communicate
-        |      deterministic engines carry every figure;
-        |      2 small LLM steps (forecast reasoning, modal-shift feasibility),
-        |      each with a deterministic fallback
+        +-- analysis path (split execution):
+        |      load_context -> analyze -> communicate -> persist and return
+        |      deterministic engines carry every initial figure
+        |
+        +-- background enrichment (concurrent):
+        |      forecast reasoning || modal-shift feasibility
+        |      deterministic fallbacks -> project -> update session snapshot
         |
         +-- chat path (multi-turn):
-               LangGraph ReAct advisor, 7 tools,
-               Postgres checkpointer, interrupt() confirmation gate
+               LangGraph ReAct Advisor, 7 tools,
+               PostgreSQL checkpointer, interrupt() confirmation gate
                           |
                           v
         University GPT endpoint (kiconnect.nrw, openai/gpt-oss-120b)
         Langfuse (tracing, prompt versions, scores, experiments)
 \end{verbatim}
 \end{minipage}
-\caption{Technical architecture of the mobility advisor}
+\caption{Technical architecture of the mobility Advisor}
 \label{fig-bcg-technical-architecture}
 \end{figure}
 ```
 
-The two paths differ in who decides the next step. The analyze path is a plain
-sequential function chain with no agent runtime, so it is reproducible and unit-testable.
-The chat path is the only place where a model chooses its own next action and reaches
-for a tool, and the one irreversible action it can take is gated on an explicit
-confirmation enforced by the runtime rather than by the prompt.
+The analysis and chat paths differ in who decides the next step. The analysis path is a plain function workflow with no agent runtime,
+so it is reproducible and unit-testable. Its deterministic result is returned before the two concurrent enrichment steps update the stored session snapshot in the
+background. The chat path is the only place where a model chooses its own next action and reaches for a tool, and its one
+state-changing action is gated on an explicit confirmation enforced by the runtime rather than by the prompt.
 
 ### Key components
 
 | Layer | What it holds | Implementation |
 |---|---|---|
-| **Data** | Customer profile and onboarding priorities, held subscriptions, trip and leg history, calendar entries, recommendations, and the advisor's conversation state | PostgreSQL 16, 13 tables. A 54-plan tariff catalogue and a 62-document tariff knowledge base in Open Knowledge Format sit alongside it |
+| **Data** | Customer profile and onboarding priorities, held subscriptions, trip and leg history, calendar entries, recommendations, and the Advisor's conversation state | PostgreSQL 16 with 12 application tables, supplemented by LangGraph checkpoint tables created at runtime. A 54-plan tariff catalogue and a 62-document tariff knowledge base in Open Knowledge Format sit alongside it |
 | **Model** | One endpoint, three call sites: calendar-based demand forecasting, modal-shift feasibility, and the advisory conversation | University-hosted OpenAI-compatible endpoint (`openai/gpt-oss-120b`). Never asked to compute a cost, emission or time figure |
-| **Infrastructure** | Three containers, one command to start | Docker Compose: FastAPI backend, Vite frontend, PostgreSQL. No cloud dependency |
-| **Integrations** | Exactly two outbound calls in the request path | The model endpoint and Langfuse. Both degrade to no-ops when unconfigured, so the system stays functional offline |
+| **Infrastructure** | Three containers, one command to start | Docker Compose: FastAPI backend, Vite frontend, PostgreSQL. The deterministic core runs locally without a cloud service |
+| **Integrations** | Two optional outbound integrations | The model endpoint enables generative enrichment and follow-up chat, while Langfuse provides observability. Without the model, deterministic fallbacks keep the core analysis available but follow-up chat is unavailable. Langfuse becomes a no-op when unconfigured |
 
 : {tbl-colwidths="[17,47,36]"}
 
-Deterministic engines in `agent/engines/` carry the analysis: per-category pricing and
-eligibility, cross-category modal-shift comparison, seasonal projection, and the
-preference weighting that turns the three onboarding sliders into the weights used by
-every ranking.
+Deterministic engines in `agent/engines/` carry the analysis: per-category pricing and eligibility, cross-category modal-shift comparison, seasonal projection, and the preference weighting that turns the three
+onboarding sliders into the weights used by every ranking.
 
 ## Component Description
 
-The solution separates presentation, orchestration, deterministic decision logic, language-model
-reasoning, and persistence into components with explicit responsibilities. The table below
-describes the architecture-significant services and modules rather than individual functions or
-user-interface elements. The responsibility boundary states what each component deliberately does
-not own, which keeps numerical recommendations reproducible and limits the Advisor's autonomy.
+The solution separates presentation, orchestration, deterministic decision logic, language-model reasoning, and persistence into components with explicit responsibilities. The table below describes the architecture-significant services
+and modules rather than individual functions or user-interface elements. The responsibility boundary states what each component deliberately does not own, which keeps numerical recommendations
+reproducible and limits the Advisor's autonomy.
 
 | Component | Responsibility | Responsibility boundary |
 |---|---|---|
 | **React/Vite frontend** | Presents onboarding, dashboards, portfolio details, recommendations, and the advisory chat. It calls the backend through REST and receives streamed chat responses through SSE. | Contains no authoritative pricing or recommendation logic and has no direct database access. |
 | **FastAPI service** | Exposes the application API, validates requests, coordinates analysis and chat operations, and returns persisted results to the frontend. | Acts as the interface and orchestration layer; it does not itself calculate portfolio recommendations. |
-| **Analysis orchestration** (`context.py`, `pipeline.py`, `analysis_service.py`) | Loads and shapes the customer context, executes the fixed analyze sequence, manages the analysis lifecycle, and persists or reuses recommendation snapshots. | Controls execution order but delegates domain calculations to the deterministic engines and bounded LLM steps. |
+| **Analysis orchestration** (`context.py`, `pipeline.py`, `analysis_service.py`) | Loads and shapes the customer context, executes the fixed analysis sequence, manages the analysis lifecycle, and persists or reuses recommendation snapshots. | Controls execution order but delegates domain calculations to the deterministic engines and bounded LLM steps. |
 | **Deterministic engines** (`agent/engines/`) | Calculate subscription eligibility and pricing, preference-weighted rankings, modal-shift alternatives, seasonal projections, re-optimisations, and template memos. | Own every authoritative euro, CO~2~, and travel-time figure; they neither generate conversational responses nor choose tools. |
 | **Bounded LLM steps** (`agent/llm_steps/`) | Add calendar-informed demand reasoning and assess the feasibility of modal-shift candidates, each through a targeted model call with a deterministic fallback. | They are single-call pipeline steps, not autonomous agents, and cannot invoke tools or persist changes. |
 | **Advisor** (`agent/advisor/`) | Serves as the single conversational agent. Its LangGraph ReAct loop interprets requests, selects from seven registered tools, combines their results, and maintains a multi-turn dialogue grounded in the current analysis snapshot. | It cannot create new actions, execute arbitrary code, or authoritatively calculate costs, emissions, or travel times. |
@@ -151,61 +142,52 @@ not own, which keeps numerical recommendations reproducible and limits the Advis
 |---|---|
 | **Context** | The system needs a fast, auditable one-shot analysis when a customer opens the dashboard, and a separate interactive advisor that can hold a multi-turn conversation and act on follow-up requests ("keep my car", "cancel the BahnCard"). A single orchestration mechanism has to serve both. |
 | **Options considered** | (a) run everything as one LangGraph state graph; (b) run everything as a plain sequential Python pipeline; (c) split by need, i.e. a plain pipeline for the one-shot analysis, a LangGraph ReAct agent with a Postgres-backed checkpointer for the conversational advisor. |
-| **Decision** | (c). `load_context → analyze → forecast → communicate` stays a deterministic function chain with no graph runtime. The `/api/chat` advisor is a LangGraph `create_react_agent` whose state is checkpointed in Postgres, so a conversation survives across separate HTTP requests. |
-| **Trade-offs accepted** | Two orchestration mechanisms instead of one, so consistency between them is a convention (both call the same underlying engines) rather than a runtime guarantee. This is offset by simplicity where it matters. The analysis path stays a plain, unit-testable function chain instead of a graph. |
+| **Decision** | (c). The graph-free analysis uses `run_analysis` for deterministic context loading, pricing, scoring, and initial communication. `run_enrichment` then adds forecast reasoning and modal-shift feasibility through two bounded LLM steps. The `/api/chat` Advisor is a LangGraph `create_react_agent` whose state is checkpointed in PostgreSQL, so a conversation survives across separate HTTP requests. |
+| **Trade-offs accepted** | Two orchestration mechanisms instead of one, so consistency between them is a convention rather than a runtime guarantee. This is offset by simplicity where it matters. The analysis remains a plain, testable function workflow with asynchronous enrichment instead of a graph. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
-| **ADR-02** | **Deterministic number guard: the LLM never computes a figure** |
+| **ADR-02** | **Deterministic number guard for cost, emissions, and time** |
 |---|---|
 | **Context** | Subscription costs, CO~2~ estimates, and trip counts are the basis of the recommendation. A plausible-sounding but fabricated number is worse than none, because a customer cannot tell it apart from a correct one. |
-| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure. All figures come from deterministic engines, and the LLM only narrates them. |
+| **Options considered** | (a) let the LLM read the underlying data and reason about the numbers directly; (b) let the LLM compute numbers and validate them post-hoc; (c) forbid the LLM from producing any cost, emissions or time figure. These figures come from deterministic engines, and the LLM only narrates them. |
 | **Decision** | (c). `analysis.py` and the optimisation/pricing engines compute every euro, CO~2~ and time figure. The briefing and chat model receive these as fixed context they may only explain. The one quantity the LLM does contribute, i.e. the forecaster's projected trip counts per scenario, is priced by the same engines before any cost is shown, and the deterministic seasonal projection covers the case where it is unavailable. |
 | **Trade-offs accepted** | The model cannot adapt numerically to a phrasing it was not explicitly given data for, and every new numeric capability requires new deterministic code rather than a prompt change. This restraint is what makes the pipeline's output reproducible and testable in the first place. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
-| **ADR-03** | **`interrupt()`-based confirmation gate for irreversible actions** |
+| **ADR-03** | **`interrupt()`-based confirmation gate for state-changing actions** |
 |---|---|
-| **Context** | Once the chat advisor can call a tool that writes to the database for cancelling or switching a subscription, a misparsed request or a wrongly-triggered tool call could execute a change the customer never asked for. |
+| **Context** | Once the chat Advisor can write a revised recommendation to the database, a misparsed request or a wrongly triggered tool call could save a change the customer never asked for. The same risk would become more serious if external contract execution were added later. |
 | **Options considered** | (a) trust the LLM's tool call directly; (b) check a boolean "confirmed" flag in application code before writing; (c) pause the agent at the point of the write with a runtime-enforced `interrupt()`, and resume only once the user has explicitly confirmed. |
 | **Decision** | (c). The `apply_change` tool calls LangGraph's `interrupt()` to pause the graph before any write. Execution resumes only via an explicit `Command(resume=...)` carrying the user's decision. |
 | **Trade-offs accepted** | The chat endpoint now depends on the Postgres checkpointer being available to pause and resume state across requests, which a stateless boolean-flag check would not require. In return, the guarantee holds regardless of how the model behaves, rather than depending on the model reliably asking first. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
-| **ADR-04** | **PostgreSQL as the only persistence layer** |
+| **ADR-04** | **PostgreSQL for runtime persistence, Markdown for tariff knowledge** |
 |---|---|
-| **Context** | The system needs a domain store, for example for users, trips and the subscription catalogue, a place to cache the latest analysis so the dashboard does not always re-run the pipeline, a way to look up tariff documents for the memo, and now also a session store for the chat agent's conversation state. |
-| **Options considered** | (a) Postgres plus Redis for caching and a vector store (Weaviate) for tariff-document retrieval; (b) Postgres only, treating "cache" as reuse of the latest `recommendations` row and "retrieval" as a direct lookup by `markdown_ref` instead of embeddings. |
-| **Decision** | (b). Postgres is the sole store, including as the LangGraph checkpointer for chat state. |
-| **Trade-offs accepted** | There is no sub-request caching layer beyond re-serving the last stored row, and tariff lookup is exact rather than semantic, so it cannot answer a paraphrased question about a tariff it is not directly linked to. Both are acceptable at the current catalogue size and avoid two additional pieces of infrastructure to operate and test. |
+| **Context** | The system needs mutable storage for users, trips, subscriptions, analysis snapshots, revisions, transcripts, and agent state. It also needs a source for curated tariff documents that the Advisor can inspect without placing the complete corpus in every prompt. |
+| **Options considered** | (a) PostgreSQL plus Redis for caching and a vector store such as Weaviate for tariff retrieval; (b) PostgreSQL for mutable runtime state and the read-through session cache, plus a file-based Markdown knowledge base retrieved through dedicated tools. |
+| **Decision** | (b). PostgreSQL stores domain data, recommendations, analysis-session snapshots, revisions, transcripts, and LangGraph checkpoints. `analysis_sessions` provides the dashboard cache, while `list_tariff_docs` and `read_tariff_doc` scan the Markdown knowledge base. |
+| **Trade-offs accepted** | There is no distributed cache or semantic vector retrieval. Tariff discovery depends on document metadata and keyword matching, but this is sufficient for the current 62-document corpus and avoids two additional services to operate and test. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
-| **ADR-05** | **One shared scoring primitive, normalised per decision** |
+| **ADR-05** | **A single shared LLM endpoint with an available deterministic core** |
 |---|---|
-| **Context** | Recommendations trade off cost, CO~2~, and flexibility in two different places, in the within-category keep/switch/cancel choice and in the cross-category modal-shift ranking. The three axes have no shared natural unit. |
-| **Options considered** | (a) build a separate scorer per decision type, each independently tuned; (b) normalise all axes against a fixed global reference scale defined in advance; (c) one shared scoring primitive used by both decisions, with min-max normalisation computed fresh from the actual candidate set being compared each time. |
-| **Decision** | (c). `engines/scoring.py` provides a single scoring function used by both `analysis.py`'s within-category decision and `modal_shift.py`'s cross-category ranking. Normalization is min-max across whichever candidates are actually being compared in that call. |
-| **Trade-offs accepted** | A candidate's score is relative to whoever else it is being compared against, not a portable absolute number, i.e. the same subscription can score differently across two different comparisons. In exchange, the system avoids constant manual re-tuning of a fixed scale across units that do not share one, and an axis with no real variance in a given comparison degrades to a neutral value instead of producing an unstable ordering from rounding noise. |
-
-: {tbl-colwidths="[24,76]"}
-
-| **ADR-06** | **A single shared LLM endpoint, with the app fully usable if it is unavailable** |
-|---|---|
-| **Context** | The system needs a language-model backend for two bounded jobs, which are demand reasoning in the forecaster and prose generation in the memo/chat. However, it should not become unusable if that backend is ever unreachable or unconfigured. |
-| **Options considered** | (a) hard-depend on the LLM, so the app cannot run at all without a working key; (b) route every LLM call through a single access point (`agent/llm.py`) with an explicit fallback for each feature. Memos revert to deterministic templates, chat/onboarding return a clear error. Furthermore, a hard timeout and retry cap ensures that a stalled call surfaces as an error rather than hanging indefinitely. |
+| **Context** | The system uses one language-model backend for forecast reasoning, modal-shift feasibility, and the Advisor conversation. The numerical analysis and dashboard should remain available when that endpoint is unreachable or unconfigured. |
+| **Options considered** | (a) hard-depend on the LLM, so the application cannot run without a working key; (b) route every model call through `agent/llm.py` and define feature-specific degradation. Forecasting falls back to the seasonal projection, feasibility to low-confidence deterministic judgments, and the opening briefing to a template, while follow-up chat returns a clear error. Calls use configurable timeout and retry limits. |
 | **Decision** | (b). |
-| **Trade-offs accepted** | The product is coupled to one endpoint's availability and quota rather than a market of interchangeable providers, and a stalled call is capped at returning an error within roughly 30 seconds rather than retried indefinitely. This is offset by the system staying operable, with no LLM available at all, since every numeric result already comes from the deterministic engines regardless (ADR-02). |
+| **Trade-offs accepted** | Forecast enrichment and conversational follow-ups remain coupled to one endpoint's availability, quota, and queue. Configurable limits bound each call but do not provide one fixed response-time guarantee. In return, the deterministic analysis, dashboard figures, and template briefing remain available without the LLM because every cost, emissions, and time result comes from deterministic engines (ADR-02). |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}
 
-| **ADR-07** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
+| **ADR-06** | **LLM demand reasoning over calendar text, with a deterministic seasonal fallback** |
 |---|---|
-| **Context** | Forecasting how many trips a customer will make in the next 90 days benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
+| **Context** | Forecasting how many trips a customer will make in the next twelve months benefits from information a pure statistical model cannot see, like an upcoming move, a new job or a trip already on the calendar, but that information arrives as unstructured free text, not a structured feature. |
 | **Options considered** | (a) forecast demand with a statistical/seasonal model over trip history only, ignoring calendar entries; (b) let the LLM take over demand forecasting entirely, replacing the statistical model; (c) keep the deterministic seasonal model as the baseline signal, and layer an LLM step on top that reads upcoming calendar entries and adjusts the trip-count forecast, falling back to the pure statistical forecast if the LLM step is unavailable. |
 | **Decision** | (c). The calendar-reasoning step interprets calendar text into a demand adjustment. The deterministic seasonal engine is both its input signal and its fallback. |
 | **Trade-offs accepted** | The forecast's calendar-awareness only exists when the LLM is available, and quietly reverts to the less specific baseline otherwise. This is acceptable because the forecast never determines cost itself, it only feeds trip counts into the same deterministic pricing engine used elsewhere, so a degraded forecast still produces a numerically trustworthy result, just a less forward-looking one. |
 
-: {tbl-colwidths="[24,76]"}
+: {tbl-colwidths="[12,88]"}

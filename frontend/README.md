@@ -267,13 +267,7 @@ Docker it falls back to `http://localhost:8000`.
 ```bash
 npm run build      # production build to dist/
 npm run preview    # serve the production build
-npm run lint       # eslint, zero-warnings policy
 ```
-
-> [!NOTE]
-> `npm run lint` is configured with `--max-warnings 0`, but no ESLint config
-> file is committed, so the script will not run as-is. Adding an
-> `eslint.config.js` is open work.
 
 ---
 

@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="DB MoveOptimizer — Strategy IT Consulting API Gateway",
-    description="Synchronous multi-agent coordination API for mobility recommendation engine.",
+    description="Mobility recommendation and conversational Advisor API.",
     version="1.0.0",
     lifespan=lifespan
 )

@@ -2,41 +2,46 @@
 
 ## Challenges & Lessons Learned
 
-Since we lacked access to real customer data, we built a synthetic dataset of ten personas, their subscriptions, and 3,540 trip legs. 
-The data is varied enough to keep the recommendations meaningful rather than trivially regular. The tariff data is real and drawn from 62 documents of 
-published provider pricing. However, the synthetic customer behaviour means we were effectively assessing our own work. The engine was evaluated using 
-synthetic behaviour patterns, so its performance on irregular real-world travel behaviour remains untested. The onboarding provider connection is likewise 
-simulated and designed so that only the data source would need to be replaced later.
+Since we lacked access to real customer data, we built a synthetic dataset of ten personas, their subscriptions, and 3,540 trip legs. The tariff data
+is real and drawn from 62 documents of published
+provider pricing. However, the synthetic customer behaviour means we were effectively assessing our own work. The engine was evaluated using synthetic behaviour patterns, so
+its performance on irregular real-world travel behaviour remains untested. The onboarding provider connection is likewise simulated and designed so that only the data source
+would need to be replaced later.
 
-A separate lesson was how quickly a generative coding assistant let us start building, sometimes before we had worked out where we were going. None of us 
-had built an agentic system before, so we treated the architecture as something to discover through iteration rather than settling it upfront. Both the 
-architecture and the synthetic personas went through several revisions. Some of that uncertainty ran deeper. For a while, we doubted that a deterministic 
-script could substitute for judgement calls at all, since capturing real travel behaviour meant committing to simplifying assumptions before we could test 
-whether they would hold up. In hindsight, defining the user story and scope more clearly before writing code, or focusing on a single transport mode, would have
-made the moving parts easier to manage. At the same time, we doubt we would have attempted a project of this size within one semester without that same assistance.
+A separate lesson was how quickly a generative coding assistant let us start building, sometimes before we had worked out where we were going.
+None of us had built an agentic system before, so we treated the architecture as something to discover through iteration rather than settling it
+upfront. Some of that uncertainty ran deeper. For a while, we doubted that
+a deterministic script could substitute for judgement calls at all, since capturing real travel behaviour meant committing to simplifying assumptions before we could test
+whether they would hold up. In hindsight, defining the user story and scope more clearly before writing code, or focusing on a single transport
+mode, would have made the moving parts easier to manage. At the same time, we doubt we would have attempted a project of this
+size within one semester without that same assistance.
 
 ## Limitations & Next Steps
 
-The tariff data is a snapshot with no mechanism yet for updating prices when provider conditions change. The synthetic trip data carries a related simplification
-because each mode's per-trip cost and duration comes from a fixed per-kilometre estimate rather than a real fare structure. Distance-based pricing tiers and time-of-day 
-variation are therefore absent from the travel history on which the recommendations are based. The onboarding provider connection is also simulated, and not every 
-tariff would supply this data in any case. A flat-rate product such as the Deutschlandticket has no natural per-trip billing event to track. The system does 
-not yet execute changes with external providers. Although the dashboard offers controls to switch, cancel, or take up a subscription, these do not write to 
-the backend. The portfolio therefore reverts on reload. Only confirmation through the Advisor chat persists a revised recommendation and analysis-session snapshot, while the underlying subscription record remains unchanged.
+The tariff data is a snapshot with no mechanism yet for updating prices when provider conditions change. The synthetic trip data carries a related
+simplification because each mode's per-trip cost and duration comes from a fixed per-kilometre estimate rather than a real fare structure. Distance-based pricing tiers and
+time-of-day variation are therefore absent from the travel history on which the recommendations are based. The onboarding provider connection is also simulated, and not
+every provider would supply this data in any case. A flat-rate product such as the Deutschlandticket has no natural per-trip billing event to track.
+The system does not yet execute changes with external providers. Although the dashboard offers controls to switch, cancel, or take up a subscription, these
+do not write to the backend. The portfolio therefore reverts on reload. Only confirmation through the Advisor chat persists a revised recommendation and analysis-session
+snapshot, while the underlying subscription record remains unchanged.
 
-Another limitation concerns transport data for alternatives the customer has never used. CO~2~ emissions and travel duration rely on manually defined 
-averages rather than route-specific data. Availability is also idealised. The system does not check whether an alternative serves the customer's routes and
-treats every provider as equally reachable instead of modelling variations in scooter or car-sharing fleet density. This assumption is more plausible in the 
-urban settings the product targets than outside cities, where owning a car may be the only practical option. The multi-criteria scoring is also limited by the 
-problem's structure. Within a category, the alternatives do not change how a person travels, so emissions and duration remain identical and the decision is effectively 
-based on cost. CO~2~ and flexibility only become decisive across different modes. The system also considers one person at a time, so it supports neither shared 
-households nor employer-funded mobility. Its modal comparison does not extend to on-demand services such as taxis. Two further limitations concern how much the analysis itself can be trusted. 
-It assumes enough history to be meaningful. The newly onboarded evaluation persona has only nine days of recorded travel and therefore gives the pipeline far less signal than the other personas. The engine annualises this shorter window, emits a warning below 14 days, and lowers forecast confidence when monthly data is sparse, but it has no dedicated cold-start strategy or independent data source. Because the engine's own output serves as the reference against which the baseline is scored in Chapter 6, the evaluation shows consistency 
-between the two rather than absolute correctness. A systematic error in the deterministic logic would not surface without an independent ground truth.
+Another limitation concerns transport data for alternatives the customer has never used. CO~2~ emissions and travel duration rely on manually defined averages rather than
+route-specific data. Availability is also idealised. The system does not check whether an alternative serves the customer's routes and treats every provider as equally
+reachable instead of modelling variations in scooter or car-sharing fleet density. This assumption is more plausible in the urban settings the product targets than
+outside cities, where owning a car may be the only practical option. The multi-criteria scoring is also limited by the problem's structure. Within a
+category, the alternatives do not change how a person travels, so emissions and duration remain identical and the decision is effectively based on cost.
+CO~2~ and flexibility only become decisive across different modes. The system also considers one person at a time, so it supports neither shared households
+nor employer-funded mobility. Its modal comparison does not extend to on-demand services such as taxis. Two further limitations concern how much the analysis itself
+can be trusted. It assumes enough history to be meaningful. The newly onboarded evaluation persona has only nine days of recorded travel and therefore
+gives the pipeline far less signal than the other personas. The engine annualises this shorter window, emits a warning below 14 days, and lowers
+forecast confidence when monthly data is sparse, but it has no dedicated cold-start strategy or independent data source. Because the engine's own output serves
+as the reference against which the baseline is scored in Chapter 6, the evaluation shows consistency between the two rather than absolute correctness. A
+systematic error in the deterministic logic would not surface without an independent ground truth.
 
-Future work could address these limitations in several ways. A real connection to a provider that exposes per-trip histories, for example a bike-sharing service such as nextbike, would give the 
-system actual travel data. Route-level emissions and duration from a routing service would give the CO~2~ and time dimensions the resolution that manually 
-defined averages cannot provide. Connecting the dashboard's switch and cancel controls to the Advisor's existing confirm-and-apply flow would let customers act 
-directly instead of going through the chat. Extending the evaluation from the fixed seeded dataset and evaluation window to rolling time windows would test the product's core claim that its advice 
-remains correct as behaviour changes. These improvements would not require a fundamental redesign because the tariff knowledge base is file-driven and the scoring 
-engine receives its weights as parameters rather than hard-coding them.
+Future work could address these limitations in several ways. A real connection to a provider that exposes per-trip histories, for example a bike-sharing service
+such as nextbike, would give the system actual travel data. Route-level emissions and duration from a routing service would give the CO~2~ and time
+dimensions the resolution that manually defined averages cannot provide. Connecting the dashboard's switch and cancel controls to the Advisor's existing confirm-and-apply flow would let
+customers act directly instead of going through the chat. Future evaluation should cover both rolling time windows and the ReAct Advisor's tool selection, task
+completion, clarification, grounding, and compliance with the confirmation gate. These improvements would not require a fundamental redesign because the
+tariff knowledge base is file-driven and the scoring engine receives its weights as parameters rather than hard-coding them.

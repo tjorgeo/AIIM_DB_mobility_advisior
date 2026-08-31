@@ -1,14 +1,13 @@
 # Managerial report (Quarto)
 
-This folder builds two PDFs from one set of Quarto sources:
+This folder builds two separate PDFs from one Quarto project:
 
-1. the **full managerial report** — all eight chapters followed by the BCG
-   appendix;
-2. a **standalone BCG appendix report** containing only that appendix.
+1. the **managerial report** containing chapters 1–8;
+2. the **BCG report** containing only the BCG-specific material.
 
-Both use the same project configuration and the same
-`appendices/bcg-appendix.qmd`, so the appendix is maintained in exactly one
-place. The chapter structure follows `Report_Template_Managerial.docx`.
+Both use the same project configuration. The chapter structure follows
+`Report_Template_Managerial.docx`, while the BCG content is maintained in
+`appendices/bcg-appendix.qmd`.
 
 > [!NOTE]
 > This is the last link in the documentation chain: the
@@ -54,8 +53,8 @@ quarto install tinytex
 ```text
 report/
 ├── _quarto.yml                    # shared project and PDF configuration
-├── report.qmd                     # entry point for the full report
-├── bcg-appendix-report.qmd        # entry point for the BCG-only report
+├── report.qmd                     # entry point for the managerial report
+├── bcg-appendix-report.qmd        # entry point for the separate BCG report
 ├── chapters/                      # one .qmd per main chapter
 │   ├── 01-use-case-value-proposition.qmd
 │   ├── 02-solution-concept-originality.qmd
@@ -66,26 +65,23 @@ report/
 │   ├── 07-reflection-learnings.qmd
 │   └── 08-references-appendix.qmd
 ├── appendices/
-│   └── bcg-appendix.qmd           # shared BCG appendix content
+│   └── bcg-appendix.qmd           # BCG report content
 ├── assets/                        # figures and static files
 ├── references.bib                 # sources in BibTeX format
 └── _output/                       # generated PDFs; not version-controlled
 ```
 
-`report.qmd` includes the eight chapters and then the appendix;
-`bcg-appendix-report.qmd` includes only the appendix. **Change the ordering only
-in those two entry points.**
+`report.qmd` includes the eight managerial chapters. `bcg-appendix-report.qmd`
+includes only the BCG report content. **Change the ordering only in those two
+entry points.**
 
 ---
 
 ## Editing the content
 
-1. In `_quarto.yml`, replace the `[Team Name]` placeholder and the five team
-   member entries, removing any that are unused.
-2. Fill in the eight files under `chapters/`, replacing the visible
-   placeholders.
-3. Maintain BCG content **only** in `appendices/bcg-appendix.qmd` — the change
-   then appears in both PDFs.
+1. Maintain the report title and author metadata in `_quarto.yml`.
+2. Maintain the managerial report in the eight files under `chapters/`.
+3. Maintain BCG content **only** in `appendices/bcg-appendix.qmd`.
 4. Put figures in `assets/` and include them with a relative path:
 
    ```markdown
@@ -106,13 +102,13 @@ before quoting them if the pipeline has changed since they were recorded.
 
 Run from the repository root.
 
-**Full report** — chapters 1–8 followed by the BCG appendix:
+**Managerial report** — chapters 1–8:
 
 ```bash
 quarto render report/report.qmd     # -> report/_output/report.pdf
 ```
 
-**BCG appendix only** — title page plus the appendix content:
+**BCG report** — title page plus the BCG-specific content:
 
 ```bash
 quarto render report/bcg-appendix-report.qmd   # -> report/_output/bcg-appendix-report.pdf
@@ -129,21 +125,19 @@ quarto render report
 ## Pre-submission checklist
 
 1. Open both files in `report/_output/` and check for rendering errors.
-2. In the full report, check chapter numbering, tables, figures, links and the
+2. In the managerial report, check chapter numbering, tables, figures, links and the
    bibliography.
-3. Confirm the BCG appendix sits at the end of the full report, and that the
-   standalone report contains nothing from chapters 1–8.
+3. Confirm that the managerial report contains no BCG material and that the BCG
+   report contains nothing from chapters 1–8.
 4. Check the font, page breaks and general readability.
-5. Verify the full report stays within the template's limit of **10 pages**.
-6. Make sure no placeholders remain — `[Team Name]`, `[Value]`,
-   `[Team member ...]`, `REPLACE-ME`.
+5. Verify the managerial report stays within the template's limit of **10 pages**.
+6. Make sure no draft notes or placeholders remain.
 
 ---
 
 ## Customisation
 
 - Additional chapters go in `chapters/` and are included from `report.qmd`.
-- Additional appendices go in `appendices/` and are included at the end of
-  `report.qmd`.
+- Additional BCG sections go in `appendices/bcg-appendix.qmd`.
 - Shared PDF options — LaTeX engine, paper size, font, numbering — live in
   `_quarto.yml` under `format.pdf`.

@@ -18,7 +18,7 @@ chain:
 | [`frontend/README.md`](frontend/README.md)         | UI architecture, view state, the chat widget, dev server                                |
 | [`backend/README.md`](backend/README.md)           | architecture, data model, the analysis pipeline, HTTP API, testing                      |
 | [`data/README.md`](data/README.md)                 | the tariff knowledge base and CO₂ reference figures                                     |
-| [`backend/eval/README.md`](backend/eval/README.md) | Langfuse tracing, LLM judges, the baseline-vs-agent experiment and its measured results |
+| [`backend/eval/README.md`](backend/eval/README.md) | Langfuse tracing, LLM judges, the baseline-vs-reference experiment and its measured results |
 | [`report/README.md`](report/README.md)             | building the managerial report PDFs from those results                                  |
 
 One further reference sits outside that chain:

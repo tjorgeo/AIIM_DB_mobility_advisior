@@ -1,18 +1,18 @@
 # Solution Concept & Originality
 
-Advising on mobility subscriptions requires recommendations to be numerically reliable and understandable without requiring the customer to inspect the underlying 
-calculations. We divide these responsibilities across a hybrid architecture. Deterministic pricing and scoring engines calculate all financial and environmental 
-figures. Two narrowly scoped LLM steps interpret calendar information and assess whether switching transport modes is feasible, while a single LangGraph Advisor 
-handles the conversation, tariff retrieval, and what-if requests. FastAPI connects these capabilities to the frontend, PostgreSQL stores domain data, analysis snapshots, 
-and agent state, and optional Langfuse tracing supports observation and evaluation of the model calls. Chapter 3 describes how these components interact.
+Advising on mobility subscriptions requires recommendations to be numerically reliable and understandable without requiring the customer to inspect the underlying calculations. We divide these
+responsibilities across a hybrid architecture. Deterministic pricing and scoring engines calculate all financial and environmental figures. Two narrowly scoped LLM steps interpret calendar information
+and assess whether switching transport modes is feasible, while a single LangGraph Advisor handles the conversation, tariff retrieval, and what-if requests. FastAPI connects these
+capabilities to the frontend, PostgreSQL stores domain data, analysis snapshots, and agent state, and optional Langfuse tracing supports observation and evaluation of the model
+calls. Chapter 3 describes how these components interact.
 
-Our contribution lies in combining multi-provider travel history, a structured subscription catalogue, calendar information, and customer priorities in one 
-mobility portfolio analysis. The system compares plans within each transport category and may also recommend a shift between modes based on cost, CO~2~, and 
-flexibility, which the current scoring represents through estimated travel time. The Advisor can explain the results using a curated tariff knowledge base and simulate a proposed change before asking the customer to confirm it. 
-In the current prototype, a confirmed revision is saved as a new internal recommendation snapshot. It does not alter the underlying subscription record or execute a real contract change with an external provider.
+Our contribution lies in combining multi-provider travel history, a structured subscription catalogue, calendar information, and customer priorities in one mobility portfolio analysis. The system
+compares plans within each transport category and may also recommend a shift between modes based on cost, CO~2~, and flexibility, which the current scoring
+represents through estimated travel time. The Advisor can explain the results using a curated tariff knowledge base and simulate a proposed change before asking
+the customer to confirm it. In the current prototype, a confirmed revision is saved as a new internal recommendation snapshot. It does not alter
+the underlying subscription record or execute a real contract change with an external provider.
 
-The brief's advanced tier suggested separate LLM agents for analysis, forecasting, optimisation, and communication. Instead of assigning every task to an agent, 
-we considered where language-model reasoning added value. Analysis and optimisation became primarily deterministic components, forecasting was reduced to a 
-bounded LLM step with a deterministic fallback, and only communication remained an autonomous agent. This avoids making numerical reliability depend on 
-an open-ended conversation while retaining flexibility where customers need it. The deterministic output also provides a stable reference for the 
-single-LLM-call baseline evaluated in Chapter 6.
+The brief's advanced tier suggested separate LLM agents for analysis, forecasting, optimisation, and communication. Instead of assigning every task to an agent, we considered
+where language-model reasoning added value. Analysis and optimisation became primarily deterministic components, forecasting was reduced to a bounded LLM step with a deterministic fallback,
+and only communication remained an autonomous agent. This avoids making numerical reliability depend on an open-ended conversation while retaining flexibility where customers need it.
+The deterministic output also provides a stable reference for the single-LLM-call baseline evaluated in Chapter 6.

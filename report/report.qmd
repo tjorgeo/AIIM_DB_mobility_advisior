@@ -1,7 +1,6 @@
 <!--
-Replace the placeholders in _quarto.yml before submission. The managerial
-template limits the report to 10 pages. Check the rendered PDF manually because
-pagination depends on fonts, tables, and figures.
+The managerial template limits the report to 10 pages. Check the rendered PDF
+manually because pagination depends on fonts, tables, and figures.
 
 This file defines the chapter order. Write chapter content in the individual
 files under chapters/ rather than directly in this file.
@@ -22,9 +21,3 @@ files under chapters/ rather than directly in this file.
 {{< include chapters/07-reflection-learnings.qmd >}}
 
 {{< include chapters/08-references-appendix.qmd >}}
-
-```{=latex}
-\clearpage
-```
-
-{{< include appendices/bcg-appendix.qmd >}}

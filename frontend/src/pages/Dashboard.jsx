@@ -281,7 +281,7 @@ export default function Dashboard() {
   // immediately (see api/client.js's analyze). This folds them in when they land.
   useEnrichment(analysis, setAnalysis)
 
-  // Umgeht den Backend-Cache (siehe orchestrator.py) und erzwingt eine frische
+  // Umgeht den Backend-Cache (siehe analysis_service.py) und erzwingt eine frische
   // Neuberechnung — z.B. nachdem sich die Optimierungslogik geändert hat.
   const [refreshing, setRefreshing] = useState(false)
   const handleForceRefresh = () => {
@@ -532,7 +532,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <ThemeToggle style={{ width: '35px', height: '35px' }} />
           {/* Unauffälliger Refresh-Button — erzwingt eine frische Analyse statt der
-              gecachten letzten recommendations-Zeile (siehe orchestrator.py) */}
+              gecachten letzten recommendations-Zeile (siehe analysis_service.py) */}
           <button
             onClick={handleForceRefresh}
             disabled={refreshing}

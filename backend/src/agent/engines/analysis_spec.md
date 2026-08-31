@@ -260,7 +260,7 @@ class AnalystOutput(BaseModel):
 | Should the user switch to a different plan? | **Optimizer** |
 | What modes does the user rely on? | **Analyst** |
 | Is there a seasonal pattern? | **Analyst** |
-| What will usage look like in 90 days? | **Forecaster** |
+| What will usage look like over the next 12 months? | **Forecaster** |
 
 ---
 
